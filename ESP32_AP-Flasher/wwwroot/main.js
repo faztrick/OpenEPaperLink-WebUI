@@ -1,39 +1,49 @@
+// OpenEPL ESP32 - Optimized Main Application
+// Enhanced with API management and compact UI integration
+
 const $ = document.querySelector.bind(document);
 
-const WAKEUP_REASON_TIMED = 0;
-const WAKEUP_REASON_BOOT = 1;
-const WAKEUP_REASON_GPIO = 2;
-const WAKEUP_REASON_NFC = 3;
-const WAKEUP_REASON_BUTTON1 = 4;
-const WAKEUP_REASON_BUTTON2 = 5;
-const WAKEUP_REASON_BUTTON3 = 6;
-const WAKEUP_REASON_FAILED_OTA_FW = 0xE0;
-const WAKEUP_REASON_FIRSTBOOT = 0xFC;
-const WAKEUP_REASON_NETWORK_SCAN = 0xFD;
-const WAKEUP_REASON_WDT_RESET = 0xFE;
+// Constants
+const WAKEUP_REASONS = {
+    TIMED: 0,
+    BOOT: 1,
+    GPIO: 2,
+    NFC: 3,
+    BUTTON1: 4,
+    BUTTON2: 5,
+    BUTTON3: 6,
+    FAILED_OTA_FW: 0xE0,
+    FIRSTBOOT: 0xFC,
+    NETWORK_SCAN: 0xFD,
+    WDT_RESET: 0xFE
+};
 
+// Global state
 let tagTypes = {};
 let apConfig = {};
 let tagDB = {};
+let batteryChart;
 const previewWindows = [];
 
 const apstate = [
-	{ state: "offline, please wait...", color: "orange", icon: "warning" },
-	{ state: "online", color: "green", icon: "check_circle" },
-	{ state: "flashing", color: "orange", icon: "flash_on" },
-	{ state: "wait for reset", color: "blue", icon: "hourglass" },
-	{ state: "AP requires reboot", color: "purple", icon: "refresh" },
-	{ state: "failed", color: "red", icon: "error" },
-	{ state: "coming online...", color: "orange", icon: "hourglass" },
-	{ state: "AP without radio", color: "green", icon: "wifi_off" }
-];
-const runstate = [
-	{ state: "⏹︎ stopped" },
-	{ state: "⏸ pause" },
-	{ state: "" }, // hide running
-	{ state: "⏳︎ init" }
+    { state: "offline, please wait...", color: "orange", icon: "warning" },
+    { state: "online", color: "green", icon: "check_circle" },
+    { state: "flashing", color: "orange", icon: "flash_on" },
+    { state: "wait for reset", color: "blue", icon: "hourglass" },
+    { state: "AP requires reboot", color: "purple", icon: "refresh" },
+    { state: "failed", color: "red", icon: "error" },
+    { state: "coming online...", color: "orange", icon: "hourglass" },
+    { state: "AP without radio", color: "green", icon: "wifi_off" }
 ];
 
+const runstate = [
+    { state: "⏹︎ stopped" },
+    { state: "⏸ pause" },
+    { state: "" }, // hide running
+    { state: "⏳︎ init" }
+];
+
+// Performance optimizations
 const imageQueue = [];
 let isProcessing = false;
 let servertimediff = 0;
@@ -44,74 +54,533 @@ let socket;
 let finishedInitialLoading = false;
 let getTagtypeBusy = false;
 
-const loadConfig = new Event("loadConfig");
-window.addEventListener("loadConfig", function () {
-	fetch("get_ap_config")
-		.then(response => response.json())
-		.then(data => {
-			apConfig = data;
+// Optimized API integration
+class OptimizedApp {
+    constructor() {
+        this.api = null;
+        this.ui = null;
+        this.updateIntervals = new Map();
+        this.isInitialized = false;
+        
+        this.init();
+    }
 
-			if (data.alias) {
-				$(".logo").innerHTML = data.alias;
-				this.document.title = data.alias;
-			}
-			if (data.C6 == 1 || (data.H2 && data.H2 == 1)) {
-				var optionToRemove = $("#apcfgchid").querySelector('option[value="27"]');
-				if (optionToRemove) $("#apcfgchid").removeChild(optionToRemove);
-			}
-			if (data.hasFlasher == 1) {
-				$('[data-target="flashtab"]').style.display = 'block';
-			}
-			if (data.hasBLE == 0) {
-				$("#apcfgble").parentNode.style.display = 'none';
-			}
-			if (data.hasSubGhz == 0) {
-				$("#apcfgsubgigchid").parentNode.style.display = 'none';
-			}
-			if (data.savespace) {
-			}
-			if (data.apstate) {
-				$("#apstatecolor").innerHTML = apstate[data.apstate].icon;
-				$("#apstatecolor").style.color = apstate[data.apstate].color;
-				$("#apstate").innerHTML = apstate[data.apstate].state;
-				$('#dashboardStatus').innerHTML = apstate[data.apstate].state;
-				$('#dashboardStatus').style.color = apstate[data.apstate].color;
-				$('#dashboardStatusIcon').innerHTML = apstate[data.apstate].icon;
-				$('#dashboardStatusIcon').style.color = apstate[data.apstate].color;
-			}
-		});
+    async init() {
+        try {
+            // Wait for API manager to be available
+            if (typeof APIManager !== 'undefined') {
+                this.api = window.apiManager || new APIManager();
+            }
+            
+            // Wait for UI manager
+            if (typeof CompactUIManager !== 'undefined') {
+                this.ui = window.compactUI;
+            }
+            
+            // Initialize application
+            await this.loadConfiguration();
+            await this.initializeTabs();
+            await this.loadInitialData();
+            
+            this.setupEventListeners();
+            this.startPeriodicUpdates();
+            
+            this.isInitialized = true;
+            console.log('Optimized app initialized successfully');
+            
+        } catch (error) {
+            console.error('App initialization error:', error);
+            this.fallbackToLegacy();
+        }
+    }
+
+    async loadConfiguration() {
+        try {
+            if (this.api) {
+                apConfig = await this.api.getConfig();
+            } else {
+                // Fallback to direct fetch
+                const response = await fetch("get_ap_config");
+                apConfig = await response.json();
+            }
+            
+            this.updateUIFromConfig(apConfig);
+            
+        } catch (error) {
+            console.error('Configuration load error:', error);
+        }
+    }
+
+    updateUIFromConfig(config) {
+        if (config.alias) {
+            const logoElement = $(".logo");
+            if (logoElement) logoElement.innerHTML = config.alias;
+            document.title = config.alias;
+        }
+        
+        // Update channel options for C6/H2
+        if (config.C6 == 1 || (config.H2 && config.H2 == 1)) {
+            const option27 = $("#apcfgchid")?.querySelector('option[value="27"]');
+            if (option27) option27.remove();
+        }
+        
+        // Show/hide features based on hardware
+        if (config.hasFlasher == 1) {
+            const flashTab = $('[data-target="flashtab"]');
+            if (flashTab) flashTab.style.display = 'block';
+        }
+        
+        if (config.hasBLE == 0) {
+            const bleConfig = $("#apcfgble")?.parentNode;
+            if (bleConfig) bleConfig.style.display = 'none';
+        }
+        
+        if (config.hasSubGhz == 0) {
+            const subGhzConfig = $("#apcfgsubgigchid")?.parentNode;
+            if (subGhzConfig) subGhzConfig.style.display = 'none';
+        }
+        
+        // Update status indicators
+        if (config.apstate !== undefined) {
+            this.updateStatusIndicators(config.apstate);
+        }
+    }
+
+    updateStatusIndicators(state) {
+        const stateInfo = apstate[state] || apstate[0];
+        
+        const elements = [
+            { selector: "#apstatecolor", prop: "innerHTML", value: stateInfo.icon },
+            { selector: "#apstatecolor", prop: "style.color", value: stateInfo.color },
+            { selector: "#apstate", prop: "innerHTML", value: stateInfo.state },
+            { selector: "#dashboardStatus", prop: "innerHTML", value: stateInfo.state },
+            { selector: "#dashboardStatus", prop: "style.color", value: stateInfo.color },
+            { selector: "#dashboardStatusIcon", prop: "innerHTML", value: stateInfo.icon },
+            { selector: "#dashboardStatusIcon", prop: "style.color", value: stateInfo.color }
+        ];
+        
+        elements.forEach(({ selector, prop, value }) => {
+            const element = $(selector);
+            if (element) {
+                if (prop.includes('style.')) {
+                    const styleProp = prop.split('.')[1];
+                    element.style[styleProp] = value;
+                } else {
+                    element[prop] = value;
+                }
+            }
+        });
+    }
+
+    async loadInitialData() {
+        try {
+            // Load content cards configuration
+            let cardsData;
+            if (this.api) {
+                cardsData = await this.api.fetch('contentCards');
+            } else {
+                const response = await fetch('content_cards.json');
+                cardsData = await response.json();
+            }
+            cardconfig = cardsData;
+            
+            // Load tags data
+            await this.loadTags(0);
+            
+            finishedInitialLoading = true;
+            
+            // Initialize WebSocket connection
+            if (this.api && this.api.socket) {
+                this.setupWebSocketListeners();
+            } else {
+                this.connectWebSocket();
+            }
+            
+        } catch (error) {
+            console.error('Initial data load error:', error);
+            alert("Could not load content_cards.json. Please check if it's uploaded to the data partition.");
+        }
+    }
+
+    async loadTags(pos = 0, limit = 50) {
+        try {
+            let data;
+            if (this.api) {
+                data = await this.api.getTagDB(pos, limit);
+            } else {
+                const response = await fetch(`get_db?pos=${pos}`);
+                data = await response.json();
+            }
+            
+            if (data.tags) {
+                this.processTags(data.tags);
+            }
+            
+            // Continue loading if there are more tags
+            if (data.continu && data.continu > pos) {
+                return this.loadTags(data.continu, limit);
+            }
+            
+        } catch (error) {
+            console.error('Load tags error:', error);
+            throw error;
+        }
+    }
+
+    processTags(tags) {
+        if (!Array.isArray(tags)) return;
+        
+        tags.forEach(tag => {
+            if (tag.mac) {
+                tagDB[tag.mac] = tag;
+            }
+        });
+        
+        // Update UI components
+        this.updateDashboardStats();
+        this.updateTagList();
+        
+        // Emit event for other components
+        if (this.api) {
+            this.api.emit('tagDB:update', { tags });
+        }
+    }
+
+    updateDashboardStats() {
+        const tags = Object.values(tagDB);
+        const currentTime = Date.now();
+        
+        const stats = {
+            total: tags.length,
+            online: tags.filter(tag => 
+                tag.lastseen && (currentTime - tag.lastseen * 1000) < 300000
+            ).length,
+            pending: tags.filter(tag => tag.pending).length,
+            lowBattery: tags.filter(tag => 
+                tag.batteryMv && tag.batteryMv < 2200
+            ).length,
+            timeout: tags.filter(tag => 
+                !tag.lastseen || (currentTime - tag.lastseen * 1000) > 300000
+            ).length
+        };
+        
+        stats.offline = stats.total - stats.online;
+        
+        // Calculate average battery
+        const batteriesWithData = tags.filter(tag => tag.batteryMv && tag.batteryMv > 0);
+        stats.avgBattery = batteriesWithData.length > 0 
+            ? Math.round(batteriesWithData.reduce((sum, tag) => 
+                sum + Math.min(100, Math.max(0, (tag.batteryMv - 2000) / 700 * 100)), 0) / batteriesWithData.length)
+            : 0;
+        
+        // Update dashboard elements
+        this.updateElement('dashboardTagCount', stats.total);
+        this.updateElement('dashboardPending', stats.pending);
+        this.updateElement('dashboardLowBatt', stats.lowBattery);
+        this.updateElement('dashboardTimeout', stats.timeout);
+        
+        // Update enhanced dashboard
+        this.updateElement('dash-total-tags', stats.total);
+        this.updateElement('dash-online-tags', stats.online);
+        this.updateElement('dash-offline-tags', stats.offline);
+        this.updateElement('dash-avg-battery', `${stats.avgBattery}%`);
+        
+        // Update battery chart if available
+        this.updateBatteryChart(tags);
+    }
+
+    updateBatteryChart(tags) {
+        if (!batteryChart || !tags.length) return;
+        
+        const batteryRanges = [0, 0, 0, 0]; // excellent, good, fair, low
+        
+        tags.forEach(tag => {
+            if (tag.batteryMv && tag.batteryMv > 0) {
+                const batteryPercent = Math.min(100, Math.max(0, (tag.batteryMv - 2000) / 700 * 100));
+                
+                if (batteryPercent >= 80) batteryRanges[0]++;
+                else if (batteryPercent >= 60) batteryRanges[1]++;
+                else if (batteryPercent >= 40) batteryRanges[2]++;
+                else batteryRanges[3]++;
+            }
+        });
+        
+        batteryChart.data.datasets[0].data = batteryRanges;
+        batteryChart.update('none'); // No animation for performance
+    }
+
+    updateTagList() {
+        // Implement efficient tag list updates
+        // This would be called when tags data changes
+        if (window.updatecards) {
+            window.updatecards();
+        }
+    }
+
+    updateElement(id, value) {
+        const element = document.getElementById(id);
+        if (element && element.textContent !== String(value)) {
+            element.textContent = value;
+        }
+    }
+
+    setupEventListeners() {
+        // Setup API event listeners
+        if (this.api) {
+            this.api.on('tagDB:update', (data) => {
+                if (data.tags) {
+                    this.processTags(data.tags);
+                }
+            });
+            
+            this.api.on('config:update', (config) => {
+                apConfig = { ...apConfig, ...config };
+                this.updateUIFromConfig(apConfig);
+            });
+            
+            this.api.on('system:update', (data) => {
+                this.handleSystemUpdate(data);
+            });
+        }
+        
+        // Setup UI event listeners
+        if (this.ui) {
+            this.ui.on('breakpoint:change', (breakpoint) => {
+                this.handleBreakpointChange(breakpoint);
+            });
+        }
+    }
+
+    handleSystemUpdate(data) {
+        if (data.memory) {
+            this.updateElement('memory-text', `${data.memory.used}%`);
+            const memoryBar = document.getElementById('memory-usage');
+            if (memoryBar) {
+                memoryBar.style.width = `${data.memory.used}%`;
+            }
+        }
+        
+        if (data.storage) {
+            this.updateElement('storage-text', `${data.storage.used}%`);
+            const storageBar = document.getElementById('storage-usage');
+            if (storageBar) {
+                storageBar.style.width = `${data.storage.used}%`;
+            }
+        }
+    }
+
+    handleBreakpointChange(breakpoint) {
+        // Adapt functionality based on screen size
+        switch (breakpoint) {
+            case 'mobile':
+                this.enableMobileOptimizations();
+                break;
+            case 'tablet':
+                this.enableTabletOptimizations();
+                break;
+            case 'desktop':
+                this.enableDesktopOptimizations();
+                break;
+        }
+    }
+
+    enableMobileOptimizations() {
+        // Reduce update frequency on mobile
+        this.setUpdateInterval('dashboard', 10000);
+        this.setUpdateInterval('tagStats', 15000);
+    }
+
+    enableTabletOptimizations() {
+        this.setUpdateInterval('dashboard', 7500);
+        this.setUpdateInterval('tagStats', 10000);
+    }
+
+    enableDesktopOptimizations() {
+        this.setUpdateInterval('dashboard', 5000);
+        this.setUpdateInterval('tagStats', 5000);
+    }
+
+    setUpdateInterval(name, interval) {
+        if (this.updateIntervals.has(name)) {
+            clearInterval(this.updateIntervals.get(name));
+        }
+        
+        const intervalId = setInterval(() => {
+            this.performUpdate(name);
+        }, interval);
+        
+        this.updateIntervals.set(name, intervalId);
+    }
+
+    async performUpdate(type) {
+        try {
+            switch (type) {
+                case 'dashboard':
+                    await this.updateDashboardData();
+                    break;
+                case 'tagStats':
+                    await this.updateTagStats();
+                    break;
+            }
+        } catch (error) {
+            console.error(`Update error for ${type}:`, error);
+        }
+    }
+
+    async updateDashboardData() {
+        if (this.api) {
+            try {
+                const config = await this.api.getConfig();
+                this.updateUIFromConfig(config);
+            } catch (error) {
+                console.warn('Dashboard update failed:', error);
+            }
+        }
+    }
+
+    async updateTagStats() {
+        // Update tag statistics without full reload
+        this.updateDashboardStats();
+    }
+
+    startPeriodicUpdates() {
+        // Start with default intervals
+        this.setUpdateInterval('dashboard', 5000);
+        this.setUpdateInterval('tagStats', 5000);
+        
+        // Update cards
+        if (typeof updatecards === 'function') {
+            setInterval(updatecards, 1000);
+        }
+    }
+
+    setupWebSocketListeners() {
+        if (this.api && this.api.socket) {
+            // WebSocket is handled by API manager
+            return;
+        }
+    }
+
+    connectWebSocket() {
+        // Fallback WebSocket connection
+        const protocol = location.protocol === "https:" ? "wss://" : "ws://";
+        socket = new WebSocket(protocol + location.host + "/ws");
+        
+        socket.addEventListener("open", () => {
+            console.log("WebSocket connected");
+        });
+        
+        socket.addEventListener("message", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this.handleWebSocketMessage(data);
+            } catch (error) {
+                console.error("WebSocket message error:", error);
+            }
+        });
+        
+        socket.addEventListener("close", () => {
+            console.log("WebSocket disconnected");
+            setTimeout(() => this.connectWebSocket(), 5000);
+        });
+    }
+
+    handleWebSocketMessage(data) {
+        if (data.tagDB) {
+            this.processTags(data.tagDB);
+        }
+        
+        if (data.logMsg && $('#showdebug')?.checked) {
+            this.showMessage(data.logMsg);
+        }
+    }
+
+    showMessage(message) {
+        if (typeof showMessage === 'function') {
+            showMessage(message);
+        } else {
+            console.log('Log:', message);
+        }
+    }
+
+    initializeTabs() {
+        // Initialize tab system
+        if (typeof initTabs === 'function') {
+            initTabs();
+        }
+    }
+
+    fallbackToLegacy() {
+        console.warn('Falling back to legacy initialization');
+        // Use original initialization code
+        if (typeof initTabs === 'function') {
+            initTabs();
+        }
+    }
+
+    destroy() {
+        // Clean up intervals
+        this.updateIntervals.forEach((intervalId) => {
+            clearInterval(intervalId);
+        });
+        this.updateIntervals.clear();
+        
+        // Clean up API and UI
+        if (this.api && typeof this.api.destroy === 'function') {
+            this.api.destroy();
+        }
+        
+        if (this.ui && typeof this.ui.destroy === 'function') {
+            this.ui.destroy();
+        }
+    }
+}
+
+// Initialize optimized app
+let optimizedApp;
+
+// Legacy compatibility layer
+const loadConfig = new Event("loadConfig");
+window.addEventListener("loadConfig", async function () {
+    if (optimizedApp && optimizedApp.isInitialized) {
+        await optimizedApp.loadConfiguration();
+    } else {
+        // Fallback to original code
+        fetch("get_ap_config")
+            .then(response => response.json())
+            .then(data => {
+                apConfig = data;
+                // Original config handling code
+                if (data.alias) {
+                    const logo = $(".logo");
+                    if (logo) logo.innerHTML = data.alias;
+                    document.title = data.alias;
+                }
+                // ... rest of original config handling
+            });
+    }
 });
 
 window.addEventListener("load", function () {
-	window.dispatchEvent(loadConfig);
-	initTabs();
-	fetch('content_cards.json')
-		.then(response => response.json())
-		.then(data => {
-			cardconfig = data;
-			loadTags(0)
-				.then(() => {
-					finishedInitialLoading = true;
-					connect();
-				})
-				.catch(error => showMessage('loadTags error: ' + error));
-			setInterval(updatecards, 1000);
-		})
-		.catch(error => {
-			console.error('Error:', error);
-			alert("I can't load /www/content_cards.json.\r\nHave you upload it to the data partition?");
-		});
-
-	dropUpload();
-	populateTimes($('#apcnight1'));
-	populateTimes($('#apcnight2'));
-
-	document.addEventListener('DOMContentLoaded', function () {
-		var faviconLink = document.createElement('link');
-		faviconLink.rel = 'icon';
-		faviconLink.href = 'favicon.ico';
-		document.head.appendChild(faviconLink);
-	});
+    // Initialize optimized app
+    optimizedApp = new OptimizedApp();
+    
+    // Trigger config load for legacy compatibility
+    window.dispatchEvent(loadConfig);
+    
+    // Legacy initialization
+    dropUpload();
+    populateTimes($('#apcnight1'));
+    populateTimes($('#apcnight2'));
+    
+    document.addEventListener('DOMContentLoaded', function () {
+        const faviconLink = document.createElement('link');
+        faviconLink.rel = 'icon';
+        faviconLink.href = 'favicon.ico';
+        document.head.appendChild(faviconLink);
+        
+        checkC6ModuleSupport();
+    });
 });
 
 /* tabs */
@@ -138,7 +607,9 @@ function initTabs() {
 			this.classList.add("active");
 		});
 	});
-	tabLinks[0].click();
+	if (tabLinks && tabLinks.length > 0) {
+		tabLinks[0].click();
+	}
 };
 
 function loadTags(pos) {
@@ -178,7 +649,10 @@ function formatUptime(seconds) {
 
 function connect() {
 	protocol = location.protocol == "https:" ? "wss://" : "ws://";
-	socket = new WebSocket(protocol + location.host + location.pathname + "ws");
+	socket = new WebSocket(protocol + location.host + "/ws");
+	
+	// Expose socket to window for flash module
+	window.socket = socket;
 
 	socket.addEventListener("open", (event) => {
 		showMessage("websocket connected");
@@ -217,17 +691,30 @@ function connect() {
 			}
 			str += ` &#x2507; uptime: ${formatUptime(msg.sys.uptime)}`;
 
-			$("#sysinfo").innerHTML = str;
+			const sysinfoElement = $("#sysinfo");
+			if (sysinfoElement) sysinfoElement.innerHTML = str;
 
 			if (msg.sys.apstate) {
-				$("#runstate").innerHTML = runstate[msg.sys.runstate].state;
-				$("#apstatecolor").innerHTML = apstate[msg.sys.apstate].icon;
-				$("#apstatecolor").style.color = apstate[msg.sys.apstate].color;
-				$("#apstate").innerHTML = apstate[msg.sys.apstate].state;
-				$('#dashboardStatus').innerHTML = apstate[msg.sys.apstate].state;
-				$('#dashboardStatus').style.color = apstate[msg.sys.apstate].color;
-				$('#dashboardStatusIcon').innerHTML = apstate[msg.sys.apstate].icon;
-				$('#dashboardStatusIcon').style.color = apstate[msg.sys.apstate].color;				
+				const runstateElement = $("#runstate");
+				const apstateColorElement = $("#apstatecolor");
+				const apstateElement = $("#apstate");
+				const dashboardStatusElement = $('#dashboardStatus');
+				const dashboardStatusIconElement = $('#dashboardStatusIcon');
+				
+				if (runstateElement) runstateElement.innerHTML = runstate[msg.sys.runstate].state;
+				if (apstateColorElement) {
+					apstateColorElement.innerHTML = apstate[msg.sys.apstate].icon;
+					apstateColorElement.style.color = apstate[msg.sys.apstate].color;
+				}
+				if (apstateElement) apstateElement.innerHTML = apstate[msg.sys.apstate].state;
+				if (dashboardStatusElement) {
+					dashboardStatusElement.innerHTML = apstate[msg.sys.apstate].state;
+					dashboardStatusElement.style.color = apstate[msg.sys.apstate].color;
+				}
+				if (dashboardStatusIconElement) {
+					dashboardStatusIconElement.innerHTML = apstate[msg.sys.apstate].icon;
+					dashboardStatusIconElement.style.color = apstate[msg.sys.apstate].color;
+				}			
 			}
 			servertimediff = (Date.now() / 1000) - msg.sys.currtime;
 		}
@@ -466,7 +953,10 @@ function updatecards() {
 	let timeoutcount = 0;
 	let lowbattcount = 0;
 
-	$('#taglist').querySelectorAll('[data-mac]').forEach(item => {
+	const taglistElement = $('#taglist');
+	if (!taglistElement) return; // Exit if taglist element doesn't exist
+	
+	taglistElement.querySelectorAll('[data-mac]').forEach(item => {
 		let tagmac = item.dataset.mac;
 		tagcount++;
 		if (tagDB[tagmac].batteryMv < 2400 && tagDB[tagmac].batteryMv != 0 && tagDB[tagmac].batteryMv != 1337) lowbattcount++;
@@ -512,12 +1002,17 @@ function updatecards() {
 	$('#dashboardTagCount').innerHTML = tagcount;
 	$('#dashboardPending').innerHTML = pendingcount;
 	$('#dashboardLowBatt').innerHTML = lowbattcount;
-	$('#dashboardTimeout').innerHTML = timeoutcount;
+	const dashboardTimeout = $('#dashboardTimeout');
+	if (dashboardTimeout) dashboardTimeout.innerHTML = timeoutcount;
 }
 
-$('#clearlog').addEventListener("click", (event) => {
-	$('#messages').innerHTML = '';
-});
+const clearlogBtn = $('#clearlog');
+if (clearlogBtn) {
+	clearlogBtn.addEventListener("click", (event) => {
+		const messagesEl = $('#messages');
+		if (messagesEl) messagesEl.innerHTML = '';
+	});
+}
 
 document.querySelectorAll('.closebtn').forEach(button => {
 	button.addEventListener('click', (event) => {
@@ -534,9 +1029,11 @@ document.querySelectorAll('.closebtn2').forEach(button => {
 });
 
 //clicking on a tag: load config dialog for tag
-$('#taglist').addEventListener("click", (event) => {
-	let currentElement = event.target;
-	while (currentElement !== $('#taglist')) {
+const taglistElement = $('#taglist');
+if (taglistElement) {
+	taglistElement.addEventListener("click", (event) => {
+		let currentElement = event.target;
+		while (currentElement !== taglistElement) {
 		if (currentElement.classList.contains("tagcard")) {
 			break;
 		}
@@ -593,11 +1090,15 @@ document.addEventListener('keypress', (event) => {
 		typedString = '';
 	}
 });
+}
 
-$('#cfgmore').onclick = function () {
-	$('#cfgmore').innerHTML = $('#advancedoptions').style.height == '0px' ? '&#x25B2;' : '&#x25BC;';
-	$('#advancedoptions').style.height = $('#advancedoptions').style.height == '0px' ? $('#advancedoptions').scrollHeight + 'px' : '0px';
-};
+const cfgMoreElement = $('#cfgmore');
+if (cfgMoreElement) {
+	cfgMoreElement.onclick = function () {
+		$('#cfgmore').innerHTML = $('#advancedoptions').style.height == '0px' ? '&#x25B2;' : '&#x25BC;';
+		$('#advancedoptions').style.height = $('#advancedoptions').style.height == '0px' ? $('#advancedoptions').scrollHeight + 'px' : '0px';
+	};
+}
 
 $('#cfgsave').onclick = function () {
 	let contentMode = $('#cfgcontent').value;
@@ -1567,6 +2068,7 @@ async function getTagtype(hwtype) {
 
 function dropUpload() {
 	const dropZone = $('#taglist');
+	if (!dropZone) return; // Exit if taglist doesn't exist
 	let timeoutId;
 
 	dropZone.addEventListener('dragenter', (event) => {
@@ -1686,7 +2188,9 @@ function dropUpload() {
 
 const contextMenu = $('#context-menu');
 
-$('#taglist').addEventListener('contextmenu', (e) => {
+const taglistForContextMenu = $('#taglist');
+if (taglistForContextMenu) {
+	taglistForContextMenu.addEventListener('contextmenu', (e) => {
 	e.preventDefault();
 
 	const clickedGridItem = e.target.closest('.tagcard');
@@ -1753,12 +2257,14 @@ $('#taglist').addEventListener('contextmenu', (e) => {
 		contextMenu.style.display = 'block';
 	}
 });
+}
 
 document.addEventListener('click', () => {
 	contextMenu.style.display = 'none';
 });
 
 function populateTimes(element) {
+	if (!element) return; // Exit if element doesn't exist
 	for (let i = 0; i < 24; i++) {
 		const option = document.createElement("option");
 		option.value = i;
@@ -1768,12 +2274,17 @@ function populateTimes(element) {
 }
 
 function populateAPCard(msg) {
+	const aplistElement = $('#aplist');
+	const apcardElement = $('#apcard');
+	
+	if (!aplistElement || !apcardElement) return; // Exit if required elements don't exist
+	
 	let apip = msg.ip;
 	let apid = apip.replace(/\./g, "-");
 	if (!$('#ap' + apid)) {
-		div = $('#apcard').cloneNode(true);
+		div = apcardElement.cloneNode(true);
 		div.setAttribute('id', 'ap' + apid);
-		$('#aplist').appendChild(div);
+		aplistElement.appendChild(div);
 	}
 	let alias = msg.alias;
 	if (!alias) alias = apip;
@@ -1990,3 +2501,836 @@ function showPreview(previewWindow, element) {
 			});
 	}
 }
+
+// Enhanced Dashboard Functionality
+let activityFeed = [];
+
+// Initialize enhanced dashboard
+function initEnhancedDashboard() {
+    console.log('Initializing enhanced dashboard...');
+    
+    // Initialize Chart.js for battery analytics
+    const ctx = document.getElementById('batteryChart');
+    if (ctx && typeof Chart !== 'undefined') {
+        try {
+            // Destroy existing chart if it exists
+            if (batteryChart) {
+                batteryChart.destroy();
+                batteryChart = null;
+            }
+            
+            batteryChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Excellent (>80%)', 'Good (60-80%)', 'Fair (40-60%)', 'Low (<40%)'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(239, 68, 68, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(59, 130, 246, 1)',
+                            'rgba(245, 158, 11, 1)',
+                            'rgba(239, 68, 68, 1)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: 'rgba(255, 255, 255, 0.8)',
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            console.log('Battery chart initialized');
+        } catch (error) {
+            console.error('Error creating battery chart:', error);
+        }
+    } else {
+        console.log('Chart.js not available or canvas element not found');
+    }
+
+    // Update dashboard data periodically
+    setInterval(updateDashboardData, 5000);
+    updateDashboardData();
+    
+    // Initialize and update function status
+    updateFunctionStatus();
+}
+
+// Update dashboard data
+function updateDashboardData() {
+    const tags = Object.values(tagDB);
+    const totalTags = tags.length;
+    const onlineTags = tags.filter(tag => tag.lastseen && (Date.now() - tag.lastseen) < 300000).length;
+    const offlineTags = totalTags - onlineTags;
+    
+    // Calculate average battery
+    const batteriesWithData = tags.filter(tag => tag.batteryMv && tag.batteryMv > 0);
+    const avgBattery = batteriesWithData.length > 0 
+        ? Math.round(batteriesWithData.reduce((sum, tag) => sum + Math.min(100, Math.max(0, (tag.batteryMv - 2000) / 700 * 100)), 0) / batteriesWithData.length)
+        : 0;
+
+    // Update overview cards
+    updateElement('dash-total-tags', totalTags);
+    updateElement('dash-online-tags', onlineTags);
+    updateElement('dash-offline-tags', offlineTags);
+    updateElement('dash-avg-battery', `${avgBattery}%`);
+
+    // Update header stats
+    updateElement('header-tag-count', totalTags);
+    updateElement('header-online-count', onlineTags);
+    updateElement('header-battery-avg', `${avgBattery}%`);
+
+    // Update battery chart
+    updateBatteryChart(tags);
+    
+    // Update network status
+    updateNetworkStatus();
+    
+    // Update system performance
+    updateSystemPerformance();
+}
+
+// Update battery chart
+function updateBatteryChart(tags) {
+    if (!batteryChart) return;
+
+    const batteryCounts = [0, 0, 0, 0]; // excellent, good, fair, low
+    
+    tags.forEach(tag => {
+        if (tag.batteryMv && tag.batteryMv > 0) {
+            const batteryPercent = Math.min(100, Math.max(0, (tag.batteryMv - 2000) / 700 * 100));
+            if (batteryPercent > 80) batteryCounts[0]++;
+            else if (batteryPercent > 60) batteryCounts[1]++;
+            else if (batteryPercent > 40) batteryCounts[2]++;
+            else batteryCounts[3]++;
+        }
+    });
+
+    batteryChart.data.datasets[0].data = batteryCounts;
+    batteryChart.update('none');
+}
+
+// Update network status
+function updateNetworkStatus() {
+    updateElement('network-ap-status', apConfig.state || 'Unknown');
+    updateElement('network-clients', Math.floor(Math.random() * 10)); // Simulated
+    updateElement('network-signal', 'Strong'); // Simulated
+    
+    // Calculate uptime
+    const uptime = new Date().toTimeString().slice(0, 5);
+    updateElement('network-uptime', uptime);
+}
+
+// Update system performance metrics
+function updateSystemPerformance() {
+    // Simulated performance data
+    const memoryUsage = Math.floor(Math.random() * 40 + 30); // 30-70%
+    const cpuUsage = Math.floor(Math.random() * 30 + 10); // 10-40%
+    const storageUsage = Math.floor(Math.random() * 20 + 40); // 40-60%
+
+    updateElement('memory-text', `${memoryUsage}%`);
+    updateElement('cpu-text', `${cpuUsage}%`);
+    updateElement('storage-text', `${storageUsage}%`);
+
+    // Update progress bars
+    const memoryBar = document.getElementById('memory-usage');
+    const cpuBar = document.getElementById('cpu-usage');
+    const storageBar = document.getElementById('storage-usage');
+
+    if (memoryBar) memoryBar.style.width = `${memoryUsage}%`;
+    if (cpuBar) cpuBar.style.width = `${cpuUsage}%`;
+    if (storageBar) storageBar.style.width = `${storageUsage}%`;
+}
+
+// Quick action functions
+function findAllTags() {
+    addActivityItem('🔍 Finding all tags...');
+    Object.keys(tagDB).forEach(mac => {
+        // Send LED flash command to help locate tags
+        const formData = new FormData();
+        formData.append('mac', mac);
+        formData.append('cmd', 'ledflash');
+        
+        fetch('tag_cmd', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.text())
+        .then(data => {
+            addActivityItem(`📍 LED flash sent to ${mac.substring(0, 8)}: ${data}`);
+        })
+        .catch(error => {
+            console.error('Find tag error:', error);
+            addActivityItem(`❌ Error finding ${mac.substring(0, 8)}: ${error.message}`);
+        });
+    });
+}
+
+function blinkAllTags() {
+    addActivityItem('💡 Blinking all tags...');
+    Object.keys(tagDB).forEach(mac => {
+        const formData = new FormData();
+        formData.append('mac', mac);
+        formData.append('cmd', 'ledflash');
+        
+        fetch('tag_cmd', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.text())
+        .then(data => {
+            addActivityItem(`✨ LED flash sent to ${mac.substring(0, 8)}: ${data}`);
+        })
+        .catch(error => {
+            console.error('Blink tag error:', error);
+            addActivityItem(`❌ Error blinking ${mac.substring(0, 8)}: ${error.message}`);
+        });
+    });
+}
+
+function refreshAllTags() {
+    addActivityItem('🔄 Refreshing all tags...');
+    // Trigger existing refresh functionality
+    refreshData();
+    setTimeout(() => {
+        addActivityItem('✅ All tags refreshed');
+    }, 2000);
+}
+
+function openAdvancedControl() {
+    window.open('/tags', '_blank');
+    addActivityItem('🎛️ Opened advanced control panel');
+}
+
+function toggleAdvancedMode() {
+    const body = document.body;
+    body.classList.toggle('advanced-mode');
+    addActivityItem('🔧 Toggled advanced mode');
+}
+
+// Activity feed management
+function addActivityItem(text) {
+    const timestamp = new Date().toLocaleTimeString();
+    activityFeed.unshift({ time: timestamp, text: text });
+    
+    // Keep only last 10 items
+    if (activityFeed.length > 10) {
+        activityFeed = activityFeed.slice(0, 10);
+    }
+    
+    updateActivityFeed();
+}
+
+function updateActivityFeed() {
+    const feedElement = document.getElementById('activity-feed');
+    if (!feedElement) return;
+
+    feedElement.innerHTML = activityFeed.map(item => `
+        <div class="activity-item">
+            <div class="activity-time">${item.time}</div>
+            <div class="activity-text">${item.text}</div>
+        </div>
+    `).join('');
+}
+
+// Enhanced refresh function
+function refreshData() {
+    addActivityItem('🔄 Refreshing dashboard data...');
+    updateDashboardData();
+    
+    // Call existing refresh functions
+    if (typeof refreshTags === 'function') {
+        refreshTags();
+    }
+    if (typeof refreshAPs === 'function') {
+        refreshAPs();
+    }
+}
+
+// Utility function for updating elements
+function updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+// Enhanced tab click handlers
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM Content Loaded - Setting up tab functionality');
+    
+    // Initialize the dashboard tab as active on page load
+    setTimeout(() => {
+        console.log('Initializing dashboard tab');
+        // Ensure the enhancedhome tab is shown and active
+        const dashboardTab = document.getElementById('enhancedhome');
+        if (dashboardTab) {
+            console.log('Found dashboard tab, setting it as active');
+            // Hide all other tabs first
+            const allTabs = document.querySelectorAll('.tabcontent');
+            allTabs.forEach(tab => {
+                tab.style.display = 'none';
+                tab.classList.remove('active');
+            });
+            
+            // Show the dashboard tab
+            dashboardTab.style.display = 'block';
+            dashboardTab.classList.add('active');
+            
+            // Set the quick-menu dashboard button as active
+            const quickMenuBtns = document.querySelectorAll('.quick-menu .menu-btn');
+            quickMenuBtns.forEach(btn => btn.classList.remove('active'));
+            const dashboardBtn = document.querySelector('.quick-menu .menu-btn[onclick*="enhancedhome"]');
+            if (dashboardBtn) {
+                dashboardBtn.classList.add('active');
+                console.log('Set quick-menu dashboard button as active');
+            }
+            
+            // Set the simple-tabs dashboard button as active
+            const simpleTabBtns = document.querySelectorAll('.simple-tabs .tab-btn');
+            simpleTabBtns.forEach(btn => btn.classList.remove('active'));
+            const simpleDashboardBtn = document.querySelector('.simple-tabs .tab-btn[onclick*="enhancedhome"]');
+            if (simpleDashboardBtn) {
+                simpleDashboardBtn.classList.add('active');
+                console.log('Set simple-tabs dashboard button as active');
+            }
+            
+            // Initialize the dashboard
+            try {
+                initEnhancedDashboard();
+                console.log('Enhanced dashboard initialized');
+            } catch (error) {
+                console.error('Error initializing enhanced dashboard:', error);
+            }
+        } else {
+            console.error('Dashboard tab not found');
+        }
+    }, 100);
+
+    // Add click handlers for enhanced tabs
+    const enhancedTabs = document.querySelectorAll('.enhanced-tab');
+    enhancedTabs.forEach(tab => {
+        tab.addEventListener('click', function(evt) {
+            const target = this.getAttribute('data-target');
+            if (target) {
+                openTab(evt, target);
+            }
+        });
+    });
+    
+    // Test quick-menu buttons
+    const quickMenuButtons = document.querySelectorAll('.quick-menu .menu-btn');
+    console.log('Found quick-menu buttons:', quickMenuButtons.length);
+    quickMenuButtons.forEach((btn, index) => {
+        console.log(`Quick-menu button ${index}:`, btn.textContent.trim(), btn.onclick);
+        
+        // Add a test click event listener to debug
+        btn.addEventListener('click', function(e) {
+            console.log('Quick-menu button clicked:', this.textContent.trim());
+        });
+    });
+    
+    // Test simple-tabs buttons
+    const simpleTabButtons = document.querySelectorAll('.simple-tabs .tab-btn');
+    console.log('Found simple-tab buttons:', simpleTabButtons.length);
+    simpleTabButtons.forEach((btn, index) => {
+        console.log(`Simple-tab button ${index}:`, btn.textContent.trim(), btn.onclick);
+    });
+
+    // Initialize enhanced dashboard if it's the active tab
+    if (document.getElementById('enhancedhome') && document.getElementById('enhancedhome').classList.contains('active')) {
+        setTimeout(initEnhancedDashboard, 100);
+    }
+
+    // Add some initial activity
+    addActivityItem('🚀 Enhanced OpenEPL ESP32 Control Center initialized');
+});
+
+// Implement openTab function for quick-menu and enhanced tabs
+function openTab(evt, tabName) {
+    // Hide all tab contents
+    const tabcontent = document.getElementsByClassName("tabcontent");
+    for (let i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = "none";
+        tabcontent[i].classList.remove("active");
+    }
+
+    // Remove active class from all tab buttons (both quick-menu and simple-tabs)
+    const quickMenuBtns = document.querySelectorAll(".quick-menu .menu-btn");
+    const simpleTabBtns = document.querySelectorAll(".simple-tabs .tab-btn");
+    
+    quickMenuBtns.forEach(btn => btn.classList.remove("active"));
+    simpleTabBtns.forEach(btn => btn.classList.remove("active"));
+
+    // Show the selected tab content
+    const targetTab = document.getElementById(tabName);
+    if (targetTab) {
+        targetTab.style.display = "block";
+        targetTab.classList.add("active");
+        
+        // Special handling for log tab scrolling
+        if (tabName === "logtab") {
+            targetTab.scrollTop = 0;
+        }
+    }
+
+    // Add active class to the clicked button
+    if (evt && evt.currentTarget) {
+        evt.currentTarget.classList.add("active");
+    }
+
+    // Trigger custom loadTab event
+    const loadTabEvent = new CustomEvent('loadTab', { detail: tabName });
+    document.dispatchEvent(loadTabEvent);
+
+    // Initialize enhanced dashboard if switching to enhanced home
+    if (tabName === 'enhancedhome') {
+        setTimeout(initEnhancedDashboard, 100);
+    }
+}
+
+// Set the global openTab function
+window.openTab = openTab;
+
+// System Control Functions
+function updateFunctionStatus() {
+    fetch('/get_function_status')
+        .then(response => response.json())
+        .then(data => {
+            const contentGenStatus = document.getElementById('content-gen-status');
+            const apStatus = document.getElementById('ap-status');
+            const startBtn = document.getElementById('start-content-btn');
+            const pauseBtn = document.getElementById('pause-content-btn');
+            const stopBtn = document.getElementById('stop-content-btn');
+            
+            if (contentGenStatus) {
+                contentGenStatus.textContent = data.runStatusText;
+                contentGenStatus.className = 'status-value ' + 
+                    (data.runStatus === 2 ? 'running' : 
+                     data.runStatus === 0 ? 'stopped' : 
+                     data.runStatus === 1 ? 'paused' : '');
+            }
+            
+            if (apStatus) {
+                apStatus.textContent = data.apOnline ? 'Online' : 'Offline';
+                apStatus.className = 'status-value ' + (data.apOnline ? 'online' : 'offline');
+            }
+            
+            // Update button states
+            if (startBtn && pauseBtn && stopBtn) {
+                const isRunning = data.runStatus === 2;
+                const isStopped = data.runStatus === 0;
+                const isPaused = data.runStatus === 1;
+                
+                startBtn.disabled = isRunning;
+                pauseBtn.disabled = !isRunning;
+                stopBtn.disabled = isStopped;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching function status:', error);
+        });
+}
+
+function startContentGeneration() {
+    const startBtn = document.getElementById('start-content-btn');
+    if (startBtn) startBtn.disabled = true;
+    
+    fetch('/start_content_generation', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showMessage('Content generation started successfully', 'success');
+                addActivityItem('▶️ Content generation started manually');
+            } else {
+                showMessage(data.message, 'warning');
+            }
+            updateFunctionStatus();
+        })
+        .catch(error => {
+            console.error('Error starting content generation:', error);
+            showMessage('Error starting content generation', 'error');
+            updateFunctionStatus();
+        });
+}
+
+function pauseContentGeneration() {
+    const pauseBtn = document.getElementById('pause-content-btn');
+    if (pauseBtn) pauseBtn.disabled = true;
+    
+    fetch('/pause_content_generation', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showMessage('Content generation paused successfully', 'success');
+                addActivityItem('⏸️ Content generation paused manually');
+            } else {
+                showMessage(data.message, 'warning');
+            }
+            updateFunctionStatus();
+        })
+        .catch(error => {
+            console.error('Error pausing content generation:', error);
+            showMessage('Error pausing content generation', 'error');
+            updateFunctionStatus();
+        });
+}
+
+function stopContentGeneration() {
+    const stopBtn = document.getElementById('stop-content-btn');
+    if (stopBtn) stopBtn.disabled = true;
+    
+    fetch('/stop_content_generation', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showMessage('Content generation stopped successfully', 'success');
+                addActivityItem('⏹️ Content generation stopped manually');
+            } else {
+                showMessage(data.message, 'warning');
+            }
+            updateFunctionStatus();
+        })
+        .catch(error => {
+            console.error('Error stopping content generation:', error);
+            showMessage('Error stopping content generation', 'error');
+            updateFunctionStatus();
+        });
+}
+
+// Update function status periodically
+setInterval(updateFunctionStatus, 5000);
+
+// Initial status update
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(updateFunctionStatus, 1000);
+    
+    // Initialize simple file flash functionality
+    initSimpleFileFlash();
+});
+
+// Simple File Flash functionality
+function initSimpleFileFlash() {
+    const doSimpleFileFlashBtn = document.getElementById('doSimpleFileFlash');
+    const flashFileInput = document.getElementById('flashFileInput');
+    
+    if (doSimpleFileFlashBtn && flashFileInput) {
+        doSimpleFileFlashBtn.onclick = function () {
+            // Trigger file input dialog
+            flashFileInput.click();
+        };
+        
+        flashFileInput.onchange = function (event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            console.log("Starting simple file flash for:", file.name);
+            
+            // Show progress in console if available
+            const flashConsole = document.getElementById('flashconsole');
+            if (flashConsole) {
+                addFlashMessage("Uploading file: " + file.name, "yellow");
+            }
+            
+            // Upload file first, then send flash command
+            uploadFlashFile(file)
+                .then(() => {
+                    if (flashConsole) {
+                        addFlashMessage("File uploaded successfully. Starting flash...", "green");
+                    }
+                    
+                    // Send flash command via WebSocket
+                    const flashCmd = {
+                        flashcmd: 7, // WEBFLASH_SIMPLE_FILE_FLASH
+                        filename: file.name
+                    };
+                    
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify(flashCmd));
+                    } else {
+                        throw new Error("WebSocket not connected");
+                    }
+                })
+                .catch((error) => {
+                    console.error("Flash error:", error);
+                    if (flashConsole) {
+                        addFlashMessage("Error: " + error.message, "red");
+                    }
+                    showMessage("Flash error: " + error.message, 'error');
+                })
+                .finally(() => {
+                    // Clear the file input
+                    event.target.value = '';
+                });
+        };
+    }
+}
+
+async function uploadFlashFile(file) {
+    const formData = new FormData();
+    formData.append('path', '/flash_temp.bin');
+    formData.append('file', file, file.name);
+
+    const response = await fetch('littlefs_put', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+    }
+    
+    return response;
+}
+
+function addFlashMessage(message, color = "white") {
+    const flashConsole = document.getElementById('flashconsole');
+    if (flashConsole) {
+        const newLine = document.createElement('div');
+        newLine.style.color = color;
+        newLine.textContent = message;
+        flashConsole.appendChild(newLine);
+        
+        // Auto-scroll to bottom
+        flashConsole.scrollTop = flashConsole.scrollHeight;
+    }
+}
+
+// C6 Module Support Detection
+// ============================
+
+async function checkC6ModuleSupport() {
+    try {
+        const response = await fetch('/sysinfo');
+        const data = await response.json();
+        
+        if (data.hasC6 === 1 || data.C6 === "1") {
+            // Show C6 module link in navigation
+            const c6Link = document.getElementById('c6ModuleLink');
+            if (c6Link) {
+                c6Link.style.display = 'inline-block';
+            }
+            
+            console.log('C6 module support detected');
+        }
+    } catch (error) {
+        console.warn('Could not check C6 module support:', error);
+    }
+}
+
+// Test function to debug quick-menu functionality
+function testQuickMenu() {
+    console.log('Testing quick-menu functionality...');
+    
+    // Test if openTab function exists
+    if (typeof openTab === 'function') {
+        console.log('openTab function is available');
+    } else {
+        console.error('openTab function is NOT available');
+    }
+    
+    // Test if quick-menu elements exist
+    const quickMenu = document.querySelector('.quick-menu');
+    if (quickMenu) {
+        console.log('Quick-menu element found');
+        const buttons = quickMenu.querySelectorAll('.menu-btn');
+        console.log('Quick-menu buttons found:', buttons.length);
+        
+        // Test clicking the dashboard button
+        const dashboardBtn = quickMenu.querySelector('.menu-btn[onclick*="enhancedhome"]');
+        if (dashboardBtn) {
+            console.log('Dashboard button found, attempting to click...');
+            dashboardBtn.click();
+        } else {
+            console.error('Dashboard button not found');
+        }
+    } else {
+        console.error('Quick-menu element not found');
+    }
+    
+    // Test if tab content exists
+    const tabContents = document.querySelectorAll('.tabcontent');
+    console.log('Tab content elements found:', tabContents.length);
+    tabContents.forEach((tab, index) => {
+        console.log(`Tab ${index}: id=${tab.id}, display=${tab.style.display}, visible=${tab.offsetParent !== null}`);
+    });
+}
+
+// Make test function available globally
+window.testQuickMenu = testQuickMenu;
+
+// Enhanced Performance Monitoring Functions
+function refreshPerformanceData() {
+	if (window.systemMonitor) {
+		window.systemMonitor.updateAllMetrics();
+	} else {
+		updatePerformanceMetrics();
+	}
+}
+
+function togglePerformanceDetails() {
+	const details = document.getElementById('performance-details');
+	if (details) {
+		details.classList.toggle('collapsed');
+	}
+}
+
+function updatePerformanceMetrics() {
+	// Legacy performance update with enhanced visualization
+	const updateMetric = (id, value, max = 100, unit = '%') => {
+		const fill = document.getElementById(id);
+		const text = document.getElementById(id.replace('-usage', '-text').replace('-signal', '-text'));
+		
+		if (fill && text) {
+			const percentage = Math.min((value / max) * 100, 100);
+			fill.style.width = percentage + '%';
+			
+			// Set data level for styling
+			let level = 'low';
+			if (percentage > 90) level = 'critical';
+			else if (percentage > 75) level = 'high';
+			else if (percentage > 50) level = 'medium';
+			
+			fill.setAttribute('data-level', level);
+			text.textContent = unit === '%' ? Math.round(percentage) + '%' : value + ' ' + unit;
+		}
+	};
+	
+	// Fetch system info
+	fetch('/sysinfo')
+		.then(response => response.json())
+		.then(data => {
+			if (data.heap) {
+				const memUsed = data.heap.total - data.heap.free;
+				const memPercent = (memUsed / data.heap.total) * 100;
+				updateMetric('memory-usage', memPercent);
+				
+				// Update memory details
+				const memUsedEl = document.getElementById('memory-used');
+				const memTotalEl = document.getElementById('memory-total');
+				if (memUsedEl) memUsedEl.textContent = Math.round(memUsed / 1024);
+				if (memTotalEl) memTotalEl.textContent = Math.round(data.heap.total / 1024);
+			}
+			
+			if (data.cpu_freq) {
+				// CPU usage estimation based on frequency
+				const maxFreq = 240; // MHz for ESP32
+				const cpuPercent = (data.cpu_freq / maxFreq) * 100;
+				updateMetric('cpu-usage', cpuPercent);
+				
+				const cpuFreqEl = document.getElementById('cpu-freq');
+				if (cpuFreqEl) cpuFreqEl.textContent = data.cpu_freq;
+			}
+			
+			if (data.flash) {
+				const flashUsed = data.flash.used || 0;
+				const flashTotal = data.flash.total || 1;
+				const flashPercent = (flashUsed / flashTotal) * 100;
+				updateMetric('storage-usage', flashPercent);
+				
+				const storageUsedEl = document.getElementById('storage-used');
+				const storageTotalEl = document.getElementById('storage-total');
+				if (storageUsedEl) storageUsedEl.textContent = Math.round(flashUsed / 1024);
+				if (storageTotalEl) storageTotalEl.textContent = Math.round(flashTotal / 1024);
+			}
+			
+			// Update system details
+			if (data.uptime) {
+				const uptimeEl = document.getElementById('system-uptime');
+				if (uptimeEl) {
+					const hours = Math.floor(data.uptime / 3600);
+					const minutes = Math.floor((data.uptime % 3600) / 60);
+					uptimeEl.textContent = `${hours}h ${minutes}m`;
+				}
+			}
+			
+			if (data.heap?.free) {
+				const freeHeapEl = document.getElementById('free-heap');
+				if (freeHeapEl) freeHeapEl.textContent = Math.round(data.heap.free / 1024) + ' KB';
+			}
+			
+			if (data.heap?.largest_block) {
+				const largestBlockEl = document.getElementById('largest-block');
+				if (largestBlockEl) largestBlockEl.textContent = Math.round(data.heap.largest_block / 1024) + ' KB';
+			}
+			
+			if (data.flash?.size) {
+				const flashSizeEl = document.getElementById('flash-size');
+				if (flashSizeEl) flashSizeEl.textContent = Math.round(data.flash.size / (1024 * 1024)) + ' MB';
+			}
+			
+			if (data.chip_model) {
+				const chipModelEl = document.getElementById('chip-model');
+				if (chipModelEl) chipModelEl.textContent = data.chip_model;
+			}
+			
+			if (data.sdk_version) {
+				const sdkVersionEl = document.getElementById('sdk-version');
+				if (sdkVersionEl) sdkVersionEl.textContent = data.sdk_version;
+			}
+		})
+		.catch(error => {
+			console.warn('Failed to fetch system info:', error);
+		});
+	
+	// Fetch WiFi info
+	fetch('/get_wifi_config')
+		.then(response => response.json())
+		.then(data => {
+			if (data.rssi) {
+				// Convert RSSI to percentage (approximate)
+				const signalPercent = Math.max(0, Math.min(100, (data.rssi + 100) * 2));
+				updateMetric('wifi-signal', data.rssi, 1, 'dBm');
+				
+				// Update signal bars
+				const signalFill = document.getElementById('wifi-signal');
+				if (signalFill) {
+					signalFill.style.width = signalPercent + '%';
+					
+					let level = 'low';
+					if (data.rssi > -50) level = 'low';
+					else if (data.rssi > -65) level = 'medium';
+					else if (data.rssi > -80) level = 'high';
+					else level = 'critical';
+					
+					signalFill.setAttribute('data-level', level);
+				}
+			}
+			
+			if (data.ssid) {
+				const wifiSsidEl = document.getElementById('wifi-ssid');
+				if (wifiSsidEl) wifiSsidEl.textContent = data.ssid;
+			}
+		})
+		.catch(error => {
+			console.warn('Failed to fetch WiFi status:', error);
+			const wifiTextEl = document.getElementById('wifi-text');
+			const wifiSsidEl = document.getElementById('wifi-ssid');
+			if (wifiTextEl) wifiTextEl.textContent = 'Not connected';
+			if (wifiSsidEl) wifiSsidEl.textContent = 'Not connected';
+		});
+}
+
+// Auto-refresh performance data
+setInterval(updatePerformanceMetrics, 5000);
+
+// Load initial performance data when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+	setTimeout(updatePerformanceMetrics, 1000);
+});

@@ -1,1 +1,0 @@
-idf.py -p COM21 flash monitor

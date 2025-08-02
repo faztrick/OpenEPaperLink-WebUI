@@ -466,9 +466,9 @@ void webFlasherTask(void* parameter) {
 }
 
 void handleWSdata(uint8_t* data, size_t len, AsyncWebSocketClient* client) {
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, (const char*)data);
-    JsonDocument response;
+    DynamicJsonDocument response(2048);
     response["flashstatus"] = 1;
 
     if (error) {
@@ -562,3 +562,5 @@ void handleWSdata(uint8_t* data, size_t len, AsyncWebSocketClient* client) {
 }
 
 #endif
+
+

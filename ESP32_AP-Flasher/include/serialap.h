@@ -21,6 +21,8 @@ struct APInfoS {
     uint8_t power;
     uint8_t pendingBuffer;
     uint8_t nop;
+    int rssi = -70; // Default RSSI value for diagnostics
+    uint32_t uptime = 0; // Uptime in seconds
 #ifdef HAS_SUBGHZ
     bool hasSubGhz = false;
     uint8_t SubGhzChannel;

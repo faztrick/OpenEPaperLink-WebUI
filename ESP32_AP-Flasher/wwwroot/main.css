@@ -22,8 +22,7 @@ body {
 header {
 	background-color: #646260;
 	z-index: 999;
-	position: sticky;
-	top: 0px;
+	position: static;
 	width: 100%;
 }
 
@@ -35,7 +34,8 @@ nav>div {
 	display: flex;
 	gap: 20px;
 	padding: 10px;
-	background-color: white;
+	background-color: #23272f;
+	color: #fff;
 }
 
 nav label {
@@ -47,8 +47,7 @@ nav label {
 
 footer {
 	padding: 5px;
-	position: fixed;
-	bottom: 0;
+	position: static;
 	width: 100%;
 	background-color: white;
 
@@ -79,7 +78,8 @@ h3 {
 }
 
 .tablinks {
-	background-color: #f2f2f2;
+	background-color: transparent;
+	color: #fff;
 	padding: 5px 10px;
 	border: none;
 	cursor: pointer;
@@ -87,12 +87,14 @@ h3 {
 	transition: all 0.2s ease-in-out;
 
 	&:hover {
-		background-color: #ddd;
+		background-color: #444;
+		color: #fff;
 	}
 }
 
 .tab-container .active {
-	background-color: #ccc;
+	background-color: #444;
+	color: #fff;
 	margin-top: 10px;
 	margin-bottom: -10px;
 	padding-bottom: 0px;
@@ -112,8 +114,7 @@ label {
 }
 
 .container {
-	padding-bottom: 20px;
-	;
+	padding-bottom: 0;
 }
 
 #hometab {

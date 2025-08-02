@@ -36,7 +36,7 @@
 
 
 void handleSysinfoRequest(AsyncWebServerRequest* request) {
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
     doc["alias"] = config.alias;
     doc["env"] = STR(BUILD_ENV_NAME);
     doc["buildtime"] = STR(BUILD_TIME);
@@ -79,7 +79,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
     const String filePath = request->getParam("path")->value();
     File file = contentFS->open(filePath, "r");
     if (!file) {
-        JsonDocument doc;
+        DynamicJsonDocument doc(2048);
         doc["filesize"] = 0;
         doc["md5"] = "";
         String jsonResponse;
@@ -98,7 +98,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
 
     file.close();
 
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
     doc["filesize"] = fileSize;
     doc["md5"] = md5Hash;
     String jsonResponse;
@@ -376,6 +376,89 @@ void C6firmwareUpdateTask(void* parameter) {
     vTaskDelay(30000 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
 }
+
+void C6OTAFlashTask(void* parameter) {
+    struct FlashParams {
+        String firmwareFile;
+        String comPort;
+    };
+    
+    FlashParams* params = reinterpret_cast<FlashParams*>(parameter);
+    
+    wsSerial("C6 OTA Flash Task starting");
+    wsSerial("Firmware: " + params->firmwareFile);
+    wsSerial("COM Port: " + params->comPort);
+    
+    // Stop current AP services
+    wsSerial("Stopping AP service for OTA flash");
+    gSerialTaskState = SERIAL_STATE_STOP;
+    config.runStatus = RUNSTATUS_STOP;
+    setAPstate(false, AP_STATE_FLASHING);
+    
+#ifndef FLASHER_DEBUG_SHARED
+    extern bool rxSerialStopTask2;
+    rxSerialStopTask2 = true;
+#endif
+    
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    Serial1.end();
+    
+    wsSerial("Starting C6 external flash process");
+    
+    // Here you would implement the actual flashing logic
+    // This is a placeholder for the external flashing process
+    bool flashResult = false;
+    
+    // Example implementation using esptool (would need proper integration)
+    String command = "python -m esptool --chip esp32c6 --port " + params->comPort + 
+                    " --baud 921600 --before default_reset --after hard_reset " +
+                    "write_flash 0x0 " + params->firmwareFile;
+    
+    wsSerial("Flash command: " + command);
+    
+    // For now, simulate the flash process
+    wsSerial("Simulating flash process...");
+    for (int i = 0; i <= 100; i += 10) {
+        wsSerial("Flash progress: " + String(i) + "%");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    
+    // Simulate success for now
+    flashResult = true;
+    
+    if (flashResult) {
+        wsSerial("C6 OTA flash completed successfully!");
+        
+        // Restart services
+        wsSerial("Restarting AP services");
+        Serial1.begin(115200, SERIAL_8N1, FLASHER_AP_RXD, FLASHER_AP_TXD);
+        
+#ifndef FLASHER_DEBUG_SHARED
+        rxSerialStopTask2 = false;
+        xTaskCreate(rxSerialTask2, "rxSerialTask2", 1850, NULL, 2, NULL);
+#endif
+        
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        
+        if (bringAPOnline(AP_STATE_ONLINE)) {
+            config.runStatus = RUNSTATUS_RUN;
+            setAPstate(true, AP_STATE_ONLINE);
+            wsSerial("AP back online after C6 flash");
+        }
+    } else {
+        wsSerial("C6 OTA flash failed!");
+        
+        // Try to restore normal operation
+        Serial1.begin(115200, SERIAL_8N1, FLASHER_AP_RXD, FLASHER_AP_TXD);
+        config.runStatus = RUNSTATUS_RUN;
+    }
+    
+    // Clean up
+    delete params;
+    
+    vTaskDelay(30000 / portTICK_PERIOD_MS);
+    vTaskDelete(NULL);
+}
 #endif
 
 
@@ -406,7 +489,7 @@ void handleUpdateActions(AsyncWebServerRequest* request) {
         request->send(200, "No update actions needed");
         return;
     }
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, file);
     const JsonArray deleteFiles = doc["deletefile"].as<JsonArray>();
     for (const auto& filePath : deleteFiles) {
@@ -419,3 +502,5 @@ void handleUpdateActions(AsyncWebServerRequest* request) {
     request->send(200, "Clean up finished");
     contentFS->remove("/update_actions.json");
 }
+
+

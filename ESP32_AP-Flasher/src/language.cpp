@@ -29,8 +29,8 @@ void updateLanguageFromConfig() {
         return;
     }
 
-    JsonDocument doc;
-    JsonDocument filter;
+    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument filter(2048);
     filter[String(currentLanguage)] = true;
     const DeserializationError error = deserializeJson(doc, file, DeserializationOption::Filter(filter));
     file.close();
@@ -51,4 +51,7 @@ void updateLanguageFromConfig() {
         languageDateFormat[i] = languageObject["date_format"][i].as<String>();
     }
 }
+
+
+
 

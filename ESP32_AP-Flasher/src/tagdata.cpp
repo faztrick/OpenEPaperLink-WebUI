@@ -20,7 +20,7 @@ void TagData::loadParsers(const String& filename) {
     Serial.println("Reading parsers from file");
 
     if (file.find("[")) {
-        JsonDocument doc;
+        DynamicJsonDocument doc(2048);
         bool parsing = true;
         while (parsing) {
             DeserializationError err = deserializeJson(doc, file);
@@ -149,3 +149,6 @@ void TagData::parse(const uint8_t src[8], const size_t id, const uint8_t* data, 
 }
 
 #endif
+
+
+

@@ -190,3 +190,4 @@ inline String formatString(char buffer[bufSize], const char *format, ...) {
 #define minutes(m) seconds(m * 60)
 /// @brief Converts hours to milliseconds
 #define hours(m) minutes(m * 60)
+

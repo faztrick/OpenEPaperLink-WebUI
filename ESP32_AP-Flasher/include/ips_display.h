@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
+#ifdef HAS_TFT
 #include <TFT_eSPI.h>
+#endif
 
 #ifdef HAS_LILYGO_TPANEL
 

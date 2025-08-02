@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <HTTPClient.h>
+#include <WiFi.h>
 #include <MD5Builder.h>
 #include <time.h>
 
@@ -833,7 +834,7 @@ bool checkMirror(struct tagRecord* taginfo, struct pendingData* pending) {
     for (int16_t c = 0; c < tagDB.size(); c++) {
         tagRecord* taginfo2 = tagDB.at(c);
         if (taginfo2->contentMode == 20 && taginfo2->version == 0) {
-            JsonDocument doc;
+            DynamicJsonDocument doc(2048);
             deserializeJson(doc, taginfo2->modeConfigJson);
             JsonObject cfgobj = doc.as<JsonObject>();
             uint8_t mac[8] = {0};
@@ -1027,3 +1028,6 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
 
     return true;
 }
+
+
+

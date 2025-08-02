@@ -67,7 +67,7 @@ bool hex2mac(const String& hexString, uint8_t* mac) {
 }
 
 String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
     JsonArray tags = doc["tags"].to<JsonArray>();
 
     for (uint32_t c = startPos; c < tagDB.size(); ++c) {
@@ -75,7 +75,7 @@ String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
 
         const bool select = !mac || memcmp(taginfo->mac, mac, 8) == 0;
         if (select && taginfo->version == 0) {
-            JsonObject tag = tags.add<JsonObject>();
+            JsonObject tag = tags.createNestedObject();
             fillNode(tag, taginfo);
             if (measureJson(doc) > 5000) {
                 doc["continu"] = c + 1;
@@ -125,7 +125,7 @@ void fillNode(JsonObject& tag, const tagRecord* taginfo) {
 }
 
 void saveDB(const String& filename) {
-    JsonDocument doc;
+    DynamicJsonDocument doc(2048);
 
     const long t = millis();
 
@@ -157,7 +157,7 @@ void saveDB(const String& filename) {
         doc.clear();
 
         if (taginfo->version == 0) {
-            JsonObject tag = doc.add<JsonObject>();
+            JsonObject tag = doc.createNestedObject();
             fillNode(tag, taginfo);
             if (c > 0) {
                 file.write(',');
@@ -187,7 +187,7 @@ bool loadDB(const String& filename) {
     bool parsing = true;
 
     if (readfile.find("[")) {
-        JsonDocument doc;
+        DynamicJsonDocument doc(2048);
         while (parsing) {
             DeserializationError err = deserializeJson(doc, readfile);
             if (!err) {
@@ -309,7 +309,7 @@ void clearPending(tagRecord* taginfo) {
 }
 
 void initAPconfig() {
-    JsonDocument APconfig;
+    DynamicJsonDocument APconfig(2048);
     File configFile = contentFS->open("/current/apconfig.json", "r");
     if (configFile) {
         DeserializationError error = deserializeJson(APconfig, configFile);
@@ -354,7 +354,7 @@ void initAPconfig() {
 void saveAPconfig() {
     xSemaphoreTake(fsMutex, portMAX_DELAY);
     fs::File configFile = contentFS->open("/current/apconfig.json", "w");
-    JsonDocument APconfig;
+    DynamicJsonDocument APconfig(2048);
     APconfig["channel"] = config.channel;
     APconfig["subghzchannel"] = config.subghzchannel;
     APconfig["alias"] = config.alias;
@@ -391,7 +391,7 @@ HwType getHwType(const uint8_t id) {
         File jsonFile = contentFS->open(filename, "r");
 
         if (jsonFile) {
-            JsonDocument filter;
+            DynamicJsonDocument filter(2048);
             filter["width"] = true;
             filter["height"] = true;
             filter["rotatebuffer"] = true;
@@ -401,7 +401,7 @@ HwType getHwType(const uint8_t id) {
             filter["g5_compression"] = true;
             filter["highlight_color"] = true;
             filter["colortable"] = true;
-            JsonDocument doc;
+            DynamicJsonDocument doc(2048);
             DeserializationError error = deserializeJson(doc, jsonFile, DeserializationOption::Filter(filter));
             jsonFile.close();
             if (error) {
@@ -520,3 +520,5 @@ void popTagInfo(const uint8_t mac[8]) {
         }
     }
 }
+
+
