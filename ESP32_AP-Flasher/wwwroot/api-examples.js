@@ -4,7 +4,7 @@
  */
 
 // Example: Optimized tag management
-class TagManager {
+class ExampleTagManager {
     constructor(apiManager) {
         this.api = apiManager;
         this.cache = new Map();
@@ -360,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Wait for API manager to be available
     const initializeManagers = () => {
         if (window.apiManager) {
-            window.tagManager = new TagManager(window.apiManager);
+            window.exampleTagManager = new ExampleTagManager(window.apiManager);
             window.systemMonitor = new SystemMonitor(window.apiManager);
             window.configManager = new ConfigManager(window.apiManager);
             window.fileManager = new FileManager(window.apiManager);
@@ -377,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Export for module use
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        TagManager,
+        ExampleTagManager,
         SystemMonitor,
         ConfigManager,
         FileManager

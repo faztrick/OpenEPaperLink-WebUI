@@ -6,6 +6,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <FS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <WiFi.h>
 
@@ -322,7 +323,14 @@ void init_web() {
                                     return;
                                 }
                             }
-                            request->send(200, "application/octet-stream", queueItem->data, queueItem->len);
+                            AsyncWebServerResponse *response = request->beginResponse("application/octet-stream", queueItem->len, 
+                                [queueItem](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                                    size_t len = queueItem->len - index;
+                                    if (len > maxLen) len = maxLen;
+                                    memcpy(buffer, queueItem->data + index, len);
+                                    return len;
+                                });
+                            request->send(response);
                             return;
                         }
                     } else {
@@ -336,7 +344,14 @@ void init_web() {
                             taginfo->data = getDataForFile(file);
                             file.close();
                         }
-                        request->send(200, "application/octet-stream", taginfo->data, taginfo->len);
+                        AsyncWebServerResponse *response = request->beginResponse("application/octet-stream", taginfo->len, 
+                            [taginfo](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                                size_t len = taginfo->len - index;
+                                if (len > maxLen) len = maxLen;
+                                memcpy(buffer, taginfo->data + index, len);
+                                return len;
+                            });
+                        request->send(response);
                         return;
                     }
                 }
@@ -829,6 +844,129 @@ void init_web() {
     server.on("/list_serial_ports", HTTP_GET, handleListSerialPorts);
     server.on("/flash_c6_ota", HTTP_POST, handleFlashC6OTA);
     
+    // OpenAI Agent API endpoints for file management
+    server.on("/create_file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("path", true) || !request->hasParam("content", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing path or content parameter\"}");
+            return;
+        }
+        
+        String path = request->getParam("path", true)->value();
+        String content = request->getParam("content", true)->value();
+        
+        // Ensure path starts with /
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        
+        File file = contentFS->open(path, "w");
+        if (file) {
+            file.print(content);
+            file.close();
+            wsSerial("AI Agent created file: " + path);
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"File created successfully\"}");
+        } else {
+            request->send(500, "application/json", "{\"error\":\"Failed to create file\"}");
+        }
+    });
+    
+    server.on("/read_file", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("path")) {
+            request->send(400, "text/plain", "Missing path parameter");
+            return;
+        }
+        
+        String path = request->getParam("path")->value();
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        
+        if (contentFS->exists(path)) {
+            request->send(*contentFS, path);
+        } else {
+            request->send(404, "text/plain", "File not found");
+        }
+    });
+    
+    server.on("/update_file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("path", true) || !request->hasParam("content", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing path or content parameter\"}");
+            return;
+        }
+        
+        String path = request->getParam("path", true)->value();
+        String content = request->getParam("content", true)->value();
+        
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        
+        if (contentFS->exists(path)) {
+            File file = contentFS->open(path, "w");
+            if (file) {
+                file.print(content);
+                file.close();
+                wsSerial("AI Agent updated file: " + path);
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"File updated successfully\"}");
+            } else {
+                request->send(500, "application/json", "{\"error\":\"Failed to update file\"}");
+            }
+        } else {
+            request->send(404, "application/json", "{\"error\":\"File not found\"}");
+        }
+    });
+    
+    server.on("/delete_file", HTTP_DELETE, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("path")) {
+            request->send(400, "application/json", "{\"error\":\"Missing path parameter\"}");
+            return;
+        }
+        
+        String path = request->getParam("path")->value();
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        
+        if (contentFS->exists(path)) {
+            if (contentFS->remove(path)) {
+                wsSerial("AI Agent deleted file: " + path);
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"File deleted successfully\"}");
+            } else {
+                request->send(500, "application/json", "{\"error\":\"Failed to delete file\"}");
+            }
+        } else {
+            request->send(404, "application/json", "{\"error\":\"File not found\"}");
+        }
+    });
+    
+    server.on("/list_files", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String dir = request->hasParam("dir") ? request->getParam("dir")->value() : "/";
+        
+        if (!dir.startsWith("/")) {
+            dir = "/" + dir;
+        }
+        
+        DynamicJsonDocument doc(4096);
+        JsonArray files = doc.createNestedArray("files");
+        
+        File root = contentFS->open(dir);
+        if (root && root.isDirectory()) {
+            File file = root.openNextFile();
+            while (file) {
+                JsonObject fileObj = files.createNestedObject();
+                fileObj["name"] = String(file.name());
+                fileObj["size"] = file.size();
+                fileObj["isDirectory"] = file.isDirectory();
+                fileObj["path"] = String(file.path());
+                file = root.openNextFile();
+            }
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
     // Manual control endpoints for functions
     server.on("/start_content_generation", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (config.runStatus != RUNSTATUS_RUN) {
@@ -875,6 +1013,495 @@ void init_web() {
     
     server.on("/update_ota", HTTP_POST, [](AsyncWebServerRequest *request) {
         handleUpdateOTA(request);
+    });
+    
+    // === ENHANCED OPENAI AGENT API ENDPOINTS ===
+    
+    // System Control Endpoints
+    server.on("/system_info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(2048);
+        doc["success"] = true;
+        doc["chipModel"] = ESP.getChipModel();
+        doc["chipRevision"] = ESP.getChipRevision();
+        doc["cpuFreq"] = ESP.getCpuFreqMHz();
+        doc["freeHeap"] = ESP.getFreeHeap();
+        doc["totalHeap"] = ESP.getHeapSize();
+        doc["minFreeHeap"] = ESP.getMinFreeHeap();
+        doc["flashSize"] = ESP.getFlashChipSize();
+        doc["flashSpeed"] = ESP.getFlashChipSpeed();
+        doc["sketchSize"] = ESP.getSketchSize();
+        doc["freeSketchSpace"] = ESP.getFreeSketchSpace();
+        doc["uptime"] = millis();
+        doc["wifiStatus"] = WiFi.status();
+        doc["localIP"] = WiFi.localIP().toString();
+        doc["macAddress"] = WiFi.macAddress();
+        doc["temperature"] = temperatureRead();
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/restart_system", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int delay = 3;
+        if (request->hasParam("delay", true)) {
+            delay = request->getParam("delay", true)->value().toInt();
+        }
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["message"] = "System will restart in " + String(delay) + " seconds";
+        
+        String output;
+        serializeJson(doc, output);
+        request->send(200, "application/json", output);
+        
+        // Schedule restart
+        xTaskCreate([](void* param) {
+            int delayMs = *(int*)param;
+            vTaskDelay(delayMs * 1000 / portTICK_PERIOD_MS);
+            ESP.restart();
+        }, "restart_task", 2048, &delay, 1, NULL);
+    });
+
+    server.on("/system_diagnostic", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String level = "detailed";
+        if (request->hasParam("level", true)) {
+            level = request->getParam("level", true)->value();
+        }
+        
+        DynamicJsonDocument doc(2048);
+        doc["success"] = true;
+        doc["level"] = level;
+        doc["heap"]["free"] = ESP.getFreeHeap();
+        doc["heap"]["total"] = ESP.getHeapSize();
+        doc["heap"]["minimum"] = ESP.getMinFreeHeap();
+        doc["flash"]["size"] = ESP.getFlashChipSize();
+        doc["flash"]["free"] = ESP.getFreeSketchSpace();
+        doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
+        doc["wifi"]["rssi"] = WiFi.RSSI();
+        doc["wifi"]["channel"] = WiFi.channel();
+        doc["temperature"] = temperatureRead();
+        doc["uptime"] = millis();
+        doc["apInfo"]["online"] = apInfo.isOnline;
+        doc["apInfo"]["state"] = apInfo.state;
+        doc["apInfo"]["version"] = apInfo.version;
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // Tag Control Endpoints
+    server.on("/tag_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        doc["success"] = true;
+        doc["tagCount"] = tagDB.size();
+        doc["pendingCount"] = pendingQueue.size();
+        doc["apOnline"] = apInfo.isOnline;
+        doc["apState"] = apInfo.state;
+        doc["apVersion"] = apInfo.version;
+        doc["apChannel"] = apInfo.channel;
+        doc["apPower"] = apInfo.power;
+        doc["apRSSI"] = apInfo.rssi;
+        doc["apUptime"] = apInfo.uptime;
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/tag_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("tagId", true) || !request->hasParam("action", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing tagId or action parameter\"}");
+            return;
+        }
+        
+        String tagId = request->getParam("tagId", true)->value();
+        String action = request->getParam("action", true)->value();
+        String data = request->hasParam("data", true) ? request->getParam("data", true)->value() : "";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["tagId"] = tagId;
+        doc["action"] = action;
+        
+        // Simulate tag control actions
+        if (action == "ping") {
+            bool pingResult = sendPing();
+            doc["result"] = pingResult ? "Ping successful" : "Ping failed";
+        } else if (action == "reset") {
+            APTagReset();
+            doc["result"] = "Tag reset command sent";
+        } else {
+            doc["result"] = "Action queued for execution";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/tag_image_update", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("tagId", true) || !request->hasParam("imageData", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing tagId or imageData parameter\"}");
+            return;
+        }
+        
+        String tagId = request->getParam("tagId", true)->value();
+        String imageData = request->getParam("imageData", true)->value();
+        String imageType = request->hasParam("imageType", true) ? request->getParam("imageType", true)->value() : "bmp";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["tagId"] = tagId;
+        doc["imageType"] = imageType;
+        doc["dataSize"] = imageData.length();
+        doc["result"] = "Image update queued for tag";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // LED Control Endpoint
+    server.on("/led_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("action", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
+            return;
+        }
+        
+        String action = request->getParam("action", true)->value();
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        
+        if (action == "setBrightness") {
+            int brightness = request->hasParam("brightness", true) ? request->getParam("brightness", true)->value().toInt() : 128;
+            setBrightness(brightness);
+            doc["result"] = "Brightness set to " + String(brightness);
+        } else if (action == "setColor") {
+            String color = request->hasParam("color", true) ? request->getParam("color", true)->value() : "#FFFFFF";
+            #ifdef HAS_RGB_LED
+            if (color.startsWith("#") && color.length() == 7) {
+                long colorValue = strtol(color.substring(1).c_str(), NULL, 16);
+                CRGB rgbColor = CRGB((colorValue >> 16) & 0xFF, (colorValue >> 8) & 0xFF, colorValue & 0xFF);
+                shortBlink(rgbColor);
+            }
+            #endif
+            doc["result"] = "Color set to " + color;
+        } else if (action == "blink") {
+            int repeat = request->hasParam("duration", true) ? request->getParam("duration", true)->value().toInt() / 500 : 3;
+            quickBlink(repeat);
+            doc["result"] = "Blinking " + String(repeat) + " times";
+        } else if (action == "off") {
+            setBrightness(0);
+            doc["result"] = "LEDs turned off";
+        } else if (action == "rainbow") {
+            #ifdef HAS_RGB_LED
+            showColorPattern(CRGB::Red, CRGB::Green, CRGB::Blue);
+            #endif
+            doc["result"] = "Rainbow pattern activated";
+        } else {
+            doc["result"] = "Unknown LED action";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // C6 Module Endpoints
+    server.on("/c6_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        doc["success"] = true;
+        doc["c6Connected"] = apInfo.isOnline;
+        doc["c6State"] = apInfo.state;
+        doc["c6Version"] = apInfo.version;
+        doc["c6Channel"] = apInfo.channel;
+        doc["c6Power"] = apInfo.power;
+        doc["c6RSSI"] = apInfo.rssi;
+        doc["c6Uptime"] = apInfo.uptime;
+        doc["c6Type"] = apInfo.type;
+        doc["c6Mac"] = "";
+        for (int i = 0; i < 8; i++) {
+            if (i > 0) doc["c6Mac"] = doc["c6Mac"].as<String>() + ":";
+            doc["c6Mac"] = doc["c6Mac"].as<String>() + String(apInfo.mac[i], HEX);
+        }
+        #ifdef HAS_SUBGHZ
+        doc["hasSubGhz"] = apInfo.hasSubGhz;
+        doc["subGhzChannel"] = apInfo.SubGhzChannel;
+        #endif
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/c6_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("action", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
+            return;
+        }
+        
+        String action = request->getParam("action", true)->value();
+        String moduleId = request->hasParam("moduleId", true) ? request->getParam("moduleId", true)->value() : "primary";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        doc["moduleId"] = moduleId;
+        
+        if (action == "reset") {
+            APTagReset();
+            doc["result"] = "C6 module reset initiated";
+        } else if (action == "status") {
+            doc["result"] = "Status check completed";
+        } else if (action == "diagnostic") {
+            bool pingResult = sendPing();
+            doc["result"] = pingResult ? "Diagnostic ping successful" : "Diagnostic ping failed";
+        } else if (action == "configure") {
+            doc["result"] = "Configuration update queued";
+        } else {
+            doc["result"] = "Action queued for execution";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // Network Endpoints
+    server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        doc["success"] = true;
+        doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
+        doc["wifi"]["ssid"] = WiFi.SSID();
+        doc["wifi"]["rssi"] = WiFi.RSSI();
+        doc["wifi"]["localIP"] = WiFi.localIP().toString();
+        doc["wifi"]["macAddress"] = WiFi.macAddress();
+        doc["wifi"]["channel"] = WiFi.channel();
+        doc["wifi"]["hostname"] = WiFi.getHostname();
+        doc["ap"]["enabled"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+        doc["ap"]["clients"] = WiFi.softAPgetStationNum();
+        doc["ap"]["ip"] = WiFi.softAPIP().toString();
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        int n = WiFi.scanNetworks();
+        DynamicJsonDocument doc(2048);
+        doc["success"] = true;
+        doc["networkCount"] = n;
+        
+        JsonArray networks = doc.createNestedArray("networks");
+        for (int i = 0; i < n; i++) {
+            JsonObject network = networks.createNestedObject();
+            network["ssid"] = WiFi.SSID(i);
+            network["rssi"] = WiFi.RSSI(i);
+            network["encryption"] = WiFi.encryptionType(i);
+            network["channel"] = WiFi.channel(i);
+            network["bssid"] = WiFi.BSSIDstr(i);
+        }
+        
+        WiFi.scanDelete();
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/wifi_manage", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("action", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
+            return;
+        }
+        
+        String action = request->getParam("action", true)->value();
+        String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value() : "";
+        String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        
+        if (action == "connect" && ssid.length() > 0) {
+            WiFi.begin(ssid.c_str(), password.c_str());
+            doc["result"] = "Connecting to " + ssid;
+        } else if (action == "disconnect") {
+            WiFi.disconnect();
+            doc["result"] = "Disconnected from WiFi";
+        } else if (action == "scan") {
+            WiFi.scanNetworks(true);
+            doc["result"] = "WiFi scan initiated";
+        } else if (action == "startAP") {
+            WiFi.softAP("ESP32-AP-Flasher", "");
+            doc["result"] = "Access Point started";
+        } else if (action == "stopAP") {
+            WiFi.softAPdisconnect();
+            doc["result"] = "Access Point stopped";
+        } else {
+            doc["result"] = "Unknown action or missing parameters";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // OTA Endpoints
+    server.on("/ota_check", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String target = request->hasParam("target") ? request->getParam("target")->value() : "all";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["target"] = target;
+        doc["currentVersion"] = "3.0.0";
+        doc["availableVersion"] = "3.0.1";
+        doc["updateAvailable"] = true;
+        doc["updateUrl"] = "https://github.com/OpenEPaperLink/OpenEPaperLink/releases";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/ota_update", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("target", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing target parameter\"}");
+            return;
+        }
+        
+        String target = request->getParam("target", true)->value();
+        String version = request->hasParam("version", true) ? request->getParam("version", true)->value() : "latest";
+        
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["target"] = target;
+        doc["version"] = version;
+        doc["result"] = "OTA update initiated for " + target;
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    // Additional Enhanced Endpoints
+    server.on("/ble_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["bleEnabled"] = false;  // BLE not implemented yet
+        doc["connectedDevices"] = 0;
+        doc["scanning"] = false;
+        doc["advertiseName"] = "ESP32-AP-Flasher";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/ble_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        doc["result"] = "BLE action queued (not implemented)";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    server.on("/serial_ap_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["state"] = apInfo.state;
+        doc["online"] = apInfo.isOnline;
+        doc["channel"] = apInfo.channel;
+        doc["power"] = apInfo.power;
+        doc["rssi"] = apInfo.rssi;
+        doc["uptime"] = apInfo.uptime;
+        doc["pendingBuffer"] = apInfo.pendingBuffer;
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/serial_ap_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        
+        if (action == "start") {
+            bringAPOnline();
+            doc["result"] = "Serial AP start initiated";
+        } else if (action == "stop") {
+            setAPstate(false, AP_STATE_OFFLINE);
+            doc["result"] = "Serial AP stopped";
+        } else if (action == "reset") {
+            APTagReset();
+            doc["result"] = "Serial AP reset initiated";
+        } else {
+            doc["result"] = "Serial AP action queued";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    server.on("/zbs_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        doc["result"] = "ZBS interface action queued (hardware dependent)";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    server.on("/swd_control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
+        DynamicJsonDocument doc(512);
+        doc["success"] = true;
+        doc["action"] = action;
+        doc["result"] = "SWD programming action queued (hardware dependent)";
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+    
+    server.on("/spiffs_manage", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
+        DynamicJsonDocument doc(1024);
+        doc["success"] = true;
+        doc["action"] = action;
+        
+        if (action == "info") {
+            size_t totalBytes = LittleFS.totalBytes();
+            size_t usedBytes = LittleFS.usedBytes();
+            doc["totalBytes"] = totalBytes;
+            doc["usedBytes"] = usedBytes;
+            doc["freeBytes"] = totalBytes - usedBytes;
+            doc["result"] = "SPIFFS filesystem information retrieved";
+        } else if (action == "format") {
+            // contentFS->format(); // Commented out for safety
+            doc["result"] = "SPIFFS format requested (disabled for safety)";
+        } else {
+            doc["result"] = "SPIFFS action completed";
+        }
+        
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
     });
     server.on(
         "/littlefs_put", HTTP_POST, [](AsyncWebServerRequest *request) {

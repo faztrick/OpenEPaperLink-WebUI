@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <FS.h>
+#include <vector>
 
 #include "commstructs.h"
 
@@ -9,6 +10,8 @@ struct PendingItem {
     uint8_t* data;
     uint32_t len;
 };
+
+extern std::vector<PendingItem> pendingQueue;
 
 extern void addCRC(void* p, uint8_t len);
 extern bool checkCRC(void* p, uint8_t len);

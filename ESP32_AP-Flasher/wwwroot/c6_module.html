@@ -14,6 +14,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/vnd.icon" href="favicon.ico">
+    
+    <!-- Core JavaScript modules -->
+    <script src="constants.js?3.0" defer></script>
+    <script src="utils.js?3.0" defer></script>
+    <script src="app-core.js?3.0" defer></script>
+    <script src="ui-components.js?3.0" defer></script>
+    <!-- Feature-specific modules -->
+    <script src="main.js?2.75" defer></script>
+    <script src="universal-menu.js" defer></script>
+    <script src="c6_module.js"></script>
+    <script src="openai-agent-enhanced.js" defer></script>
+    
     <style>
         .module-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -90,6 +102,13 @@
         }
         .btn-danger:hover {
             background-color: #c82333;
+        }
+        .btn-info {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .btn-info:hover {
+            background-color: #138496;
         }
         .info-grid {
             display: grid;
@@ -305,7 +324,7 @@
                 <div class="logo-section">
                     <div class="logo-icon">🔧</div>
                     <div class="logo-text">
-                        <h1>OpenEPL ESP32-C6 Module</h1>
+                        <h1>OpenEPL ESP32-C6 Elecrow Module</h1>
                     </div>
                 </div>
             </div>
@@ -339,16 +358,17 @@
 
     <div class="container">
         <div class="module-header">
-            <h1>🔧 ESP32-C6 Module Management</h1>
-            <p>Configure and manage your ESP32-C6 wireless module</p>
+            <h1>🔧 ESP32-C6 Elecrow Wireless Module</h1>
+            <p>Configure and manage your ESP32-C6 Elecrow wireless module for OpenEPaperLink</p>
+            <p><small>Latest firmware: ESP32_S3_C6_NANO_AP from <a href="https://github.com/OpenEPaperLink/OpenEPaperLink/releases" target="_blank" style="color: white;">OpenEPaperLink GitHub</a></small></p>
         </div>
 
         <div class="tabs">
-            <div class="tab active" onclick="showTab('overview')">Overview</div>
-            <div class="tab" onclick="showTab('firmware')">Firmware</div>
-            <div class="tab" onclick="showTab('otaflash')">OTA Flash</div>
-            <div class="tab" onclick="showTab('settings')">Settings</div>
-            <div class="tab" onclick="showTab('diagnostics')">Diagnostics</div>
+            <div class="tab active" onclick="showTab('overview', this)">Overview</div>
+            <div class="tab" onclick="showTab('firmware', this)">Firmware</div>
+            <div class="tab" onclick="showTab('otaflash', this)">OTA Flash</div>
+            <div class="tab" onclick="showTab('settings', this)">Settings</div>
+            <div class="tab" onclick="showTab('diagnostics', this)">Diagnostics</div>
         </div>
 
         <!-- Overview Tab -->
@@ -358,6 +378,11 @@
                 <div style="display: flex; align-items: center; margin-bottom: 15px;">
                     <span class="status-indicator status-offline" id="moduleStatus"></span>
                     <span id="moduleStatusText">Checking connection...</span>
+                </div>
+                
+                <div id="moduleDetails" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+                    <h4 style="margin-top: 0;">Device Information</h4>
+                    <div id="deviceInfo">Loading device details...</div>
                 </div>
                 
                 <div class="info-grid">
@@ -383,6 +408,7 @@
                     <button class="btn btn-primary" onclick="refreshModuleInfo()">🔄 Refresh Status</button>
                     <button class="btn btn-warning" onclick="restartModule()">🔄 Restart Module</button>
                     <button class="btn btn-success" onclick="testConnection()">🔗 Test Connection</button>
+                    <button class="btn btn-info" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()">🤖 Enhanced AI Assistant</button>
                 </div>
             </div>
 
@@ -406,12 +432,17 @@
                     <div style="padding: 8px; background: #f8f9fa; border-radius: 4px;" id="currentFirmware">
                         Loading...
                     </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: #6c757d;">
+                        <strong>Expected C6 Firmware:</strong> ESP32_S3_C6_NANO_AP.bin or ESP32_S3_C6_NANO_AP_full.bin<br>
+                        <strong>Source:</strong> <a href="https://github.com/OpenEPaperLink/OpenEPaperLink/releases" target="_blank">OpenEPaperLink GitHub Releases</a>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label>Update Source:</label>
                     <select id="updateSource" onchange="updateSourceChanged()">
-                        <option value="online">Latest from GitHub</option>
+                        <option value="github_latest">Latest from GitHub (ESP32_S3_C6_NANO_AP)</option>
+                        <option value="github_full">Latest Full Firmware (includes filesystem)</option>
                         <option value="beta">Beta Version</option>
                         <option value="local">Local File</option>
                     </select>

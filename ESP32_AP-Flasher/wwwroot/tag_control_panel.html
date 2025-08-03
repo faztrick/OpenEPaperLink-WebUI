@@ -11,6 +11,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Core JavaScript modules -->
+    <script src="constants.js?3.0" defer></script>
+    <script src="utils.js?3.0" defer></script>
+    <script src="app-core.js?3.0" defer></script>
+    <script src="ui-components.js?3.0" defer></script>
+    <script src="tag-manager.js?3.0" defer></script>
+    <script src="canvas-renderer.js?3.0" defer></script>
+    <!-- Feature-specific modules -->
+    <script src="main.js?2.75" defer></script>
+    <script src="g5decoder.js?2.74"></script>
+    <script src="universal-menu.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -505,12 +519,67 @@
                     <button class="btn btn-success" onclick="refreshTags()">🔄 Refresh</button>
                 </div>
 
-                <!-- Quick Actions -->
+                <!-- Enhanced Quick Actions -->
                 <div class="search-section">
-                    <button class="btn btn-warning" onclick="findAllTags()">💡 Flash All LEDs</button>
-                    <button class="btn btn-primary" onclick="batteryReport()">🔋 Battery Report</button>
-                    <button class="btn btn-success" onclick="signalReport()">📶 Signal Report</button>
-                    <button class="btn btn-danger" onclick="purgeInactiveTags()">🗑️ Purge Inactive</button>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                        <button class="btn btn-warning" onclick="findAllTags()">💡 Flash All LEDs</button>
+                        <button class="btn btn-primary" onclick="batteryReport()">🔋 Battery Report</button>
+                        <button class="btn btn-success" onclick="signalReport()">📶 Signal Report</button>
+                        <button class="btn btn-danger" onclick="purgeInactiveTags()">🗑️ Purge Inactive</button>
+                        <button class="btn btn-secondary" onclick="exportTagData()">📄 Export Data</button>
+                        <button class="btn btn-info" onclick="showBulkActions()">⚡ Bulk Actions</button>
+                    </div>
+                </div>
+                
+                <!-- Enhanced Bulk Actions Modal -->
+                <div id="bulk-actions-modal" class="modal">
+                    <div class="modal-content">
+                        <span class="close" onclick="closeBulkActions()">&times;</span>
+                        <h3>🔧 Bulk Operations</h3>
+                        
+                        <div style="margin: 20px 0;">
+                            <h4>Selection Criteria:</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+                                <label>
+                                    <input type="checkbox" id="bulk-online" checked> Online Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-low-battery"> Low Battery Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-weak-signal"> Weak Signal Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-specific-type"> Specific Tag Type:
+                                    <select id="bulk-tag-type" style="margin-left: 10px;">
+                                        <option value="">All Types</option>
+                                        <option value="154">1.54" E-Paper</option>
+                                        <option value="213">2.13" E-Paper</option>
+                                        <option value="290">2.90" E-Paper</option>
+                                        <option value="420">4.20" E-Paper</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div style="margin: 20px 0;">
+                            <h4>Actions:</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <button class="btn btn-warning" onclick="bulkFlashLeds()">💡 Flash LEDs</button>
+                                <button class="btn btn-primary" onclick="bulkUpdateContent()">📝 Update Content</button>
+                                <button class="btn btn-success" onclick="bulkTestConnection()">🔌 Test Connection</button>
+                                <button class="btn btn-info" onclick="bulkConfigureSettings()">⚙️ Configure Settings</button>
+                            </div>
+                        </div>
+                        
+                        <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                            <h4>Selected Tags: <span id="bulk-selected-count">0</span></h4>
+                            <div id="bulk-preview" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
+                                Click "Preview Selection" to see which tags will be affected.
+                            </div>
+                            <button class="btn btn-secondary" onclick="previewBulkSelection()" style="margin-top: 10px;">👁️ Preview Selection</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Tag List -->
@@ -1311,6 +1380,210 @@
                 }
             }
         });
+
+        // Enhanced Bulk Operations
+        function showBulkActions() {
+            document.getElementById('bulk-actions-modal').style.display = 'block';
+            previewBulkSelection();
+        }
+
+        function closeBulkActions() {
+            document.getElementById('bulk-actions-modal').style.display = 'none';
+        }
+
+        function previewBulkSelection() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+            
+            document.getElementById('bulk-selected-count').textContent = selectedTags.length;
+            
+            const preview = document.getElementById('bulk-preview');
+            if (selectedTags.length === 0) {
+                preview.innerHTML = '<div style="color: #666; font-style: italic;">No tags match the current criteria</div>';
+                return;
+            }
+            
+            const previewHtml = selectedTags.map(tag => `
+                <div style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; border-left: 3px solid ${tag.status === 'online' ? '#4CAF50' : '#f44336'};">
+                    <strong>${tag.mac}</strong> - ${tag.alias || 'No alias'} 
+                    <span style="color: #666;">(${tag.status}, Battery: ${tag.battery || 'N/A'}%, Signal: ${tag.signal || 'N/A'}%)</span>
+                </div>
+            `).join('');
+            
+            preview.innerHTML = previewHtml;
+        }
+
+        function getBulkSelectionCriteria() {
+            return {
+                onlineOnly: document.getElementById('bulk-online').checked,
+                lowBatteryOnly: document.getElementById('bulk-low-battery').checked,
+                weakSignalOnly: document.getElementById('bulk-weak-signal').checked,
+                specificType: document.getElementById('bulk-specific-type').checked,
+                tagType: document.getElementById('bulk-tag-type').value
+            };
+        }
+
+        function getTagsMatchingCriteria(criteria) {
+            return allTags.filter(tag => {
+                // Online filter
+                if (criteria.onlineOnly && tag.status !== 'online') return false;
+                
+                // Low battery filter (assuming < 20% is low)
+                if (criteria.lowBatteryOnly && (tag.battery || 100) >= 20) return false;
+                
+                // Weak signal filter (assuming < 30% is weak)
+                if (criteria.weakSignalOnly && (tag.signal || 100) >= 30) return false;
+                
+                // Specific tag type filter
+                if (criteria.specificType && criteria.tagType && tag.type !== criteria.tagType) return false;
+                
+                return true;
+            });
+        }
+
+        async function bulkFlashLeds() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+            
+            if (selectedTags.length === 0) {
+                showNotification('No tags selected for bulk LED flash', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Flash LEDs on ${selectedTags.length} tags?`)) return;
+            
+            addLog(`Starting bulk LED flash for ${selectedTags.length} tags...`);
+            let successCount = 0;
+            let errorCount = 0;
+            
+            for (const tag of selectedTags) {
+                try {
+                    await flashTag(tag.mac);
+                    successCount++;
+                    addLog(`✓ LED flashed for ${tag.mac}`);
+                } catch (error) {
+                    errorCount++;
+                    addLog(`✗ Failed to flash LED for ${tag.mac}: ${error.message}`, 'error');
+                }
+                
+                // Small delay to prevent overwhelming the system
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            showNotification(`Bulk LED flash completed: ${successCount} successful, ${errorCount} failed`, successCount > errorCount ? 'success' : 'warning');
+            closeBulkActions();
+        }
+
+        async function bulkTestConnection() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+            
+            if (selectedTags.length === 0) {
+                showNotification('No tags selected for connection test', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Test connection for ${selectedTags.length} tags?`)) return;
+            
+            addLog(`Starting bulk connection test for ${selectedTags.length} tags...`);
+            let onlineCount = 0;
+            let offlineCount = 0;
+            
+            for (const tag of selectedTags) {
+                try {
+                    const isOnline = await testTagConnection(tag.mac);
+                    if (isOnline) {
+                        onlineCount++;
+                        addLog(`✓ ${tag.mac} is online`);
+                    } else {
+                        offlineCount++;
+                        addLog(`✗ ${tag.mac} is offline`);
+                    }
+                } catch (error) {
+                    offlineCount++;
+                    addLog(`✗ ${tag.mac} connection test failed: ${error.message}`, 'error');
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            showNotification(`Connection test completed: ${onlineCount} online, ${offlineCount} offline`, 'info');
+            closeBulkActions();
+        }
+
+        async function bulkUpdateContent() {
+            showNotification('Bulk content update feature coming soon!', 'info');
+        }
+
+        async function bulkConfigureSettings() {
+            showNotification('Bulk settings configuration feature coming soon!', 'info');
+        }
+
+        async function exportTagData() {
+            try {
+                const exportData = {
+                    exportDate: new Date().toISOString(),
+                    totalTags: allTags.length,
+                    onlineTags: allTags.filter(t => t.status === 'online').length,
+                    offlineTags: allTags.filter(t => t.status === 'offline').length,
+                    lowBatteryTags: allTags.filter(t => (t.battery || 100) < 20).length,
+                    tags: allTags.map(tag => ({
+                        mac: tag.mac,
+                        alias: tag.alias,
+                        status: tag.status,
+                        battery: tag.battery,
+                        signal: tag.signal,
+                        type: tag.type,
+                        lastSeen: tag.lastSeen
+                    }))
+                };
+                
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `tag-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                addLog('Tag data exported successfully');
+                showNotification('Tag data exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting tag data:', error);
+                addLog(`Error exporting tag data: ${error.message}`, 'error');
+                showNotification('Error exporting tag data', 'error');
+            }
+        }
+
+        // Helper function to test tag connection
+        async function testTagConnection(mac) {
+            try {
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'ping');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('bulk-actions-modal');
+            if (event.target === modal) {
+                closeBulkActions();
+            }
+        }
     </script>
     <!-- Footer Status Line -->
     <div class="footer-status">

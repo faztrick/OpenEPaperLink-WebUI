@@ -7,24 +7,40 @@ def gzip_files(source_folder, destination_folder):
     if not os.path.exists(destination_folder):
         os.makedirs(destination_folder)
 
-    # Get a list of all files in the source folder
-    files = os.listdir(source_folder)
+    # Walk through all files and subdirectories recursively
+    for root, dirs, files in os.walk(source_folder):
+        # Calculate relative path from source folder
+        rel_path = os.path.relpath(root, source_folder)
+        
+        # Create corresponding directory structure in destination
+        if rel_path != '.':
+            dest_dir = os.path.join(destination_folder, rel_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
+                print(f"Created directory: {rel_path}/")
 
-    for file in files:
-        source_file_path = os.path.join(source_folder, file)
-        destination_file_path = os.path.join(destination_folder, file + ".gz")
-        
-        # Skip directories and hidden files
-        if os.path.isdir(source_file_path) or file.startswith('.'):
-            continue
+        for file in files:
+            # Skip hidden files
+            if file.startswith('.'):
+                continue
+                
+            source_file_path = os.path.join(root, file)
             
-        print(f"Gzipping: {file}")
-        
-        try:
-            with open(source_file_path, 'rb') as f_in, gzip.GzipFile(destination_file_path, 'wb', mtime=0) as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        except Exception as e:
-            print(f"Error compressing {file}: {e}")
+            # Build destination path maintaining directory structure
+            if rel_path != '.':
+                destination_file_path = os.path.join(destination_folder, rel_path, file + ".gz")
+                display_path = f"{rel_path}/{file}"
+            else:
+                destination_file_path = os.path.join(destination_folder, file + ".gz")
+                display_path = file
+            
+            print(f"Gzipping: {display_path}")
+            
+            try:
+                with open(source_file_path, 'rb') as f_in, gzip.GzipFile(destination_file_path, 'wb', mtime=0) as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            except Exception as e:
+                print(f"Error compressing {display_path}: {e}")
 
 if __name__ == "__main__":
     source_folder = "wwwroot"  # Replace with the path of the source folder

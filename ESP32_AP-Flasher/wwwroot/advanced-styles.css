@@ -1655,3 +1655,249 @@ body {
         justify-self: center;
     }
 }
+
+/* No Tags Found Message Styles */
+.no-tags-message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+    padding: 2rem;
+}
+
+.no-tags-content {
+    text-align: center;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    box-shadow: var(--glass-shadow);
+    max-width: 500px;
+    width: 100%;
+}
+
+.no-tags-icon {
+    font-size: 4rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.no-tags-content h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.no-tags-content p {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.no-tags-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.btn-primary, .btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.btn-primary {
+    background: var(--primary-gradient);
+    color: white;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.btn-secondary {
+    background: var(--glass-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.no-tags-help {
+    text-align: left;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-tags-help h4 {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.no-tags-help ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.no-tags-help li {
+    margin-bottom: 0.5rem;
+}
+
+/* Manual Tag Addition Dialog Styles */
+#addTagDialog {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    box-shadow: var(--glass-shadow);
+    color: var(--text-primary);
+    max-width: 500px;
+    width: 90%;
+    padding: 0;
+}
+
+#addTagDialog h3 {
+    margin: 0 0 1.5rem 0;
+    padding: 1.5rem 1.5rem 0 1.5rem;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+#addTagDialog p {
+    margin-bottom: 1.5rem;
+    padding: 0 1.5rem;
+}
+
+#addTagDialog label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+#addTagDialog input, #addTagDialog select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    backdrop-filter: blur(10px);
+    box-sizing: border-box;
+}
+
+#addTagDialog input:focus, #addTagDialog select:focus {
+    outline: none;
+    border-color: var(--info-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+#addTagDialog input::placeholder {
+    color: var(--text-muted);
+}
+
+#addTagDialog small {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    display: block;
+    margin-top: 0.25rem;
+}
+
+.tag-add-help {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0 1.5rem 1.5rem 1.5rem;
+}
+
+.tag-add-help p {
+    margin: 0;
+    padding: 0;
+    color: var(--warning-color);
+    font-size: 0.9rem;
+}
+
+#addTagBar {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding: 1.5rem;
+    border-top: 1px solid var(--glass-border);
+    margin: 0;
+}
+
+#addTagBar input[type="button"] {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    min-width: 100px;
+}
+
+#addTagSave {
+    background: var(--success-color) !important;
+    color: white !important;
+}
+
+#addTagSave:hover {
+    background: #059669 !important;
+    transform: translateY(-1px);
+}
+
+#addTagCancel {
+    background: var(--glass-bg) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--glass-border) !important;
+}
+
+#addTagCancel:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .no-tags-content {
+        padding: 2rem 1rem;
+    }
+    
+    .no-tags-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .btn-primary, .btn-secondary {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    #addTagDialog {
+        width: 95%;
+    }
+}

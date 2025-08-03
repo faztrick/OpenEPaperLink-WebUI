@@ -1,6 +1,37 @@
 var repo = apConfig.repo || 'OpenEPaperLink/OpenEPaperLink';
 var repoUrl = 'https://api.github.com/repos/' + repo + '/releases';
 
+// Repository suggestions for better functionality
+const repositorySuggestions = [
+    {
+        name: 'OpenEPaperLink/OpenEPaperLink',
+        description: 'Official OpenEPaperLink repository',
+        category: 'Official',
+        stability: 'Stable'
+    },
+    {
+        name: 'OpenEPaperLink/OpenEPaperLink-dev',
+        description: 'Development branch with latest features',
+        category: 'Development',
+        stability: 'Beta'
+    },
+    {
+        name: 'atc1441/OpenEPaperLink',
+        description: 'Original creator\'s repository',
+        category: 'Community',
+        stability: 'Stable'
+    }
+];
+
+// Popular firmware environments for suggestions
+const environmentSuggestions = [
+    'ESP32_AP',
+    'ESP32_S3_C6_NANO_AP',
+    'OutdoorAP',
+    'ESP32_AP_Debug',
+    'ESP32_S3_AP'
+];
+
 const $ = document.querySelector.bind(document);
 
 let running = false;
@@ -33,6 +64,9 @@ export async function initUpdate() {
     let filesystemversion = await response.text();
     if (!filesystemversion) filesystemversion = "unknown";
     $('#repo').value = repo;
+
+    // Add repository suggestions
+    addRepositorySuggestions();
 
     const envBox = $('#environment');
     if (envBox?.tagName === 'SELECT') {
@@ -737,4 +771,131 @@ async function fetchAndCheckTagtypes(cleanup) {
 
 function normalizeVersion(version) {
     return version.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+}
+
+// Add repository suggestions functionality
+function addRepositorySuggestions() {
+    const repoInput = $('#repo');
+    if (!repoInput) return;
+    
+    // Create suggestions container
+    const suggestionsContainer = document.createElement('div');
+    suggestionsContainer.id = 'repoSuggestions';
+    suggestionsContainer.style.cssText = `
+        margin-top: 10px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    `;
+    
+    const title = document.createElement('h5');
+    title.textContent = '💡 Repository Suggestions';
+    title.style.cssText = 'color: #4facfe; margin-bottom: 10px; font-size: 14px;';
+    suggestionsContainer.appendChild(title);
+    
+    repositorySuggestions.forEach(suggestion => {
+        const suggestionDiv = document.createElement('div');
+        suggestionDiv.style.cssText = `
+            padding: 8px;
+            margin: 5px 0;
+            background: rgba(79, 172, 254, 0.1);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            border-left: 3px solid ${suggestion.stability === 'Stable' ? '#6bcf7f' : '#ffd93d'};
+        `;
+        
+        suggestionDiv.innerHTML = `
+            <div style="font-weight: 600; color: #4facfe;">${suggestion.name}</div>
+            <div style="font-size: 12px; color: rgba(255,255,255,0.8);">${suggestion.description}</div>
+            <div style="font-size: 11px; color: ${suggestion.stability === 'Stable' ? '#6bcf7f' : '#ffd93d'};">
+                ${suggestion.category} - ${suggestion.stability}
+            </div>
+        `;
+        
+        suggestionDiv.onmouseover = () => {
+            suggestionDiv.style.background = 'rgba(79, 172, 254, 0.2)';
+        };
+        suggestionDiv.onmouseout = () => {
+            suggestionDiv.style.background = 'rgba(79, 172, 254, 0.1)';
+        };
+        
+        suggestionDiv.onclick = () => {
+            repoInput.value = suggestion.name;
+            highlightSelectedSuggestion(suggestionDiv);
+        };
+        
+        suggestionsContainer.appendChild(suggestionDiv);
+    });
+    
+    // Add environment suggestions
+    const envTitle = document.createElement('h5');
+    envTitle.textContent = '🔧 Common Environments';
+    envTitle.style.cssText = 'color: #4facfe; margin: 15px 0 10px 0; font-size: 14px;';
+    suggestionsContainer.appendChild(envTitle);
+    
+    const envContainer = document.createElement('div');
+    envContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 5px;';
+    
+    environmentSuggestions.forEach(env => {
+        const envBadge = document.createElement('span');
+        envBadge.textContent = env;
+        envBadge.style.cssText = `
+            padding: 4px 8px;
+            background: rgba(107, 207, 127, 0.2);
+            color: #6bcf7f;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+        
+        envBadge.onclick = () => {
+            const envInput = $('#environment');
+            if (envInput) {
+                envInput.value = env;
+                envBadge.style.background = 'rgba(107, 207, 127, 0.4)';
+                setTimeout(() => {
+                    envBadge.style.background = 'rgba(107, 207, 127, 0.2)';
+                }, 1000);
+            }
+        };
+        
+        envContainer.appendChild(envBadge);
+    });
+    
+    suggestionsContainer.appendChild(envContainer);
+    
+    // Insert suggestions after the repo input
+    repoInput.parentNode.insertBefore(suggestionsContainer, repoInput.nextSibling);
+}
+
+function highlightSelectedSuggestion(selectedDiv) {
+    // Remove previous highlights
+    document.querySelectorAll('#repoSuggestions > div').forEach(div => {
+        if (div.style.borderLeft) {
+            div.style.background = 'rgba(79, 172, 254, 0.1)';
+        }
+    });
+    
+    // Highlight selected
+    selectedDiv.style.background = 'rgba(79, 172, 254, 0.3)';
+    
+    // Add feedback
+    const feedback = document.createElement('div');
+    feedback.textContent = '✓ Repository selected';
+    feedback.style.cssText = `
+        color: #6bcf7f;
+        font-size: 12px;
+        margin-top: 5px;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+    `;
+    selectedDiv.appendChild(feedback);
+    
+    setTimeout(() => {
+        feedback.style.opacity = '0';
+        setTimeout(() => feedback.remove(), 300);
+    }, 2000);
 }

@@ -1,22 +1,8 @@
 // OpenEPL ESP32 - Optimized Main Application
 // Enhanced with API management and compact UI integration
 
-const $ = document.querySelector.bind(document);
-
-// Constants
-const WAKEUP_REASONS = {
-    TIMED: 0,
-    BOOT: 1,
-    GPIO: 2,
-    NFC: 3,
-    BUTTON1: 4,
-    BUTTON2: 5,
-    BUTTON3: 6,
-    FAILED_OTA_FW: 0xE0,
-    FIRSTBOOT: 0xFC,
-    NETWORK_SCAN: 0xFD,
-    WDT_RESET: 0xFE
-};
+// Note: $ is defined in constants.js
+// Note: WAKEUP_REASONS is defined in constants.js
 
 // Global state
 let tagTypes = {};
@@ -1004,6 +990,19 @@ function updatecards() {
 	$('#dashboardLowBatt').innerHTML = lowbattcount;
 	const dashboardTimeout = $('#dashboardTimeout');
 	if (dashboardTimeout) dashboardTimeout.innerHTML = timeoutcount;
+	
+	// Show/hide no tags message
+	const noTagsMessage = $('#noTagsMessage');
+	const taglistContainer = $('#taglist');
+	if (noTagsMessage && taglistContainer) {
+		if (tagcount === 0) {
+			noTagsMessage.style.display = 'block';
+			taglistContainer.style.display = 'none';
+		} else {
+			noTagsMessage.style.display = 'none';
+			taglistContainer.style.display = 'block';
+		}
+	}
 }
 
 const clearlogBtn = $('#clearlog');
@@ -3340,3 +3339,354 @@ setInterval(updatePerformanceMetrics, 5000);
 document.addEventListener('DOMContentLoaded', () => {
 	setTimeout(updatePerformanceMetrics, 1000);
 });
+
+// Manual Tag Addition Functionality
+document.addEventListener('DOMContentLoaded', () => {
+	// Add Tag Manually button event
+	const addTagManuallyBtn = $('#addTagManually');
+	if (addTagManuallyBtn) {
+		addTagManuallyBtn.addEventListener('click', () => {
+			$('#addTagDialog').showModal();
+		});
+	}
+	
+	// Refresh Tags button event
+	const refreshTagsBtn = $('#refreshTags');
+	if (refreshTagsBtn) {
+		refreshTagsBtn.addEventListener('click', () => {
+			// Force reload tags from server
+			if (window.location.pathname.includes('tags.html') || window.location.pathname === '/') {
+				window.location.reload();
+			} else {
+				// Try to call existing reload function
+				if (typeof loadTags === 'function') {
+					loadTags(0);
+				} else if (typeof updatecards === 'function') {
+					updatecards();
+				}
+			}
+		});
+	}
+	
+	// Add Tag Dialog - Cancel button
+	const addTagCancelBtn = $('#addTagCancel');
+	if (addTagCancelBtn) {
+		addTagCancelBtn.addEventListener('click', () => {
+			$('#addTagDialog').close();
+			clearAddTagForm();
+		});
+	}
+	
+	// Add Tag Dialog - Save button
+	const addTagSaveBtn = $('#addTagSave');
+	if (addTagSaveBtn) {
+		addTagSaveBtn.addEventListener('click', () => {
+			addTagManually();
+		});
+	}
+	
+	// MAC address input formatting
+	const newTagMacInput = $('#newTagMac');
+	if (newTagMacInput) {
+		newTagMacInput.addEventListener('input', (e) => {
+			// Remove any non-hex characters and convert to uppercase
+			let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+			// Limit to 12 characters
+			if (value.length > 12) {
+				value = value.substring(0, 12);
+			}
+			e.target.value = value;
+		});
+		
+		newTagMacInput.addEventListener('paste', (e) => {
+			e.preventDefault();
+			let paste = (e.clipboardData || window.clipboardData).getData('text');
+			// Clean pasted MAC address (remove colons, spaces, etc.)
+			paste = paste.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+			if (paste.length > 12) {
+				paste = paste.substring(0, 12);
+			}
+			e.target.value = paste;
+		});
+	}
+});
+
+function clearAddTagForm() {
+	const form = $('#addTagDialog');
+	if (form) {
+		$('#newTagMac').value = '';
+		$('#newTagAlias').value = '';
+		$('#newTagType').value = '1';
+	}
+}
+
+function addTagManually() {
+	const macInput = $('#newTagMac');
+	const aliasInput = $('#newTagAlias');
+	const typeInput = $('#newTagType');
+	
+	if (!macInput || !typeInput) {
+		alert('Form elements not found');
+		return;
+	}
+	
+	const mac = macInput.value.trim().toUpperCase();
+	const alias = aliasInput ? aliasInput.value.trim() : '';
+	const tagType = parseInt(typeInput.value);
+	
+	// Validate MAC address
+	if (!/^[0-9A-F]{12}$/.test(mac)) {
+		alert('Please enter a valid 12-digit hexadecimal MAC address');
+		macInput.focus();
+		return;
+	}
+	
+	// Check if tag already exists
+	if (tagDB[mac]) {
+		alert('A tag with this MAC address already exists');
+		macInput.focus();
+		return;
+	}
+	
+	// Create virtual tag object
+	const virtualTag = {
+		mac: mac,
+		alias: alias || mac.replace(/^0+/, '') || mac,
+		hwType: tagType,
+		contentMode: 0, // Not configured
+		batteryMv: 0,
+		temperature: 0,
+		RSSI: -999, // Indicate virtual/offline tag
+		pending: false,
+		isexternal: false,
+		nextcheckin: 0,
+		nextupdate: 0,
+		lastSeen: 0,
+		wakeupreason: 0,
+		capabilities: getTagCapabilities(tagType),
+		modecfgjson: '{}',
+		rotate: 0,
+		lut: 0,
+		invert: 0,
+		ch: 0,
+		isVirtual: true // Flag to indicate this is manually added
+	};
+	
+	// Add to tagDB
+	tagDB[mac] = virtualTag;
+	
+	// Create visual element
+	createTagElement(virtualTag);
+	
+	// Update tag list display
+	updatecards();
+	
+	// Close dialog and clear form
+	$('#addTagDialog').close();
+	clearAddTagForm();
+	
+	// Show success message
+	showMessage(`Virtual tag ${alias || mac} added successfully. Configure content to complete setup.`);
+	
+	console.log('Manual tag added:', virtualTag);
+}
+
+function getTagCapabilities(hwType) {
+	// Define basic capabilities based on tag type
+	const capabilities = {
+		1: 0, // 1.54" BWR
+		2: 0, // 2.13" BWR  
+		3: 0, // 2.9" BWR
+		4: 0, // 4.2" BWR
+		5: 0, // 7.5" BWR
+		6: 0, // 2.13" BW
+		7: 0, // 2.9" BW
+		8: 0, // 4.2" BW
+		9: 0, // 7.5" BW
+		10: 0 // 1.54" BW
+	};
+	return capabilities[hwType] || 0;
+}
+
+function createTagElement(tagData) {
+	const tagmac = tagData.mac;
+	
+	// Clone template
+	let div = $('#tagtemplate').cloneNode(true);
+	div.setAttribute('id', 'tag' + tagmac);
+	div.dataset.mac = tagmac;
+	div.dataset.hwtype = tagData.hwType;
+	div.style.display = 'block';
+	
+	// Mark as virtual tag
+	if (tagData.isVirtual) {
+		div.classList.add('virtual-tag');
+		div.style.opacity = '0.8';
+		div.style.border = '2px dashed rgba(255, 255, 255, 0.3)';
+	}
+	
+	// Set basic info
+	div.querySelector('.mac').innerHTML = tagmac + (tagData.isVirtual ? ' (Virtual)' : '');
+	div.querySelector('.alias').innerHTML = tagData.alias;
+	div.querySelector('.contentmode').innerHTML = 'Not configured';
+	div.querySelector('.lastseen').innerHTML = tagData.isVirtual ? 'Virtual tag' : '';
+	
+	// Append to tag list
+	$('#taglist').appendChild(div);
+}
+
+function showMessage(message) {
+	// Create or update a simple message display
+	let messageEl = $('#statusMessage');
+	if (!messageEl) {
+		messageEl = document.createElement('div');
+		messageEl.id = 'statusMessage';
+		messageEl.style.cssText = `
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background: rgba(16, 185, 129, 0.9);
+			color: white;
+			padding: 1rem 1.5rem;
+			border-radius: 8px;
+			box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+			z-index: 10000;
+			font-weight: 500;
+			backdrop-filter: blur(10px);
+		`;
+		document.body.appendChild(messageEl);
+	}
+	
+	messageEl.textContent = message;
+	messageEl.style.display = 'block';
+	
+	// Auto hide after 5 seconds
+	setTimeout(() => {
+		if (messageEl) {
+			messageEl.style.display = 'none';
+		}
+	}, 5000);
+}
+
+// Enhanced notification system
+function showNotification(message, type = 'info', duration = 3000, action = null) {
+	// Create notification element
+	const notification = document.createElement('div');
+	const notificationId = 'notification-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+	notification.id = notificationId;
+	
+	// Enhanced styling based on type
+	const typeStyles = {
+		success: {
+			background: 'linear-gradient(135deg, #4CAF50, #45a049)',
+			icon: '✓',
+			border: '#4CAF50'
+		},
+		error: {
+			background: 'linear-gradient(135deg, #f44336, #da190b)',
+			icon: '✗',
+			border: '#f44336'
+		},
+		warning: {
+			background: 'linear-gradient(135deg, #ff9800, #f57c00)',
+			icon: '⚠',
+			border: '#ff9800'
+		},
+		info: {
+			background: 'linear-gradient(135deg, #4facfe, #00f2fe)',
+			icon: 'ℹ',
+			border: '#4facfe'
+		}
+	};
+	
+	const style = typeStyles[type] || typeStyles.info;
+	
+	notification.style.cssText = `
+		position: fixed;
+		top: 20px;
+		right: 20px;
+		background: ${style.background};
+		color: white;
+		padding: 16px 20px;
+		border-radius: 12px;
+		box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+		z-index: 10000;
+		max-width: 400px;
+		min-width: 300px;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		font-size: 14px;
+		font-weight: 500;
+		border: 1px solid ${style.border};
+		backdrop-filter: blur(10px);
+		animation: slideInRight 0.3s ease-out;
+		cursor: pointer;
+		transition: all 0.3s ease;
+	`;
+	
+	// Add action button if provided
+	const actionButton = action ? `
+		<button onclick="${action.callback}" style="
+			background: rgba(255,255,255,0.2);
+			border: 1px solid rgba(255,255,255,0.3);
+			color: white;
+			padding: 6px 12px;
+			border-radius: 6px;
+			font-size: 12px;
+			margin-left: 10px;
+			cursor: pointer;
+			transition: all 0.2s ease;
+		" onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
+		   onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+			${action.text}
+		</button>
+	` : '';
+	
+	notification.innerHTML = `
+		<div style="display: flex; align-items: center; justify-content: space-between;">
+			<div style="display: flex; align-items: center;">
+				<span style="font-size: 18px; margin-right: 12px;">${style.icon}</span>
+				<span>${message}</span>
+				${actionButton}
+			</div>
+			<span onclick="closeNotification('${notificationId}')" style="
+				cursor: pointer;
+				font-size: 20px;
+				opacity: 0.8;
+				margin-left: 15px;
+				transition: opacity 0.2s ease;
+			" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">×</span>
+		</div>
+	`;
+	
+	// Add hover effects
+	notification.onmouseover = () => {
+		notification.style.transform = 'translateY(-2px)';
+		notification.style.boxShadow = '0 12px 40px rgba(0,0,0,0.4)';
+	};
+	notification.onmouseout = () => {
+		notification.style.transform = 'translateY(0)';
+		notification.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+	};
+	
+	document.body.appendChild(notification);
+	
+	// Auto-remove after duration
+	setTimeout(() => {
+		closeNotification(notificationId);
+	}, duration);
+	
+	return notificationId;
+}
+
+// Close notification function
+window.closeNotification = function(notificationId) {
+	const notification = document.getElementById(notificationId);
+	if (notification) {
+		notification.style.animation = 'slideOutRight 0.3s ease-in';
+		setTimeout(() => {
+			if (notification.parentNode) {
+				notification.parentNode.removeChild(notification);
+			}
+		}, 300);
+	}
+}

@@ -6,7 +6,16 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
 	<title>OpenEPL ESP32 - Tags Management</title>
-	<script src="main.js?2.74" defer></script>
+	<!-- Core JavaScript modules -->
+	<script src="constants.js?3.0" defer></script>
+	<script src="utils.js?3.0" defer></script>
+	<script src="app-core.js?3.0" defer></script>
+	<script src="ui-components.js?3.0" defer></script>
+	<script src="tag-manager.js?3.0" defer></script>
+	<script src="canvas-renderer.js?3.0" defer></script>
+	<script src="main.js?3.0" defer></script>
+	<!-- Feature-specific modules -->
+	<script src="main.js?2.75" defer></script>
 	<script src="g5decoder.js?2.74"></script>
 	<script src="universal-menu.js" defer></script>
 	<link rel="stylesheet" href="main.css?2.74" type="text/css" />
@@ -114,6 +123,34 @@
 						</div>
 					</div>
 				</div>
+				
+				<!-- No Tags Found Message -->
+				<div id="noTagsMessage" class="no-tags-message" style="display: none;">
+					<div class="no-tags-content">
+						<span class="material-symbols-outlined no-tags-icon">device_unknown</span>
+						<h3>No tags found</h3>
+						<p>No e-paper tags are currently connected to this access point.</p>
+						<div class="no-tags-actions">
+							<button id="addTagManually" class="btn-primary">
+								<span class="material-symbols-outlined">add</span>
+								Add Tag Manually
+							</button>
+							<button id="refreshTags" class="btn-secondary">
+								<span class="material-symbols-outlined">refresh</span>
+								Refresh
+							</button>
+						</div>
+						<div class="no-tags-help">
+							<h4>To connect tags:</h4>
+							<ul>
+								<li>Put your e-paper tag in pairing mode (press button or remove battery briefly)</li>
+								<li>Wait for the tag to appear in the list</li>
+								<li>Or use "Add Tag Manually" if you know the MAC address</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+				
 				<div id="taglist" class="taglist">
 					<div class="tagcard" id="tagtemplate">
 						<div class="currimg"><canvas class="tagimg"></div>
@@ -189,6 +226,43 @@
 		<p id="savebar">
 			<span><input type="button" value="Save" id="cfgsave"></span>
 			<span id="cfgmore" title="advanced options">&#x25BC;</span>
+		</p>
+	</dialog>
+
+	<!-- Manual Tag Addition Dialog -->
+	<dialog id="addTagDialog">
+		<div class="closebtn2" onclick="document.getElementById('addTagDialog').close()">&#10006;</div>
+		<h3>Add Tag Manually</h3>
+		<p>
+			<label for="newTagMac">MAC Address</label>
+			<input id="newTagMac" type="text" placeholder="000000000000" pattern="[0-9A-Fa-f]{12}" maxlength="12">
+			<small>Enter 12-digit hexadecimal MAC address (without colons or spaces)</small>
+		</p>
+		<p>
+			<label for="newTagAlias">Alias (Optional)</label>
+			<input id="newTagAlias" type="text" placeholder="My Tag">
+		</p>
+		<p>
+			<label for="newTagType">Tag Type</label>
+			<select id="newTagType">
+				<option value="1">1.54" BWR (152x152)</option>
+				<option value="2">2.13" BWR (212x104)</option>
+				<option value="3">2.9" BWR (296x128)</option>
+				<option value="4">4.2" BWR (400x300)</option>
+				<option value="5">7.5" BWR (800x480)</option>
+				<option value="6">2.13" BW (212x104)</option>
+				<option value="7">2.9" BW (296x128)</option>
+				<option value="8">4.2" BW (400x300)</option>
+				<option value="9">7.5" BW (800x480)</option>
+				<option value="10">1.54" BW (152x152)</option>
+			</select>
+		</p>
+		<div class="tag-add-help">
+			<p><strong>Note:</strong> This will create a virtual tag entry. The physical tag must still connect to the access point to receive updates.</p>
+		</div>
+		<p id="addTagBar">
+			<span><input type="button" value="Add Tag" id="addTagSave"></span>
+			<span><input type="button" value="Cancel" id="addTagCancel"></span>
 		</p>
 	</dialog>
 

@@ -5,7 +5,6 @@
 
 class CompactUIManager {
     constructor() {
-        this.currentBreakpoint = this.getBreakpoint();
         this.components = new Map();
         this.virtualScrollers = new Map();
         this.lazyImages = new Set();
@@ -16,6 +15,8 @@ class CompactUIManager {
             tablet: 1024,
             desktop: 1440
         };
+        
+        this.currentBreakpoint = this.getBreakpoint();
         
         this.initializeUI();
         this.setupResponsive();
@@ -664,9 +665,13 @@ class CompactUIManager {
     }
 }
 
-// Initialize compact UI
+// Initialize compact UI safely
 document.addEventListener('DOMContentLoaded', () => {
-    window.compactUI = new CompactUIManager();
+    try {
+        window.compactUI = new CompactUIManager();
+    } catch (error) {
+        console.error('Failed to initialize CompactUIManager:', error);
+    }
 });
 
 // Export for module use
