@@ -1055,25 +1055,26 @@ async function testConnection() {
 
 async function startOTAFlash() {
     const firmwareFile = document.getElementById('firmwareFilePath').value;
-    const comPort = document.getElementById('comPortSelect').value;
-    const eraseFlash = document.getElementById('eraseFlash').checked;
-    const verifyFlash = document.getElementById('verifyFlash').checked;
-    const resetAfterFlash = document.getElementById('resetAfterFlash').checked;
-    const baudRate = document.getElementById('baudRate').value;
+    const comPort = document.getElementById('comPortSelect').value || 'internal';
+    const eraseFlash = document.getElementById('eraseFlash') ? document.getElementById('eraseFlash').checked : false;
+    const verifyFlash = document.getElementById('verifyFlash') ? document.getElementById('verifyFlash').checked : true;
+    const resetAfterFlash = document.getElementById('resetAfterFlash') ? document.getElementById('resetAfterFlash').checked : true;
+    const baudRate = document.getElementById('baudRate') ? document.getElementById('baudRate').value : '921600';
     
-    if (!firmwareFile || !comPort) {
-        logToConsole('error', 'Please select both firmware file and COM port');
+    if (!firmwareFile) {
+        logToOTAConsole('error', 'Please select a firmware file');
         return;
     }
     
     // Clear console and start flash process
     document.getElementById('otaFlashConsole').innerHTML = '';
-    logToOTAConsole('info', 'Starting OTA flash process...');
+    logToOTAConsole('info', 'Starting C6 OTA flash process...');
     logToOTAConsole('info', `Firmware: ${firmwareFile}`);
     logToOTAConsole('info', `COM Port: ${comPort}`);
     logToOTAConsole('info', `Baud Rate: ${baudRate}`);
-    logToOTAConsole('info', `Erase: ${eraseFlash ? 'Yes' : 'No'}`);
-    logToOTAConsole('info', `Verify: ${verifyFlash ? 'Yes' : 'No'}`);
+    logToOTAConsole('info', `Erase Flash: ${eraseFlash ? 'Yes' : 'No'}`);
+    logToOTAConsole('info', `Verify Flash: ${verifyFlash ? 'Yes' : 'No'}`);
+    logToOTAConsole('info', `Reset After Flash: ${resetAfterFlash ? 'Yes' : 'No'}`);
     
     // Show progress bar and update buttons
     document.getElementById('otaFlashProgress').style.display = 'block';
@@ -1112,22 +1113,100 @@ async function startOTAFlash() {
 }
 
 function startOTAProgressMonitoring() {
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-        progress += Math.random() * 10;
-        if (progress > 100) progress = 100;
+    logToOTAConsole('info', 'Monitoring OTA progress via WebSocket...');
+    
+    // Real progress monitoring via WebSocket messages
+    // The WebSocket connection is already established in the main application
+    // We just need to listen for OTA-specific messages
+    
+    let progressCheckInterval = null;
+    let lastProgressUpdate = Date.now();
+    
+    const checkProgress = () => {
+        const now = Date.now();
         
-        updateOTAProgress(progress, `Flashing... ${Math.round(progress)}%`);
-        
-        if (progress >= 100) {
-            clearInterval(progressInterval);
-            logToOTAConsole('success', 'OTA flash completed!');
+        // If we haven't received an update in 30 seconds, assume completion or failure
+        if (now - lastProgressUpdate > 30000) {
+            clearInterval(progressCheckInterval);
+            
+            // Check if we're at 100% or if there was an error
+            const progressFill = document.getElementById('otaFlashProgressFill');
+            const currentProgress = parseFloat(progressFill.style.width) || 0;
+            
+            if (currentProgress >= 100) {
+                logToOTAConsole('success', 'OTA flash completed successfully!');
+            } else {
+                logToOTAConsole('warning', 'OTA flash process finished (check console for results)');
+            }
+            
             resetOTAFlashUI();
         }
-    }, 1000);
+    };
+    
+    // Start monitoring
+    progressCheckInterval = setInterval(checkProgress, 5000);
+    
+    // Listen for WebSocket messages containing progress updates
+    const originalOnMessage = websocket.onmessage;
+    websocket.onmessage = function(event) {
+        // Call original handler first
+        if (originalOnMessage) {
+            originalOnMessage.call(this, event);
+        }
+        
+        try {
+            const data = JSON.parse(event.data);
+            
+            // Look for OTA progress messages
+            if (data.type === 'console' && data.message) {
+                const message = data.message;
+                
+                // Update last progress time
+                lastProgressUpdate = Date.now();
+                
+                // Parse progress messages
+                if (message.includes('Progress:') && message.includes('%')) {
+                    const progressMatch = message.match(/Progress:\s*(\d+)%/);
+                    if (progressMatch) {
+                        const progress = parseInt(progressMatch[1]);
+                        updateOTAProgress(progress, `Flashing... ${progress}%`);
+                        
+                        if (progress >= 100) {
+                            clearInterval(progressCheckInterval);
+                            setTimeout(() => {
+                                logToOTAConsole('success', 'OTA flash completed!');
+                                resetOTAFlashUI();
+                            }, 2000);
+                        }
+                    }
+                }
+                
+                // Check for completion or error messages
+                if (message.includes('✅ C6 OTA flash completed successfully')) {
+                    clearInterval(progressCheckInterval);
+                    updateOTAProgress(100, 'Flash completed successfully!');
+                    setTimeout(() => {
+                        resetOTAFlashUI();
+                    }, 3000);
+                } else if (message.includes('❌ C6 OTA flash failed')) {
+                    clearInterval(progressCheckInterval);
+                    logToOTAConsole('error', 'OTA flash failed!');
+                    resetOTAFlashUI();
+                } else if (message.includes('Error:')) {
+                    logToOTAConsole('error', message);
+                } else if (message.includes('Warning:')) {
+                    logToOTAConsole('warning', message);
+                } else if (message.includes('C6') || message.includes('flash') || message.includes('Flash')) {
+                    logToOTAConsole('info', message);
+                }
+            }
+        } catch (e) {
+            // Ignore JSON parse errors
+        }
+    };
     
     // Store interval for cleanup
-    window.otaProgressInterval = progressInterval;
+    window.otaProgressInterval = progressCheckInterval;
 }
 
 function stopOTAFlash() {

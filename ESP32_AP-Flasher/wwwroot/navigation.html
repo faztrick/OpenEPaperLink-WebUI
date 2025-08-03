@@ -221,6 +221,14 @@
                 <small>✅ Available</small>
             </a>
 
+            <!-- ESP32-C6 Module Management -->
+            <a href="c6_module.html" class="nav-card" id="c6ModuleCard" style="display: none;">
+                <div class="nav-icon icon-primary">📡</div>
+                <h3>ESP32-C6 Module</h3>
+                <p>Configure and manage ESP32-C6 wireless module, update firmware, and diagnostic tools.</p>
+                <small>✅ Available with C6 Support</small>
+            </a>
+
             <!-- nRF52 SWD Interface -->
             <a href="nrf52_swd.html" class="nav-card">
                 <div class="nav-icon icon-warning">🔌</div>
@@ -297,6 +305,14 @@
                         <p><span class="status-indicator status-online"></span>System Online - Build: ${data.buildversion}</p>
                         <p>PSRAM: ${Math.round(data.psramsize / 1024 / 1024)}MB | Flash: ${Math.round(data.flashsize / 1024 / 1024)}MB</p>
                     `;
+                    
+                    // Show C6 module card if C6 support is available
+                    if (data.hasC6 === 1 || data.C6 === "1") {
+                        const c6Card = document.getElementById('c6ModuleCard');
+                        if (c6Card) {
+                            c6Card.style.display = 'block';
+                        }
+                    }
                 } else {
                     throw new Error('Failed to fetch');
                 }

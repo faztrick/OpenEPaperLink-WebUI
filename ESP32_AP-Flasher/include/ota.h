@@ -13,3 +13,14 @@ void updateFirmware(const char* url, const char* expectedMd5, const size_t size)
 void handleRollback(AsyncWebServerRequest* request);
 void handleUpdateC6(AsyncWebServerRequest* request);
 void handleUpdateActions(AsyncWebServerRequest* request);
+void handleFlashC6OTA(AsyncWebServerRequest* request);
+
+// C6 OTA Flash task parameters structure
+struct C6FlashParams {
+    String firmwareFile;
+    String comPort;
+    bool eraseFlash;
+    bool verifyFlash;
+    bool resetAfterFlash;
+    int baudRate;
+};

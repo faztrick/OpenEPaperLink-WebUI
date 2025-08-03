@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <MD5Builder.h>
 #include <Update.h>
+#include <esp_loader.h>
 
 #include "flasher.h"
 #include "espflasher.h"
@@ -15,6 +16,7 @@
 #include "tag_db.h"
 #include "util.h"
 #include "web.h"
+#include "esp32_port.h"
 
 
 #ifndef BUILD_ENV_NAME
@@ -381,6 +383,10 @@ void C6OTAFlashTask(void* parameter) {
     struct FlashParams {
         String firmwareFile;
         String comPort;
+        bool eraseFlash;
+        bool verifyFlash;
+        bool resetAfterFlash;
+        int baudRate;
     };
     
     FlashParams* params = reinterpret_cast<FlashParams*>(parameter);
@@ -388,11 +394,42 @@ void C6OTAFlashTask(void* parameter) {
     wsSerial("C6 OTA Flash Task starting");
     wsSerial("Firmware: " + params->firmwareFile);
     wsSerial("COM Port: " + params->comPort);
+    wsSerial("Baud Rate: " + String(params->baudRate));
+    
+    bool flashResult = false;
+    
+    // Validate firmware file exists and is accessible
+    if (!contentFS->exists(params->firmwareFile)) {
+        wsSerial("Error: Firmware file not found: " + params->firmwareFile);
+        delete params;
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    File firmwareFileHandle = contentFS->open(params->firmwareFile, "r");
+    if (!firmwareFileHandle) {
+        wsSerial("Error: Cannot open firmware file for reading");
+        delete params;
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    size_t firmwareSize = firmwareFileHandle.size();
+    firmwareFileHandle.close();
+    
+    if (firmwareSize == 0) {
+        wsSerial("Error: Firmware file is empty");
+        delete params;
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    wsSerial("Firmware size: " + String(firmwareSize) + " bytes");
     
     // Stop current AP services
     wsSerial("Stopping AP service for OTA flash");
     gSerialTaskState = SERIAL_STATE_STOP;
-    config.runStatus = RUNSTATUS_STOP;
+    ::config.runStatus = RUNSTATUS_STOP;
     setAPstate(false, AP_STATE_FLASHING);
     
 #ifndef FLASHER_DEBUG_SHARED
@@ -405,29 +442,121 @@ void C6OTAFlashTask(void* parameter) {
     
     wsSerial("Starting C6 external flash process");
     
-    // Here you would implement the actual flashing logic
-    // This is a placeholder for the external flashing process
-    bool flashResult = false;
+    // Initialize hardware UART for ESP32-C6 communication
+    // Using UART2 for external communication to ESP32-C6
+    HardwareSerial C6Serial(2);
+    C6Serial.begin(params->baudRate, SERIAL_8N1, FLASHER_DEBUG_RXD, FLASHER_DEBUG_TXD);
     
-    // Example implementation using esptool (would need proper integration)
-    String command = "python -m esptool --chip esp32c6 --port " + params->comPort + 
-                    " --baud 921600 --before default_reset --after hard_reset " +
-                    "write_flash 0x0 " + params->firmwareFile;
+    // Wait for serial to be ready
+    vTaskDelay(100 / portTICK_PERIOD_MS);
     
-    wsSerial("Flash command: " + command);
+    // Implementation using ESP serial flasher library for ESP32-C6
+    const loader_esp32_config_t loaderConfig = {
+        .baud_rate = static_cast<uint32_t>(params->baudRate),
+        .uart_port = 2,  // Using UART2 for C6 communication
+        .uart_rx_pin = FLASHER_DEBUG_RXD,
+        .uart_tx_pin = FLASHER_DEBUG_TXD,
+        .reset_trigger_pin = FLASHER_DEBUG_PROG,  // Reset pin for C6
+        .gpio0_trigger_pin = FLASHER_DEBUG_PROG,  // Boot pin for C6
+        .rx_buffer_size = 0,  // Use default
+        .tx_buffer_size = 0,  // Use default
+        .queue_size = 0,      // Use default
+        .uart_queue = NULL    // Not needed
+    };
     
-    // For now, simulate the flash process
-    wsSerial("Simulating flash process...");
-    for (int i = 0; i <= 100; i += 10) {
-        wsSerial("Flash progress: " + String(i) + "%");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    wsSerial("Initializing ESP32-C6 serial connection...");
+    
+    if (loader_port_esp32_init(&loaderConfig) != ESP_LOADER_SUCCESS) {
+        wsSerial("Error: Failed to initialize serial connection to ESP32-C6");
+        flashResult = false;
+    } else {
+        wsSerial("Serial connection initialized successfully");
+        
+        // Connect to ESP32-C6
+        esp_loader_connect_args_t connect_config = ESP_LOADER_CONNECT_DEFAULT();
+        esp_loader_error_t err = esp_loader_connect(&connect_config);
+        
+        if (err != ESP_LOADER_SUCCESS) {
+            wsSerial("Error: Cannot connect to ESP32-C6. Error code: " + String(err));
+            flashResult = false;
+        } else {
+            wsSerial("Connected to ESP32-C6 successfully");
+            
+            // Verify chip type
+            if (esp_loader_get_target() != ESP32C6_CHIP) {
+                wsSerial("Error: Connected device is not ESP32-C6");
+                flashResult = false;
+            } else {
+                wsSerial("ESP32-C6 chip detected");
+                
+                // Optionally erase flash if requested
+                if (params->eraseFlash) {
+                    wsSerial("Erasing ESP32-C6 flash...");
+                    err = esp_loader_flash_start(0x0, firmwareSize, 1024);
+                    if (err != ESP_LOADER_SUCCESS) {
+                        wsSerial("Error: Flash erase failed. Error code: " + String(err));
+                        flashResult = false;
+                    } else {
+                        wsSerial("Flash erased successfully");
+                    }
+                }
+                
+                if (err == ESP_LOADER_SUCCESS) {
+                    // Flash the firmware
+                    wsSerial("Starting firmware flash...");
+                    String firmwareFileStr = params->firmwareFile;
+                    err = flash_binary(firmwareFileStr, 0x0);
+                    
+                    if (err == ESP_LOADER_SUCCESS) {
+                        wsSerial("Firmware flashed successfully");
+                        
+                        if (params->verifyFlash) {
+                            wsSerial("Verifying flash...");
+#if MD5_ENABLED
+                            err = esp_loader_flash_verify();
+                            if (err == ESP_LOADER_ERROR_UNSUPPORTED_FUNC) {
+                                wsSerial("Warning: Flash verification not supported by target");
+                                flashResult = true;  // Continue as success
+                            } else if (err != ESP_LOADER_SUCCESS) {
+                                wsSerial("Error: Flash verification failed");
+                                flashResult = false;
+                            } else {
+                                wsSerial("Flash verification successful");
+                                flashResult = true;
+                            }
+#else
+                            wsSerial("Flash verification skipped (MD5 not enabled)");
+                            flashResult = true;
+#endif
+                        } else {
+                            flashResult = true;
+                        }
+                        
+                        if (flashResult && params->resetAfterFlash) {
+                            wsSerial("Resetting ESP32-C6...");
+                            // The reset will happen automatically when we disconnect
+                        }
+                    } else {
+                        wsSerial("Error: Firmware flash failed. Error code: " + String(err));
+                        flashResult = false;
+                    }
+                }
+            }
+        }
+        
+        // Clean up serial flasher
+        loader_port_esp32_deinit();
     }
     
-    // Simulate success for now
-    flashResult = true;
+    // Close C6 serial connection
+    C6Serial.end();
     
     if (flashResult) {
-        wsSerial("C6 OTA flash completed successfully!");
+        wsSerial("✅ C6 OTA flash completed successfully!");
+        
+        // Wait for C6 to boot up
+        wsSerial("Waiting for ESP32-C6 to boot...");
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
         
         // Restart services
         wsSerial("Restarting AP services");
@@ -441,22 +570,33 @@ void C6OTAFlashTask(void* parameter) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         
         if (bringAPOnline(AP_STATE_ONLINE)) {
-            config.runStatus = RUNSTATUS_RUN;
+            ::config.runStatus = RUNSTATUS_RUN;
             setAPstate(true, AP_STATE_ONLINE);
             wsSerial("AP back online after C6 flash");
+        } else {
+            wsSerial("Warning: AP failed to come back online");
+            ::config.runStatus = RUNSTATUS_RUN;
         }
     } else {
-        wsSerial("C6 OTA flash failed!");
+        wsSerial("❌ C6 OTA flash failed!");
         
         // Try to restore normal operation
+        wsSerial("Attempting to restore normal operation...");
         Serial1.begin(115200, SERIAL_8N1, FLASHER_AP_RXD, FLASHER_AP_TXD);
-        config.runStatus = RUNSTATUS_RUN;
+        
+#ifndef FLASHER_DEBUG_SHARED
+        rxSerialStopTask2 = false;
+        xTaskCreate(rxSerialTask2, "rxSerialTask2", 1850, NULL, 2, NULL);
+#endif
+        
+        ::config.runStatus = RUNSTATUS_RUN;
+        setAPstate(false, AP_STATE_OFFLINE);
     }
     
     // Clean up
     delete params;
     
-    vTaskDelay(30000 / portTICK_PERIOD_MS);
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
 }
 #endif

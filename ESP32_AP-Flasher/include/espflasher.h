@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <esp_loader.h>
 
 #if defined HAS_H2
    #define SHORT_CHIP_NAME "H2"
@@ -20,3 +21,4 @@
 #endif
 
 bool FlashC6_H2(const char *Url);
+esp_loader_error_t flash_binary(String &file_path, size_t address);

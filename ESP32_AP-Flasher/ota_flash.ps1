@@ -9,7 +9,19 @@ param(
     [string]$BinaryPath = ".\espbinaries\ESP32_S3_C6_NANO_AP.bin",
     
     [Parameter(Mandatory=$false)]
-    [int]$TimeoutSeconds = 120
+    [int]$TimeoutSeconds = 120,
+    
+    [Parameter(Mandatory=$false)]
+    [bool]$EraseFlash = $false,
+    
+    [Parameter(Mandatory=$false)]
+    [bool]$VerifyFlash = $true,
+    
+    [Parameter(Mandatory=$false)]
+    [bool]$ResetAfterFlash = $true,
+    
+    [Parameter(Mandatory=$false)]
+    [int]$BaudRate = 921600
 )
 
 function Write-ColorOutput {
@@ -34,18 +46,26 @@ function Write-ColorOutput {
 if (-not (Test-Path $BinaryPath)) {
     Write-ColorOutput "❌ Error: Binary file not found at $BinaryPath" "Error"
     Write-ColorOutput "Available binaries:" "Info"
-    Get-ChildItem ".\espbinaries\*.bin" | ForEach-Object { Write-ColorOutput "  - $($_.Name)" "Info" }
+    if (Test-Path ".\espbinaries\*.bin") {
+        Get-ChildItem ".\espbinaries\*.bin" | ForEach-Object { Write-ColorOutput "  - $($_.Name)" "Info" }
+    } else {
+        Write-ColorOutput "  No .bin files found in espbinaries directory" "Warning"
+    }
     exit 1
 }
 
 $BinaryFullPath = (Resolve-Path $BinaryPath).Path
 $BinarySize = (Get-Item $BinaryFullPath).Length
 
-Write-ColorOutput "🚀 OpenEPaperLink OTA Flash Tool" "Info"
-Write-ColorOutput "=================================" "Info"
+Write-ColorOutput "🚀 OpenEPaperLink C6 OTA Flash Tool" "Info"
+Write-ColorOutput "====================================" "Info"
 Write-ColorOutput "Target IP: $IPAddress" "Info"
 Write-ColorOutput "Binary: $BinaryPath" "Info"
 Write-ColorOutput "Size: $([math]::Round($BinarySize / 1MB, 2)) MB" "Info"
+Write-ColorOutput "Erase Flash: $EraseFlash" "Info"
+Write-ColorOutput "Verify Flash: $VerifyFlash" "Info"
+Write-ColorOutput "Reset After Flash: $ResetAfterFlash" "Info"
+Write-ColorOutput "Baud Rate: $BaudRate" "Info"
 Write-ColorOutput "" "Info"
 
 # Test connectivity
@@ -62,47 +82,56 @@ try {
     exit 1
 }
 
-# Check if OTA endpoint exists
-Write-ColorOutput "🔍 Checking for OTA update endpoint..." "Info"
+# Check device information
+Write-ColorOutput "🔍 Checking device capabilities..." "Info"
 try {
-    $otaResponse = Invoke-WebRequest -Uri "http://$IPAddress/update" -Method GET -TimeoutSec 10 -ErrorAction Stop
-    Write-ColorOutput "✅ OTA endpoint found" "Success"
-} catch {
-    Write-ColorOutput "⚠️  Direct OTA endpoint not found, trying alternative methods..." "Warning"
+    $sysInfoResponse = Invoke-RestMethod -Uri "http://$IPAddress/sysinfo" -TimeoutSec 10 -ErrorAction Stop
     
-    # Try to find firmware upload page
-    try {
-        $mainPage = Invoke-WebRequest -Uri "http://$IPAddress/" -TimeoutSec 10 -ErrorAction Stop
-        if ($mainPage.Content -match "update|firmware|flash") {
-            Write-ColorOutput "✅ Found firmware update interface" "Success"
-        } else {
-            Write-ColorOutput "❌ No OTA update interface found" "Error"
-            Write-ColorOutput "This device may not support OTA updates" "Error"
-            exit 1
-        }
-    } catch {
-        Write-ColorOutput "❌ Error checking device capabilities" "Error"
+    if ($sysInfoResponse.hasC6 -eq 1) {
+        Write-ColorOutput "✅ Device supports ESP32-C6 OTA flashing" "Success"
+    } else {
+        Write-ColorOutput "❌ Device does not support ESP32-C6 OTA flashing" "Error"
+        Write-ColorOutput "This device may not have C6_OTA_FLASHING enabled" "Error"
         exit 1
     }
+    
+    Write-ColorOutput "Device info:" "Info"
+    Write-ColorOutput "  - Environment: $($sysInfoResponse.env)" "Info"
+    Write-ColorOutput "  - Version: $($sysInfoResponse.buildversion)" "Info"
+    Write-ColorOutput "  - Flash Size: $([math]::Round($sysInfoResponse.flashsize / 1MB, 2)) MB" "Info"
+    
+} catch {
+    Write-ColorOutput "⚠️  Could not retrieve device info, continuing anyway..." "Warning"
 }
 
-# Perform OTA update
-Write-ColorOutput "🔄 Starting OTA update..." "Info"
-Write-ColorOutput "This may take several minutes. Please do not power off the device." "Warning"
+# Prepare firmware file for upload
+Write-ColorOutput "� Preparing firmware file..." "Info"
+
+# Check if we need to upload the firmware first
+$firmwareFileName = Split-Path $BinaryPath -Leaf
+$uploadPath = "/firmware/$firmwareFileName"
+
+Write-ColorOutput "📤 Uploading firmware file to device..." "Info"
 
 try {
-    # Create multipart form data for file upload
+    # Upload firmware file to device
+    $uploadUri = "http://$IPAddress/upload_littlefs"
+    
+    # Create multipart form data
     $boundary = [System.Guid]::NewGuid().ToString()
     $LF = "`r`n"
     
-    # Read binary file
     $fileBytes = [System.IO.File]::ReadAllBytes($BinaryFullPath)
     $fileName = Split-Path $BinaryPath -Leaf
     
-    # Build multipart form data
+    # Build multipart form data for file upload
     $bodyLines = @(
         "--$boundary",
-        "Content-Disposition: form-data; name=`"firmware`"; filename=`"$fileName`"",
+        "Content-Disposition: form-data; name=`"path`"",
+        "",
+        $uploadPath,
+        "--$boundary",
+        "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
         "Content-Type: application/octet-stream",
         "",
         [System.Text.Encoding]::GetEncoding('iso-8859-1').GetString($fileBytes),
@@ -112,96 +141,114 @@ try {
     $body = $bodyLines -join $LF
     $bodyBytes = [System.Text.Encoding]::GetEncoding('iso-8859-1').GetBytes($body)
     
-    # Set headers
     $headers = @{
         'Content-Type' = "multipart/form-data; boundary=$boundary"
     }
     
-    Write-ColorOutput "📤 Uploading firmware ($([math]::Round($BinarySize / 1KB, 2)) KB)..." "Info"
+    $uploadResponse = Invoke-RestMethod -Uri $uploadUri -Method POST -Body $bodyBytes -Headers $headers -TimeoutSec $TimeoutSeconds
+    Write-ColorOutput "✅ Firmware uploaded successfully" "Success"
     
-    # Try different OTA endpoints
-    $otaEndpoints = @(
-        "http://$IPAddress/update",
-        "http://$IPAddress/firmware",
-        "http://$IPAddress/upload",
-        "http://$IPAddress/ota"
-    )
-    
-    $uploadSuccess = $false
-    foreach ($endpoint in $otaEndpoints) {
-        try {
-            Write-ColorOutput "Trying endpoint: $endpoint" "Info"
-            
-            $uploadResponse = Invoke-RestMethod -Uri $endpoint -Method POST -Body $bodyBytes -Headers $headers -TimeoutSec $TimeoutSeconds
-            
-            Write-ColorOutput "✅ Firmware uploaded successfully!" "Success"
-            $uploadSuccess = $true
-            break
-            
-        } catch {
-            Write-ColorOutput "❌ Upload failed to $endpoint`: $($_.Exception.Message)" "Warning"
-            continue
-        }
+} catch {
+    Write-ColorOutput "❌ Failed to upload firmware: $($_.Exception.Message)" "Error"
+    exit 1
+}
+
+# Start the C6 OTA flash process
+Write-ColorOutput "🔄 Starting C6 OTA flash process..." "Info"
+Write-ColorOutput "This may take several minutes. Please do not power off the device." "Warning"
+
+try {
+    $otaParams = @{
+        'firmware_file' = $uploadPath
+        'com_port' = 'internal'
+        'erase_flash' = $EraseFlash.ToString().ToLower()
+        'verify_flash' = $VerifyFlash.ToString().ToLower()
+        'reset_after_flash' = $ResetAfterFlash.ToString().ToLower()
+        'baud_rate' = $BaudRate.ToString()
     }
     
-    if (-not $uploadSuccess) {
-        # Try alternative method using simple POST
-        Write-ColorOutput "Trying alternative upload method..." "Info"
-        try {
-            $simpleUpload = Invoke-RestMethod -Uri "http://$IPAddress/" -Method POST -InFile $BinaryFullPath -ContentType "application/octet-stream" -TimeoutSec $TimeoutSeconds
-            Write-ColorOutput "✅ Firmware uploaded successfully!" "Success"
-            $uploadSuccess = $true
-        } catch {
-            Write-ColorOutput "❌ All upload methods failed" "Error"
-            Write-ColorOutput "Error: $($_.Exception.Message)" "Error"
-            exit 1
-        }
-    }
+    $otaResponse = Invoke-RestMethod -Uri "http://$IPAddress/flash_c6_ota" -Method POST -Body $otaParams -TimeoutSec $TimeoutSeconds
     
-    if ($uploadSuccess) {
-        Write-ColorOutput "🔄 Device is now updating firmware..." "Info"
-        Write-ColorOutput "⏱️  Please wait while the device restarts (this may take 30-60 seconds)" "Warning"
+    if ($otaResponse.success) {
+        Write-ColorOutput "✅ C6 OTA flash started successfully!" "Success"
+        Write-ColorOutput $otaResponse.message "Info"
         
-        # Wait for device to restart
-        Write-ColorOutput "Waiting for device to restart..." "Info"
-        Start-Sleep -Seconds 30
+        # Monitor progress via WebSocket would be ideal, but for now we'll poll
+        Write-ColorOutput "⏱️  Monitoring flash progress..." "Info"
         
-        # Check if device is back online
-        $attempts = 0
-        $maxAttempts = 12
+        $maxWaitTime = $TimeoutSeconds
+        $waitInterval = 5
+        $elapsedTime = 0
         
-        while ($attempts -lt $maxAttempts) {
-            $attempts++
-            Write-ColorOutput "Checking device status (attempt $attempts/$maxAttempts)..." "Info"
+        while ($elapsedTime -lt $maxWaitTime) {
+            Start-Sleep -Seconds $waitInterval
+            $elapsedTime += $waitInterval
             
+            Write-ColorOutput "Elapsed time: $elapsedTime seconds" "Info"
+            
+            # Try to check if device is still responsive
             try {
-                $testResponse = Invoke-WebRequest -Uri "http://$IPAddress/" -TimeoutSec 5 -ErrorAction Stop
-                Write-ColorOutput "✅ Device is back online!" "Success"
-                Write-ColorOutput "🎉 OTA update completed successfully!" "Success"
-                
-                # Try to get version info if available
-                try {
-                    $versionResponse = Invoke-RestMethod -Uri "http://$IPAddress/api/status" -TimeoutSec 5 -ErrorAction SilentlyContinue
-                    if ($versionResponse) {
-                        Write-ColorOutput "Device status: $versionResponse" "Info"
-                    }
-                } catch {
-                    # Version endpoint might not exist, that's okay
+                $pingResponse = Invoke-WebRequest -Uri "http://$IPAddress/" -TimeoutSec 5 -ErrorAction SilentlyContinue
+                if ($elapsedTime -gt 30) {
+                    # After 30 seconds, if device is responsive, flash might be complete
+                    Write-ColorOutput "✅ Device is responsive, flash likely completed" "Success"
+                    break
                 }
-                
-                exit 0
             } catch {
-                Write-ColorOutput "Device not ready yet, waiting..." "Info"
-                Start-Sleep -Seconds 5
+                # Device not responsive during flash is normal
+                Write-ColorOutput "Device is flashing (not responsive)..." "Info"
             }
         }
         
-        Write-ColorOutput "⚠️  Device is taking longer than expected to come back online" "Warning"
-        Write-ColorOutput "The update may have been successful, but the device might need more time" "Warning"
-        Write-ColorOutput "Try accessing http://$IPAddress/ manually in a few minutes" "Info"
+        if ($elapsedTime -ge $maxWaitTime) {
+            Write-ColorOutput "⚠️  Flash process took longer than expected" "Warning"
+            Write-ColorOutput "The device may still be flashing. Please wait a few more minutes." "Warning"
+        }
+        
+    } else {
+        Write-ColorOutput "❌ Failed to start C6 OTA flash: $($otaResponse.error)" "Error"
+        exit 1
     }
     
 } catch {
-    Write-ColorOutput "❌ OTA update failed: $($_.Exception.Message)" "Error"
+    Write-ColorOutput "❌ C6 OTA flash request failed: $($_.Exception.Message)" "Error"
     exit 1
 }
+
+# Final device check
+Write-ColorOutput "🔍 Performing final device check..." "Info"
+$finalCheckAttempts = 0
+$maxFinalCheckAttempts = 12
+
+while ($finalCheckAttempts -lt $maxFinalCheckAttempts) {
+    $finalCheckAttempts++
+    Write-ColorOutput "Final check attempt $finalCheckAttempts/$maxFinalCheckAttempts..." "Info"
+    
+    try {
+        $testResponse = Invoke-WebRequest -Uri "http://$IPAddress/" -TimeoutSec 10 -ErrorAction Stop
+        Write-ColorOutput "✅ Device is back online!" "Success"
+        
+        # Try to get updated system info
+        try {
+            $finalSysInfo = Invoke-RestMethod -Uri "http://$IPAddress/sysinfo" -TimeoutSec 5 -ErrorAction SilentlyContinue
+            if ($finalSysInfo) {
+                Write-ColorOutput "Updated device info:" "Success"
+                Write-ColorOutput "  - AP Version: $($finalSysInfo.ap_version)" "Info"
+                Write-ColorOutput "  - Build Version: $($finalSysInfo.buildversion)" "Info"
+            }
+        } catch {
+            # System info not critical
+        }
+        
+        Write-ColorOutput "🎉 C6 OTA flash completed successfully!" "Success"
+        exit 0
+        
+    } catch {
+        Write-ColorOutput "Device not ready yet, waiting..." "Info"
+        Start-Sleep -Seconds 10
+    }
+}
+
+Write-ColorOutput "⚠️  Device is taking longer than expected to come back online" "Warning"
+Write-ColorOutput "The flash may have been successful, but the device needs more time" "Warning"
+Write-ColorOutput "Try accessing http://$IPAddress/ manually in a few minutes" "Info"

@@ -11,6 +11,7 @@
 	<script src="api-examples.js?2.75" defer></script>
 	<script src="main.js?2.75" defer></script>
 	<script src="g5decoder.js?2.74"></script>
+	<script src="universal-menu.js" defer></script>
 	<link rel="stylesheet" href="main.css?2.74" type="text/css" />
 	<link rel="stylesheet" href="advanced-styles.css?2.74" type="text/css" />
 	<link rel="stylesheet" href="compact-ui.css?2.75" type="text/css" />
@@ -56,121 +57,60 @@
 				</div>
 			</div>
 			
-			<div class="quick-menu">
-				<button class="menu-btn active" onclick="openTab(event, 'enhancedhome')">
-					<span class="material-symbols-outlined" style="font-size: 14px;">dashboard</span>
-					Dashboard
-				</button>
-				<a href="tag_control_panel.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">settings_remote</span>
-					Tags
-				</a>
-				<a href="navigation.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">apps</span>
-					Navigation
-				</a>
-				<a href="dashboard.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">analytics</span>
-					Analytics
-				</a>
-				<a href="flasher.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">flash_on</span>
-					Flasher
-				</a>
-				<a href="nrf52_swd.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">memory</span>
-					nRF52 SWD
-				</a>
-				<a href="c6_module.html" class="menu-btn" id="c6ModuleLink">
-					<span class="material-symbols-outlined" style="font-size: 14px;">developer_board</span>
-					C6 Module
-				</a>
-				<a href="updates.html" class="menu-btn">
-					<span class="material-symbols-outlined" style="font-size: 14px;">system_update</span>
-					Updates
-				</a>
-				<button class="menu-btn" onclick="toggleAdvancedMode()">
-					<span class="material-symbols-outlined" style="font-size: 14px;">settings</span>
-					Settings
-				</button>
-			</div>
+			<!-- Universal Menu Container -->
+			<div id="menu-container" class="menu-container"></div>
 		</div>
 	</header>
 
 	<div class="container">
-		<!-- Simple Tab Navigation -->
-		<div class="simple-tabs">
-			<button class="tab-btn active" onclick="openTab(event, 'enhancedhome')">
-				<span class="material-symbols-outlined">dashboard</span>
-				Dashboard
-			</button>
-			<button class="tab-btn" onclick="openTab(event, 'tagtab')">
-				<span class="material-symbols-outlined">sell</span>
-				Tags
-			</button>
-			<button class="tab-btn" onclick="openTab(event, 'configtab')">
-				<span class="material-symbols-outlined">settings</span>
-				Settings
-			</button>
-			<button class="tab-btn" onclick="openTab(event, 'logtab')">
-				<span class="material-symbols-outlined">text_snippet</span>
-				Logs
-			</button>
-			<button class="tab-btn" onclick="window.open('navigation.html', '_blank')">
-				<span class="material-symbols-outlined">apps</span>
-				All Modules
-			</button>
-		</div>
-
+		<!-- Main Home Page Content -->
 		<div class="window">
-
-			<!-- Enhanced Dashboard Tab -->
-			<div id="enhancedhome" class="tabcontent active">
-				<div class="dashboard-grid">
-					<!-- System Overview Card -->
-					<div class="dashboard-card overview-card">
-						<div class="card-header">
-							<span class="material-symbols-outlined">dashboard</span>
-							<h3>System Overview</h3>
-							<div class="card-actions">
-								<button onclick="refreshData()" class="icon-btn" title="Refresh">
-									<span class="material-symbols-outlined">refresh</span>
-								</button>
-							</div>
+			<!-- Enhanced Dashboard -->
+			<div class="dashboard-grid">
+				<!-- System Overview Card -->
+				<div class="dashboard-card overview-card">
+					<div class="card-header">
+						<span class="material-symbols-outlined">dashboard</span>
+						<h3>System Overview</h3>
+						<div class="card-actions">
+							<button onclick="refreshData()" class="icon-btn" title="Refresh">
+								<span class="material-symbols-outlined">refresh</span>
+							</button>
 						</div>
-						<div class="card-content">
-							<div class="overview-grid">
-								<div class="overview-item">
-									<div class="overview-icon">📱</div>
-									<div class="overview-data">
-										<span class="overview-value" id="dash-total-tags">0</span>
-										<span class="overview-label">Total Tags</span>
-									</div>
+					</div>
+					<div class="card-content">
+						<div class="overview-grid">
+							<div class="overview-item">
+								<div class="overview-icon">📱</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-total-tags">0</span>
+									<span class="overview-label">Total Tags</span>
 								</div>
-								<div class="overview-item">
-									<div class="overview-icon online">✅</div>
-									<div class="overview-data">
-										<span class="overview-value" id="dash-online-tags">0</span>
-										<span class="overview-label">Online</span>
-									</div>
+							</div>
+							<div class="overview-item">
+								<div class="overview-icon online">✅</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-online-tags">0</span>
+									<span class="overview-label">Online</span>
 								</div>
-								<div class="overview-item">
-									<div class="overview-icon offline">❌</div>
-									<div class="overview-data">
-										<span class="overview-value" id="dash-offline-tags">0</span>
-										<span class="overview-label">Offline</span>
-									</div>
+							</div>
+							<div class="overview-item">
+								<div class="overview-icon offline">❌</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-offline-tags">0</span>
+									<span class="overview-label">Offline</span>
 								</div>
-								<div class="overview-item">
-									<div class="overview-icon">🔋</div>
-									<div class="overview-data">
-										<span class="overview-value" id="dash-avg-battery">0%</span>
-										<span class="overview-label">Avg Battery</span>
-									</div>
+							</div>
+							<div class="overview-item">
+								<div class="overview-icon">🔋</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-avg-battery">0%</span>
+									<span class="overview-label">Avg Battery</span>
 								</div>
 							</div>
 						</div>
 					</div>
+				</div>
 
 					<!-- Real-time Analytics Card -->
 					<div class="dashboard-card analytics-card">
@@ -447,8 +387,37 @@
 					</div>
 				</div>
 			</div>
+		</div>
+	</div>
 
-			<div id="hometab" class="tabcontent">
+	<!-- Footer Status Line -->
+	<div class="footer-status">
+		<div class="footer-left">
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
+				<span id="footerSystemInfo">System Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
+				<span id="footerMemoryInfo">Memory OK</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
+				<span id="footerWifiInfo">WiFi Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
+				<span id="footerTagInfo">Tags Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
+				<span id="footerPerformance">Performance OK</span>
+			</div>
+		</div>
+		<div class="footer-right">
+			<span id="footerTimestamp">Ready</span>
+		</div>
+	</div>
 				<table>
 					<tr onclick="setFilterAndShow('')">
 						<td class="material-symbols-outlined" id="dashboardStatusIcon">
@@ -502,8 +471,7 @@
 							0
 						</td>
 					</tr>
-					<!--
-					<tr onclick="$(`[data-target='aptab']`).click()">
+					<tr onclick="openTab(event, 'aptab')">
 						<td class="material-symbols-outlined" style="color:#239f26">
 							cell_tower
 						</td>
@@ -511,10 +479,9 @@
 							access points
 						</td>
 						<td id="dashboardApCount" style="color:#239f26">
-
+							0
 						</td>
 					</tr>
-				-->
 				</table>
 			</div>
 

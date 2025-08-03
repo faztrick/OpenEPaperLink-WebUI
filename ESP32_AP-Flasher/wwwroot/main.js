@@ -3127,6 +3127,12 @@ async function checkC6ModuleSupport() {
                 c6Link.style.display = 'inline-block';
             }
             
+            // Show C6 update option in updates page
+            const c6UpdateOption = document.getElementById('updateC6Option');
+            if (c6UpdateOption) {
+                c6UpdateOption.style.display = 'block';
+            }
+            
             console.log('C6 module support detected');
         }
     } catch (error) {

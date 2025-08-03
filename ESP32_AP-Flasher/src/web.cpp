@@ -521,12 +521,15 @@ void init_web() {
         response->print("{");
 #ifdef HAS_H2
         HasH2 = "1";
-#elif defined(HAS_TSLR)
+#endif
+#ifdef HAS_TSLR
         HasTSLR = "1";
-#elif defined(C6_OTA_FLASHING)
+#endif
+#ifdef C6_OTA_FLASHING
         HasC6 = "1";
 #endif
         response->print("\"C6\": \"" + HasC6 + "\", ");
+        response->print("\"hasC6\": " + HasC6 + ", ");
         response->print("\"H2\": \"" + HasH2 + "\", ");
         response->print("\"TLSR\": \"" + HasTSLR + "\", ");
 #ifdef SAVE_SPACE
@@ -1580,6 +1583,16 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
     String firmwareFile = request->getParam("firmware_file", true)->value();
     String comPort = request->getParam("com_port", true)->value();
     
+    // Optional parameters with defaults
+    bool eraseFlash = request->hasParam("erase_flash", true) ? 
+                      request->getParam("erase_flash", true)->value() == "true" : false;
+    bool verifyFlash = request->hasParam("verify_flash", true) ? 
+                       request->getParam("verify_flash", true)->value() == "true" : true;
+    bool resetAfterFlash = request->hasParam("reset_after_flash", true) ? 
+                           request->getParam("reset_after_flash", true)->value() == "true" : true;
+    int baudRate = request->hasParam("baud_rate", true) ? 
+                   request->getParam("baud_rate", true)->value().toInt() : 921600;
+    
     // Validate firmware file exists
     if (!contentFS->exists(firmwareFile)) {
         request->send(400, "application/json", 
@@ -1587,33 +1600,63 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
         return;
     }
     
-    // Validate COM port format
-    if (!comPort.startsWith("COM") && !comPort.startsWith("/dev/")) {
+    // Validate firmware file is not empty
+    File file = contentFS->open(firmwareFile, "r");
+    if (!file || file.size() == 0) {
+        if (file) file.close();
         request->send(400, "application/json", 
-            "{\"success\":false,\"error\":\"Invalid COM port format\"}");
+            "{\"success\":false,\"error\":\"Firmware file is empty or cannot be read\"}");
+        return;
+    }
+    file.close();
+    
+    // Validate baud rate
+    if (baudRate < 9600 || baudRate > 2000000) {
+        request->send(400, "application/json", 
+            "{\"success\":false,\"error\":\"Invalid baud rate. Must be between 9600 and 2000000\"}");
         return;
     }
     
-    wsSerial("Starting C6 OTA flash: " + firmwareFile + " -> " + comPort);
+    // For ESP32-C6 internal flashing, we don't actually need a COM port parameter
+    // but we keep it for compatibility with the frontend
+    wsSerial("Starting C6 OTA flash: " + firmwareFile);
+    wsSerial("Erase Flash: " + String(eraseFlash ? "Yes" : "No"));
+    wsSerial("Verify Flash: " + String(verifyFlash ? "Yes" : "No"));
+    wsSerial("Reset After Flash: " + String(resetAfterFlash ? "Yes" : "No"));
+    wsSerial("Baud Rate: " + String(baudRate));
     
-    // Create task parameters
+    // Create task parameters structure
     struct FlashParams {
         String firmwareFile;
         String comPort;
+        bool eraseFlash;
+        bool verifyFlash;
+        bool resetAfterFlash;
+        int baudRate;
     };
     
     FlashParams* params = new FlashParams();
     params->firmwareFile = firmwareFile;
     params->comPort = comPort;
+    params->eraseFlash = eraseFlash;
+    params->verifyFlash = verifyFlash;
+    params->resetAfterFlash = resetAfterFlash;
+    params->baudRate = baudRate;
     
-    // Start OTA flash task
-    xTaskCreate(C6OTAFlashTask, "C6OTAFlash", 8192, params, 10, NULL);
+    // Start OTA flash task with increased stack size for the enhanced implementation
+    BaseType_t result = xTaskCreate(C6OTAFlashTask, "C6OTAFlash", 12288, params, 10, NULL);
     
-    request->send(200, "application/json", 
-        "{\"success\":true,\"message\":\"C6 OTA flash started\"}");
+    if (result == pdPASS) {
+        request->send(200, "application/json", 
+            "{\"success\":true,\"message\":\"C6 OTA flash started successfully\"}");
+    } else {
+        delete params;
+        request->send(500, "application/json", 
+            "{\"success\":false,\"error\":\"Failed to start C6 OTA flash task\"}");
+    }
 #else
     request->send(400, "application/json", 
-        "{\"success\":false,\"error\":\"C6 OTA flashing not supported\"}");
+        "{\"success\":false,\"error\":\"C6 OTA flashing not supported in this build\"}");
 #endif
 }
 
