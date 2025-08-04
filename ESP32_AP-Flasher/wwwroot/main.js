@@ -618,11 +618,13 @@ if (cfgMoreElement) {
 	};
 }
 
-$('#cfgsave').onclick = function () {
-	let contentMode = $('#cfgcontent').value;
-	let contentDef = getContentDefById(contentMode);
-	let extraoptions = contentDef?.param ?? null;
-	let obj = {};
+const cfgsaveElement = $('#cfgsave');
+if (cfgsaveElement) {
+	cfgsaveElement.onclick = function () {
+		let contentMode = $('#cfgcontent').value;
+		let contentDef = getContentDefById(contentMode);
+		let extraoptions = contentDef?.param ?? null;
+		let obj = {};
 
 	let formData = new FormData();
 	formData.append("mac", $('#cfgmac').dataset.mac);
@@ -656,6 +658,7 @@ $('#cfgsave').onclick = function () {
 	$('#advancedoptions').style.height = '0px';
 	$('#configbox').close();
 	backupTagDB();
+	};
 }
 
 function sendCmd(mac, cmd) {

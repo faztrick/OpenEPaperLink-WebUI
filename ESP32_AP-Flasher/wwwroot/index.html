@@ -19,6 +19,8 @@
 	<script src="feature-manager.js?3.2" defer></script>
 	<script src="api-manager-enhanced.js?3.2" defer></script>
 	<script src="debug-system.js?3.2" defer></script>
+	<!-- OpenAI Agent Integration -->
+	<script src="openai-agent-enhanced.js?3.2" defer></script>
 	<!-- Feature-specific modules -->
 	<script src="compact-ui.js?3.2" defer></script>
 	<script src="g5decoder.js?3.2" defer></script>
@@ -160,6 +162,9 @@
 						</button>
 						<button class="action-btn" onclick="window.open('settings.html')" title="Settings">
 							<span class="material-symbols-outlined">settings</span>
+						</button>
+						<button class="action-btn" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()" title="AI Assistant">
+							<span class="material-symbols-outlined">smart_toy</span>
 						</button>
 					</div>
 				</div>

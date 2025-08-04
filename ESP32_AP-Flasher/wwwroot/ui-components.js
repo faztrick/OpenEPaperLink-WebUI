@@ -19,32 +19,34 @@ class UIComponents {
      * Initialize built-in components
      */
     initializeComponents() {
-        // Register components with proper error handling
-        try {
-            this.registerComponent('modal', this.createModal.bind(this));
-            this.registerComponent('tooltip', this.createTooltip.bind(this));
-            this.registerComponent('notification', this.createNotification.bind(this));
-            this.registerComponent('dropdown', this.createDropdown.bind(this));
-            this.registerComponent('tabs', this.createTabs.bind(this));
-            this.registerComponent('accordion', this.createAccordion.bind(this));
-            this.registerComponent('slider', this.createSlider.bind(this));
-            this.registerComponent('colorPicker', this.createColorPicker.bind(this));
-            this.registerComponent('fileUpload', this.createFileUpload.bind(this));
-            this.registerComponent('progressBar', this.createProgressBar.bind(this));
-        } catch (error) {
-            console.warn('UIComponents initialization warning:', error);
-            // Register only methods that exist
-            const methods = ['createModal', 'createTooltip', 'createNotification', 'createDropdown', 
-                           'createTabs', 'createAccordion', 'createSlider', 'createColorPicker', 
-                           'createFileUpload', 'createProgressBar'];
-            
-            methods.forEach(methodName => {
-                if (typeof this[methodName] === 'function') {
-                    const componentName = methodName.replace('create', '').toLowerCase();
-                    this.registerComponent(componentName, this[methodName].bind(this));
+        // Register components with safe binding
+        const componentMap = [
+            { name: 'modal', method: 'createModal' },
+            { name: 'tooltip', method: 'createTooltip' },
+            { name: 'notification', method: 'createNotification' },
+            { name: 'dropdown', method: 'createDropdown' },
+            { name: 'tabs', method: 'createTabs' },
+            { name: 'accordion', method: 'createAccordion' },
+            { name: 'slider', method: 'createSlider' },
+            { name: 'colorPicker', method: 'createColorPicker' },
+            { name: 'fileUpload', method: 'createFileUpload' },
+            { name: 'progressBar', method: 'createProgressBar' }
+        ];
+
+        componentMap.forEach(({ name, method }) => {
+            try {
+                if (typeof this[method] === 'function') {
+                    // Use arrow function to preserve context instead of bind
+                    this.registerComponent(name, (...args) => this[method](...args));
+                } else {
+                    console.warn(`UIComponents: Method ${method} not found`);
                 }
-            });
-        }
+            } catch (error) {
+                console.warn(`UIComponents: Failed to register ${name}:`, error);
+            }
+        });
+        
+        console.log('UIComponents: Initialization completed');
     }
 
     /**

@@ -44,7 +44,8 @@ class TagManager {
      */
     async loadTags(pos = 0, limit = 50) {
         try {
-            const response = await fetch(`/gettags?pos=${pos}&limit=${limit}`);
+            // Use the correct endpoint from web.cpp: /get_db
+            const response = await fetch(`/get_db?pos=${pos}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -129,6 +130,9 @@ class TagManager {
         let contentDefObj = this.getContentDefById(element.contentMode);
         if (contentDefObj) {
             $('#tag' + tagmac + ' .contentmode').innerHTML = contentDefObj.name;
+        } else {
+            // Fallback when content definition is not found
+            $('#tag' + tagmac + ' .contentmode').innerHTML = `Content Mode ${element.contentMode}`;
         }
         
         // Update additional tag information
@@ -297,7 +301,8 @@ class TagManager {
      */
     async loadContentCard(mac) {
         try {
-            const response = await fetch(`/gettaginfo?mac=${mac}`);
+            // Use the correct endpoint from web.cpp: /get_db?mac=<mac>
+            const response = await fetch(`/get_db?mac=${mac}`);
             const tagdata = await response.json();
             
             $('#cfgmac').innerHTML = mac;
@@ -316,6 +321,11 @@ class TagManager {
      * Get content definition by ID
      */
     getContentDefById(id) {
+        // Safety check to ensure contentCards is an array
+        if (!Array.isArray(this.contentCards)) {
+            console.warn('contentCards is not an array, returning null for id:', id);
+            return null;
+        }
         return this.contentCards.find(card => card.id === id);
     }
 
@@ -324,12 +334,14 @@ class TagManager {
      */
     async sendCmd(mac, cmd) {
         try {
-            const response = await fetch('/cmd', {
+            // Use the correct endpoint from web.cpp: /tag_cmd with form data
+            const formData = new FormData();
+            formData.append('mac', mac);
+            formData.append('cmd', cmd);
+            
+            const response = await fetch('/tag_cmd', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ mac, cmd })
+                body: formData
             });
             
             if (response.ok) {
@@ -517,10 +529,22 @@ class TagManager {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            this.contentCards = await response.json();
+            const data = await response.json();
+            // Check if data is already an array or has a cards property
+            this.contentCards = Array.isArray(data) ? data : (data.cards || []);
+            
+            // Synchronize with global cardconfig variable for legacy compatibility
+            if (typeof window !== 'undefined') {
+                window.cardconfig = this.contentCards;
+            }
         } catch (error) {
             console.error('Could not load content_cards.json:', error);
             showStatusMessage('Could not load content cards configuration', 'error');
+            // Initialize with empty array as fallback
+            this.contentCards = [];
+            if (typeof window !== 'undefined') {
+                window.cardconfig = [];
+            }
         }
     }
 }

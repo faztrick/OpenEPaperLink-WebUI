@@ -15,55 +15,62 @@
 
 class OpenAIAgentEnhanced {
     constructor() {
-        // OpenAI Configuration
-        this.API_KEY = "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";
-        this.API_URL = "https://api.openai.com/v1/chat/completions";
-        this.MODEL = "gpt-4-turbo-preview";
+        // ESP32 OpenAI Proxy Configuration
+        this.API_URL = "/api/openai/chat";  // Use ESP32 proxy endpoint
+        this.MODEL = "gpt-4o-mini";  // Use configured model
         
         // State management
         this.isProcessing = false;
         this.conversationHistory = [];
         this.functionCallHistory = [];
         
-        // Enhanced system prompt for comprehensive ESP32 control
-        this.systemPrompt = `You are an advanced AI assistant specialized in ESP32 AP-Flasher system management. You have comprehensive control over:
+        // Enhanced system prompt for ESP32 AP-Flasher integration
+        this.systemPrompt = `You are an advanced AI assistant integrated directly into the ESP32 AP-Flasher system. You have comprehensive control over:
 
-🏗️ SYSTEM ARCHITECTURE:
-- ESP32-S3 main controller with C6 wireless modules
+🏗️ ESP32 SYSTEM ARCHITECTURE:
+- ESP32-S3 main controller with ESP32-C6 wireless modules
 - OpenEPaperLink e-paper tag management system
-- Multi-interface communication (WiFi, BLE, ZigBee, SWD)
+- Multi-interface communication (WiFi, BLE, ZigBee SubGHz, SWD)
 - Advanced firmware flashing and OTA capabilities
+- Real-time system monitoring and control
 
-🎯 CORE CAPABILITIES:
-- File System Management (SPIFFS/LittleFS)
-- E-Paper Tag Control & Image Updates
-- RGB LED Control & Status Indicators
-- ESP32-C6 Module Management
-- OTA Firmware Updates
-- Serial Access Point Operations
-- UDP Network Communication
-- WiFi Management & Configuration
-- ZBS Interface (ZigBee) Control
-- SWD Programming (nRF52 devices)
-- Bluetooth Low Energy Operations
-- Advanced System Diagnostics
+🎯 INTEGRATED CAPABILITIES:
+- Direct ESP32 System Control via /sysinfo, /system_info, /restart_system
+- E-Paper Tag Management via /tag_status, /tag_control, /tag_image_update  
+- RGB LED Control via /led_control with patterns and effects
+- ESP32-C6 Module Operations via /c6_status, /c6_control
+- OTA Firmware Updates via /ota_check, /ota_update
+- Network Management via /network_info, /wifi_scan, /wifi_manage
+- File System Operations via LittleFS endpoints
+- Real-time Diagnostics and Monitoring
 
-🔧 AVAILABLE FUNCTIONS:
-File Management: createFile, readFile, updateFile, deleteFile, listFiles, manageSPIFFS
-System Control: getSystemInfo, restartSystem, performSystemDiagnostic, configureSystem
-Tag Operations: getTagStatus, controlTag, updateTagImage
-LED Control: controlLEDs (brightness, colors, patterns, effects)
-C6 Management: getC6Status, controlC6Module
-OTA/Firmware: checkOTAUpdate, performOTAUpdate
-Network: getNetworkInfo, scanWiFi, getWiFiStatus, manageWiFi, getUDPStatus, sendUDPMessage
-Serial AP: getSerialAPStatus, controlSerialAP
-ZBS Interface: getZBSStatus, controlZBSInterface
-SWD Programming: getSWDStatus, controlSWDInterface
-BLE Operations: getBLEStatus, controlBLE
+🔧 AVAILABLE ESP32 FUNCTIONS:
+All functions directly interface with the ESP32 hardware and firmware. You can:
+- Monitor real-time system metrics (temperature, memory, WiFi status)
+- Control RGB LEDs with custom patterns and colors  
+- Manage e-paper tags and update their displays
+- Flash and configure C6 wireless modules
+- Perform OTA updates safely
+- Manage WiFi connections and network settings
+- Access file system for configuration and data
+- Run comprehensive system diagnostics
 
-Always provide detailed explanations of actions and offer proactive suggestions for system optimization.`;
+Always provide detailed technical information and offer proactive system optimization suggestions based on real ESP32 hardware status.`;
 
         this.initializeUI();
+        this.loadESP32Config();
+    }
+
+    async loadESP32Config() {
+        try {
+            const response = await fetch('/openai_config.json');
+            this.config = await response.json();
+            this.MODEL = this.config.openai.models.default || "gpt-4o-mini";
+            this.logToConsole('info', 'ESP32 OpenAI configuration loaded', this.config);
+        } catch (error) {
+            this.logToConsole('warn', 'Could not load ESP32 config, using defaults', error);
+            this.config = { esp32: { features: {} } };
+        }
     }
 
     initializeUI() {
@@ -76,7 +83,7 @@ Always provide detailed explanations of actions and offer proactive suggestions 
         const agentHTML = `
             <div id="openai-agent-panel" class="agent-panel" style="display: none;">
                 <div class="agent-header">
-                    <h3>🤖 Enhanced AI Assistant</h3>
+                    <h3>🤖 ESP32 AI Assistant</h3>
                     <div class="agent-status">
                         <span class="status-dot" id="ai-status-dot"></span>
                         <span id="ai-status-text">Ready</span>
@@ -88,22 +95,23 @@ Always provide detailed explanations of actions and offer proactive suggestions 
                     <div class="agent-chat" id="agent-chat">
                         <div class="agent-message system">
                             <div class="message-header">
-                                <strong>🤖 Enhanced AI Assistant</strong>
+                                <strong>🤖 ESP32 AI Assistant</strong>
                                 <span class="timestamp">${new Date().toLocaleTimeString()}</span>
                             </div>
                             <div class="message-content">
-                                Hello! I'm your enhanced AI assistant with comprehensive control over the ESP32 AP-Flasher system. 
+                                Hello! I'm your integrated ESP32 AI assistant with direct hardware control capabilities. 
                                 I can help you with:
                                 <br><br>
-                                <strong>🏗️ System Management:</strong> Monitor hardware, configure settings, run diagnostics
-                                <br><strong>📱 Tag Control:</strong> Manage e-paper tags, update images, control displays
-                                <br><strong>💡 LED Control:</strong> Customize RGB lighting, set patterns, adjust brightness
-                                <br><strong>📡 C6 Modules:</strong> Manage wireless modules, flash firmware, diagnostics
-                                <br><strong>🔄 OTA Updates:</strong> Check for updates, manage firmware versions
-                                <br><strong>🌐 Network Operations:</strong> WiFi management, UDP communication, BLE control
-                                <br><strong>🔧 Advanced Features:</strong> SWD programming, ZBS interface, file management
+                                <strong>🏗️ System Management:</strong> Real-time ESP32 monitoring, memory analysis, temperature checks
+                                <br><strong>📱 Tag Control:</strong> E-paper display management, image updates, tag diagnostics
+                                <br><strong>💡 LED Control:</strong> RGB lighting patterns, brightness control, custom effects
+                                <br><strong>📡 C6 Modules:</strong> Wireless module management, firmware flashing, radio diagnostics
+                                <br><strong>🔄 OTA Updates:</strong> Safe firmware updates, version management, rollback protection
+                                <br><strong>🌐 Network Operations:</strong> WiFi scanning, connection management, network diagnostics
+                                <br><strong>🔧 Advanced Features:</strong> File system access, system diagnostics, performance optimization
                                 <br><br>
-                                Try asking: <em>"Show me the system status"</em> or <em>"Control the RGB LEDs"</em>
+                                Connected to ESP32: <strong>${window.location.hostname}</strong><br>
+                                Try asking: <em>"Show me the real-time system status"</em> or <em>"Control the RGB LEDs"</em>
                             </div>
                         </div>
                     </div>
@@ -135,8 +143,8 @@ Always provide detailed explanations of actions and offer proactive suggestions 
                 
                 <div class="agent-footer">
                     <div class="footer-info">
-                        <span>🧠 GPT-4 Turbo</span>
-                        <span>⚡ <span id="function-count">25</span> Functions</span>
+                        <span>🧠 GPT-4o Mini</span>
+                        <span>⚡ ESP32 Integrated</span>
                         <span>🔒 Secure</span>
                     </div>
                 </div>
@@ -764,8 +772,8 @@ Always provide detailed explanations of actions and offer proactive suggestions 
             const response = await fetch(this.API_URL, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.API_KEY}`
+                    'Content-Type': 'application/json'
+                    // No Authorization header needed - ESP32 proxy handles it
                 },
                 body: JSON.stringify({
                     model: this.MODEL,
@@ -963,7 +971,7 @@ Always provide detailed explanations of actions and offer proactive suggestions 
 
     // System Control APIs
     async api_getSystemInfo() {
-        const response = await fetch('/system_info');
+        const response = await fetch('/sysinfo');
         return await response.json();
     }
 

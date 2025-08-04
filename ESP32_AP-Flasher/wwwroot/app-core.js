@@ -377,7 +377,7 @@ class OptimizedApp {
      */
     async loadSystemInfo() {
         try {
-            const response = await fetch('/sysinfo.json');
+            const response = await fetch('/sysinfo');
             const sysInfo = await response.json();
             
             this.updateSystemDisplay(sysInfo);
@@ -393,7 +393,8 @@ class OptimizedApp {
      */
     async loadSettings() {
         try {
-            const response = await fetch('/cfg.json');
+            // Use the correct endpoint from web.cpp: /get_ap_config
+            const response = await fetch('/get_ap_config');
             const settings = await response.json();
             
             this.applySettings(settings);
@@ -409,14 +410,25 @@ class OptimizedApp {
      */
     async loadLogs() {
         try {
-            const response = await fetch('/logs');
-            const logs = await response.text();
-            
-            this.displayLogs(logs);
-            this.emit('logs:loaded', logs);
+            // Try log.txt first, then fallback to empty logs
+            let response;
+            try {
+                response = await fetch('/log.txt');
+                if (!response.ok) {
+                    throw new Error('Log file not found');
+                }
+                const logs = await response.text();
+                this.displayLogs(logs);
+                this.emit('logs:loaded', logs);
+            } catch (error) {
+                // Fallback - logs might be displayed via WebSocket or other means
+                console.log('Log file not available, logs may be displayed via WebSocket');
+                this.displayLogs('Logs are displayed in real-time via WebSocket connection.');
+            }
             
         } catch (error) {
             console.error('Failed to load logs:', error);
+            this.displayLogs('Error loading logs: ' + error.message);
         }
     }
 
@@ -615,12 +627,13 @@ class OptimizedApp {
         try {
             const settings = Object.fromEntries(formData);
             
-            const response = await fetch('/settings', {
+            // Use the correct endpoint from web.cpp: /save_apcfg
+            const response = await fetch('/save_apcfg', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: JSON.stringify(settings)
+                body: new URLSearchParams(settings).toString()
             });
 
             if (response.ok) {

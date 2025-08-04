@@ -6,7 +6,7 @@ $esp32IP = "192.168.26.201"
 $endpoints = @(
     @{url="/api/features"; method="GET"; description="Feature detection API"},
     @{url="/api/error_report"; method="POST"; description="Error reporting API"},
-    @{url="/sysinfo.json"; method="GET"; description="System info JSON"},
+    @{url="/sysinfo"; method="GET"; description="System info API"},
     @{url="/tft_status"; method="HEAD"; description="TFT feature detection"},
     @{url="/led_control"; method="HEAD"; description="LED control detection"},
     @{url="/ble_status"; method="HEAD"; description="BLE feature detection"},
