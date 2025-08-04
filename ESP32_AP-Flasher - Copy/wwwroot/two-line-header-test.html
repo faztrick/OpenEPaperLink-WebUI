@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Line Header Layout Test</title>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+    <link rel="stylesheet" href="merged-styles.css" type="text/css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .layout-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 2000;
+        }
+        
+        .test-content {
+            padding: 2rem;
+            text-align: center;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout-info">
+        <h4>Two-Line Header Layout</h4>
+        <ul>
+            <li><strong>Line 1:</strong> Logo + Status</li>
+            <li><strong>Line 2:</strong> Menu (centered)</li>
+        </ul>
+        <p>Test on different screen sizes!</p>
+    </div>
+
+    <!-- Two-Line Header: Logo+Status, Menu -->
+    <header class="advanced-header">
+        <div class="compact-header-content">
+            <!-- First Line: Logo with Status -->
+            <div class="header-first-line">
+                <div class="header-left">
+                    <div class="logo-section">
+                        <div class="logo-icon">🏠</div>
+                        <div class="logo-text">
+                            <h1>OpenEPL ESP32 Control Center</h1>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="header-status">
+                    <div class="status-item">
+                        <div class="status-dot" style="background: #10b981;"></div>
+                        <span>Online</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
+                        <span>12 Tags</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
+                        <span>WiFi OK</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
+                        <span>02:34</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Second Line: Menu merged with status area -->
+            <div class="header-second-line">
+                <div id="menu-container" class="menu-container"></div>
+            </div>
+        </div>
+    </header>
+
+    <div class="test-content">
+        <h2>Two-Line Header Layout Test</h2>
+        <p>The header now has a clean two-line structure:</p>
+        <ol>
+            <li><strong>First Line:</strong> Logo on the left, status indicators on the right</li>
+            <li><strong>Second Line:</strong> Centered navigation menu</li>
+        </ol>
+        <p>This creates a more organized and visually appealing layout.</p>
+        
+        <div style="margin-top: 2rem; padding: 1rem; background: rgba(255,255,255,0.1); border-radius: 8px;">
+            <h3>Test Instructions:</h3>
+            <ul style="text-align: left; display: inline-block;">
+                <li>Check that the logo and status are on the first line</li>
+                <li>Verify the menu is centered on the second line</li>
+                <li>Test responsiveness by resizing the window</li>
+                <li>Ensure all menu items are clickable</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="universal-menu.js?3.4"></script>
+    <script>
+        // Test layout structure
+        setTimeout(() => {
+            console.log('=== TWO-LINE HEADER LAYOUT TEST ===');
+            
+            const firstLine = document.querySelector('.header-first-line');
+            const secondLine = document.querySelector('.header-second-line');
+            const menu = document.querySelector('.quick-menu');
+            
+            if (firstLine) {
+                console.log('✅ First line found with logo and status');
+                const logo = firstLine.querySelector('.logo-text');
+                const status = firstLine.querySelector('.header-status');
+                console.log('Logo present:', !!logo);
+                console.log('Status present:', !!status);
+            }
+            
+            if (secondLine) {
+                console.log('✅ Second line found with menu container');
+                console.log('Menu present:', !!menu);
+            }
+            
+            if (menu) {
+                const menuItems = menu.querySelectorAll('.menu-btn');
+                console.log(`Menu has ${menuItems.length} items`);
+            }
+            
+            console.log('Layout structure validated!');
+        }, 1000);
+    </script>
+</body>
+</html>

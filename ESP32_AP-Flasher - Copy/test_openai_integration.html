@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenAI Agent Integration Test</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5; 
+        }
+        .test-container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+        }
+        .test-result { 
+            margin: 10px 0; 
+            padding: 10px; 
+            border-radius: 5px; 
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px; 
+        }
+        button:hover { background: #0056b3; }
+        #log { 
+            background: #f8f9fa; 
+            border: 1px solid #e9ecef; 
+            padding: 10px; 
+            max-height: 300px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🤖 ESP32 OpenAI Agent Integration Test</h1>
+        
+        <div class="test-section">
+            <h3>📋 Test Status</h3>
+            <div id="status" class="test-result info">Ready to test...</div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Manual Tests</h3>
+            <button onclick="testOpenAIAgent()">Test OpenAI Agent Load</button>
+            <button onclick="testESP32APIs()">Test ESP32 APIs</button>
+            <button onclick="testOpenAIProxy()">Test OpenAI Proxy</button>
+            <button onclick="showAIAgent()">Show AI Agent Panel</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 Test Results</h3>
+            <div id="results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Debug Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <!-- Load the OpenAI Agent -->
+    <script src="openai-agent-enhanced.js"></script>
+    
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function setStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `test-result ${type}`;
+            statusDiv.textContent = message;
+        }
+
+        function addResult(test, result, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${type}`;
+            resultDiv.innerHTML = `<strong>${test}:</strong> ${result}`;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        async function testOpenAIAgent() {
+            log('Testing OpenAI Agent initialization...');
+            setStatus('Testing OpenAI Agent...', 'info');
+            
+            try {
+                if (typeof openAIAgentEnhanced !== 'undefined' && openAIAgentEnhanced) {
+                    addResult('OpenAI Agent', 'Loaded successfully ✅', 'success');
+                    log('OpenAI Agent instance found: ' + typeof openAIAgentEnhanced);
+                    
+                    // Test configuration
+                    if (openAIAgentEnhanced.config) {
+                        addResult('ESP32 Config', 'Configuration loaded ✅', 'success');
+                        log('Config loaded: ' + JSON.stringify(openAIAgentEnhanced.config.esp32?.features || {}, null, 2));
+                    } else {
+                        addResult('ESP32 Config', 'Configuration not loaded ⚠️', 'error');
+                    }
+                } else {
+                    addResult('OpenAI Agent', 'Not loaded ❌', 'error');
+                }
+                setStatus('OpenAI Agent test completed', 'success');
+            } catch (error) {
+                addResult('OpenAI Agent', `Error: ${error.message} ❌`, 'error');
+                log('Error testing OpenAI Agent: ' + error.message);
+                setStatus('OpenAI Agent test failed', 'error');
+            }
+        }
+
+        async function testESP32APIs() {
+            log('Testing ESP32 API endpoints...');
+            setStatus('Testing ESP32 APIs...', 'info');
+            
+            const endpoints = [
+                { url: '/sysinfo', name: 'System Info' },
+                { url: '/tag_status', name: 'Tag Status' },
+                { url: '/network_info', name: 'Network Info' },
+                { url: '/api/features', name: 'Features API' }
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    log(`Testing ${endpoint.name} (${endpoint.url})...`);
+                    const response = await fetch(endpoint.url);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        addResult(endpoint.name, `${response.status} OK - Data received ✅`, 'success');
+                        log(`${endpoint.name}: Success - ${JSON.stringify(data).slice(0, 100)}...`);
+                    } else {
+                        addResult(endpoint.name, `${response.status} ${response.statusText} ❌`, 'error');
+                        log(`${endpoint.name}: HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    addResult(endpoint.name, `Network error: ${error.message} ❌`, 'error');
+                    log(`${endpoint.name}: Error - ${error.message}`);
+                }
+            }
+            setStatus('ESP32 API tests completed', 'success');
+        }
+
+        async function testOpenAIProxy() {
+            log('Testing OpenAI proxy endpoint...');
+            setStatus('Testing OpenAI Proxy...', 'info');
+            
+            try {
+                const testMessage = {
+                    model: "gpt-4o-mini",
+                    messages: [
+                        { role: "user", content: "Say 'Hello ESP32!' to test the connection." }
+                    ],
+                    max_tokens: 50
+                };
+
+                log('Sending test message to OpenAI proxy...');
+                const response = await fetch('/api/openai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(testMessage)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('OpenAI Proxy', 'Connection successful ✅', 'success');
+                    log('OpenAI Proxy: Success - ' + JSON.stringify(data).slice(0, 200) + '...');
+                } else {
+                    const errorText = await response.text();
+                    addResult('OpenAI Proxy', `${response.status} ${response.statusText} ❌`, 'error');
+                    log('OpenAI Proxy: Error - ' + errorText);
+                }
+            } catch (error) {
+                addResult('OpenAI Proxy', `Network error: ${error.message} ❌`, 'error');
+                log('OpenAI Proxy: Error - ' + error.message);
+            }
+            setStatus('OpenAI Proxy test completed', 'success');
+        }
+
+        function showAIAgent() {
+            log('Attempting to show AI agent panel...');
+            
+            if (typeof openAIAgentEnhanced !== 'undefined' && openAIAgentEnhanced) {
+                openAIAgentEnhanced.togglePanel();
+                addResult('AI Agent Panel', 'Panel toggled ✅', 'success');
+                log('AI Agent panel toggled');
+            } else {
+                addResult('AI Agent Panel', 'Agent not available ❌', 'error');
+                log('AI Agent not available');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-run basic tests on load
+        window.addEventListener('DOMContentLoaded', function() {
+            log('ESP32 OpenAI Agent Integration Test started');
+            setStatus('Loaded - Ready for testing', 'success');
+            
+            // Wait a bit for scripts to load, then run automatic tests
+            setTimeout(() => {
+                log('Running automatic tests...');
+                testOpenAIAgent();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
