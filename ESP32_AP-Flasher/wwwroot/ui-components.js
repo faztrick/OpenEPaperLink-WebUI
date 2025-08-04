@@ -19,16 +19,32 @@ class UIComponents {
      * Initialize built-in components
      */
     initializeComponents() {
-        this.registerComponent('modal', this.createModal.bind(this));
-        this.registerComponent('tooltip', this.createTooltip.bind(this));
-        this.registerComponent('notification', this.createNotification.bind(this));
-        this.registerComponent('dropdown', this.createDropdown.bind(this));
-        this.registerComponent('tabs', this.createTabs.bind(this));
-        this.registerComponent('accordion', this.createAccordion.bind(this));
-        this.registerComponent('slider', this.createSlider.bind(this));
-        this.registerComponent('colorPicker', this.createColorPicker.bind(this));
-        this.registerComponent('fileUpload', this.createFileUpload.bind(this));
-        this.registerComponent('progressBar', this.createProgressBar.bind(this));
+        // Register components with proper error handling
+        try {
+            this.registerComponent('modal', this.createModal.bind(this));
+            this.registerComponent('tooltip', this.createTooltip.bind(this));
+            this.registerComponent('notification', this.createNotification.bind(this));
+            this.registerComponent('dropdown', this.createDropdown.bind(this));
+            this.registerComponent('tabs', this.createTabs.bind(this));
+            this.registerComponent('accordion', this.createAccordion.bind(this));
+            this.registerComponent('slider', this.createSlider.bind(this));
+            this.registerComponent('colorPicker', this.createColorPicker.bind(this));
+            this.registerComponent('fileUpload', this.createFileUpload.bind(this));
+            this.registerComponent('progressBar', this.createProgressBar.bind(this));
+        } catch (error) {
+            console.warn('UIComponents initialization warning:', error);
+            // Register only methods that exist
+            const methods = ['createModal', 'createTooltip', 'createNotification', 'createDropdown', 
+                           'createTabs', 'createAccordion', 'createSlider', 'createColorPicker', 
+                           'createFileUpload', 'createProgressBar'];
+            
+            methods.forEach(methodName => {
+                if (typeof this[methodName] === 'function') {
+                    const componentName = methodName.replace('create', '').toLowerCase();
+                    this.registerComponent(componentName, this[methodName].bind(this));
+                }
+            });
+        }
     }
 
     /**

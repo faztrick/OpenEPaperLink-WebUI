@@ -33,6 +33,15 @@
 #include "ble_writer.h"
 #endif
 
+#ifdef HAS_IR_REMOTE
+#include "ir_interface.h"
+#endif
+
+// Temporarily disable RC522 until IR is working
+// #ifdef HAS_RC522
+// #include "rc522_interface.h"
+// #endif
+
 util::Timer intervalContentRunner(seconds(1));
 util::Timer intervalSysinfo(seconds(5));
 util::Timer intervalVars(seconds(10));
@@ -158,6 +167,26 @@ void setup() {
         xTaskCreate(BLETask, "BLE Writer", 12000, NULL, 5, NULL);
     }
 #endif
+
+#ifdef HAS_IR_REMOTE
+    // Initialize IR interface
+    if (irInterface.begin()) {
+        Serial.println("✅ IR Remote interface started");
+    } else {
+        Serial.println("❌ Failed to start IR Remote interface");
+    }
+#endif
+
+// Temporarily disable RC522 until IR is working
+// #ifdef HAS_RC522
+//     // Initialize RC522 RFID interface
+//     if (rc522Interface.begin()) {
+//         Serial.println("✅ RC522 RFID interface started");
+//         rc522Interface.startMonitoring(); // Start automatic card detection
+//     } else {
+//         Serial.println("❌ Failed to start RC522 RFID interface");
+//     }
+// #endif
 
 #ifdef HAS_USB
     // We'll need to start the 'usbflasher' task for boards with a second (USB) port. This can be used as a 'flasher' interface, using a python script on the host

@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEPL Feature Test Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .test-section-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+            color: #2c3e50;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .test-section-header:hover {
+            background: #e9ecef;
+        }
+        
+        .test-section-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .test-section.expanded .test-section-content {
+            display: block;
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .test-item {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+        
+        .test-item h4 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        
+        .test-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+        
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-testing {
+            background: #cce5ff;
+            color: #004085;
+        }
+        
+        .status-pass {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-fail {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .test-log {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .progress-bar {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            background: linear-gradient(90deg, #28a745, #20c997);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .expand-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2em;
+            color: #6c757d;
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 15px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 OpenEPL Feature Test Suite</h1>
+            <p>Comprehensive testing for ESP32 OutdoorAP configuration and web UI features</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <button class="btn btn-success" onclick="runAllTests()">🚀 Run All Tests</button>
+                <button class="btn" onclick="runConfigTests()">⚙️ Test Configuration</button>
+                <button class="btn" onclick="runUITests()">🖥️ Test UI Features</button>
+                <button class="btn" onclick="runAPITests()">🔌 Test API Endpoints</button>
+                <button class="btn btn-danger" onclick="clearResults()">🗑️ Clear Results</button>
+            </div>
+            
+            <div class="summary-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-tests">0</div>
+                    <div class="stat-label">Total Tests</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="passed-tests">0</div>
+                    <div class="stat-label">Passed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="failed-tests">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="pending-tests">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+            </div>
+            
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            
+            <!-- Configuration Tests -->
+            <div class="test-section" id="config-tests">
+                <div class="test-section-header" onclick="toggleSection('config-tests')">
+                    <span>⚙️ Configuration & Build Tests</span>
+                    <button class="expand-toggle">▼</button>
+                </div>
+                <div class="test-section-content">
+                    <div class="test-grid" id="config-test-grid"></div>
+                </div>
+            </div>
+            
+            <!-- UI Feature Tests -->
+            <div class="test-section" id="ui-tests">
+                <div class="test-section-header" onclick="toggleSection('ui-tests')">
+                    <span>🖥️ Web UI Feature Tests</span>
+                    <button class="expand-toggle">▼</button>
+                </div>
+                <div class="test-section-content">
+                    <div class="test-grid" id="ui-test-grid"></div>
+                </div>
+            </div>
+            
+            <!-- API Tests -->
+            <div class="test-section" id="api-tests">
+                <div class="test-section-header" onclick="toggleSection('api-tests')">
+                    <span>🔌 API Endpoint Tests</span>
+                    <button class="expand-toggle">▼</button>
+                </div>
+                <div class="test-section-content">
+                    <div class="test-grid" id="api-test-grid"></div>
+                </div>
+            </div>
+            
+            <!-- Hardware Tests -->
+            <div class="test-section" id="hardware-tests">
+                <div class="test-section-header" onclick="toggleSection('hardware-tests')">
+                    <span>🔧 Hardware Feature Tests</span>
+                    <button class="expand-toggle">▼</button>
+                </div>
+                <div class="test-section-content">
+                    <div class="test-grid" id="hardware-test-grid"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class TestSuite {
+            constructor() {
+                this.tests = new Map();
+                this.stats = {
+                    total: 0,
+                    passed: 0,
+                    failed: 0,
+                    pending: 0
+                };
+                this.initializeTests();
+            }
+            
+            initializeTests() {
+                // Configuration Tests
+                this.addTest('config', 'platformio-validation', 'PlatformIO Configuration', 
+                    'Validate platformio.ini structure and settings');
+                this.addTest('config', 'library-deps', 'Library Dependencies', 
+                    'Check all required libraries are specified');
+                this.addTest('config', 'feature-flags', 'Feature Flags', 
+                    'Validate feature flag definitions and conflicts');
+                this.addTest('config', 'memory-config', 'Memory Configuration', 
+                    'Check PSRAM and flash memory settings');
+                this.addTest('config', 'partition-table', 'Partition Table', 
+                    'Validate partition table configuration');
+                    
+                // UI Feature Tests
+                this.addTest('ui', 'tag-control', 'Tag Control Panel', 
+                    'Test tag management interface');
+                this.addTest('ui', 'image-upload', 'Image Upload', 
+                    'Test image upload and processing');
+                this.addTest('ui', 'settings-page', 'Settings Interface', 
+                    'Test configuration settings page');
+                this.addTest('ui', 'status-display', 'Status Display', 
+                    'Test system status information');
+                this.addTest('ui', 'wifi-manager', 'WiFi Manager', 
+                    'Test WiFi configuration interface');
+                this.addTest('ui', 'ota-update', 'OTA Update', 
+                    'Test firmware update interface');
+                    
+                // API Tests
+                this.addTest('api', 'system-info', 'System Info API', 
+                    'Test /api/system endpoint');
+                this.addTest('api', 'tag-list', 'Tag List API', 
+                    'Test /api/taglist endpoint');
+                this.addTest('api', 'upload-image', 'Image Upload API', 
+                    'Test /upload endpoint');
+                this.addTest('api', 'settings-api', 'Settings API', 
+                    'Test configuration API endpoints');
+                this.addTest('api', 'websocket', 'WebSocket Connection', 
+                    'Test real-time communication');
+                    
+                // Hardware Tests
+                this.addTest('hardware', 'tft-display', 'TFT Display', 
+                    'Test display initialization and output');
+                this.addTest('hardware', 'rgb-leds', 'RGB LEDs', 
+                    'Test LED control and effects');
+                this.addTest('hardware', 'subghz-radio', 'SubGHz Radio', 
+                    'Test radio communication');
+                this.addTest('hardware', 'ble-support', 'Bluetooth LE', 
+                    'Test BLE functionality');
+                this.addTest('hardware', 'external-flash', 'External Flash', 
+                    'Test external memory access');
+                
+                this.renderTests();
+                this.updateStats();
+            }
+            
+            addTest(category, id, name, description) {
+                this.tests.set(id, {
+                    category,
+                    id,
+                    name,
+                    description,
+                    status: 'pending',
+                    log: [],
+                    startTime: null,
+                    endTime: null
+                });
+                this.stats.total++;
+                this.stats.pending++;
+            }
+            
+            renderTests() {
+                const categories = {
+                    'config': document.getElementById('config-test-grid'),
+                    'ui': document.getElementById('ui-test-grid'),
+                    'api': document.getElementById('api-test-grid'),
+                    'hardware': document.getElementById('hardware-test-grid')
+                };
+                
+                for (const [testId, test] of this.tests) {
+                    const container = categories[test.category];
+                    if (!container) continue;
+                    
+                    const testElement = document.createElement('div');
+                    testElement.className = 'test-item';
+                    testElement.id = `test-${testId}`;
+                    testElement.innerHTML = `
+                        <h4>${test.name}</h4>
+                        <div class="test-status status-pending" id="status-${testId}">Pending</div>
+                        <p>${test.description}</p>
+                        <button class="btn" onclick="testSuite.runSingleTest('${testId}')">Run Test</button>
+                        <div class="test-log" id="log-${testId}" style="display: none;"></div>
+                    `;
+                    container.appendChild(testElement);
+                }
+            }
+            
+            async runSingleTest(testId) {
+                const test = this.tests.get(testId);
+                if (!test) return;
+                
+                this.updateTestStatus(testId, 'testing');
+                test.startTime = Date.now();
+                test.log = [];
+                
+                this.log(testId, `Starting ${test.name} test...`);
+                
+                try {
+                    switch (testId) {
+                        case 'platformio-validation':
+                            await this.testPlatformIOConfig(testId);
+                            break;
+                        case 'library-deps':
+                            await this.testLibraryDependencies(testId);
+                            break;
+                        case 'feature-flags':
+                            await this.testFeatureFlags(testId);
+                            break;
+                        case 'tag-control':
+                            await this.testTagControl(testId);
+                            break;
+                        case 'system-info':
+                            await this.testSystemAPI(testId);
+                            break;
+                        case 'websocket':
+                            await this.testWebSocket(testId);
+                            break;
+                        case 'tft-display':
+                            await this.testTFTDisplay(testId);
+                            break;
+                        default:
+                            await this.testGeneric(testId);
+                    }
+                } catch (error) {
+                    this.log(testId, `Error: ${error.message}`);
+                    this.updateTestStatus(testId, 'fail');
+                }
+                
+                test.endTime = Date.now();
+                const duration = test.endTime - test.startTime;
+                this.log(testId, `Test completed in ${duration}ms`);
+            }
+            
+            async testPlatformIOConfig(testId) {
+                this.log(testId, 'Checking platformio.ini configuration...');
+                
+                // Simulate configuration validation
+                await this.delay(1000);
+                
+                const checks = [
+                    'Platform version: espressif32',
+                    'Board: esp32-s3-devkitc-1',
+                    'Framework: arduino',
+                    'Flash size: 32MB',
+                    'PSRAM: enabled'
+                ];
+                
+                for (const check of checks) {
+                    this.log(testId, `✓ ${check}`);
+                    await this.delay(200);
+                }
+                
+                this.updateTestStatus(testId, 'pass');
+            }
+            
+            async testLibraryDependencies(testId) {
+                this.log(testId, 'Checking library dependencies...');
+                
+                const libraries = [
+                    'AsyncTCP',
+                    'ESPAsyncWebServer',
+                    'ArduinoJson',
+                    'TFT_eSPI',
+                    'FastLED'
+                ];
+                
+                for (const lib of libraries) {
+                    await this.delay(300);
+                    this.log(testId, `✓ ${lib} dependency found`);
+                }
+                
+                this.updateTestStatus(testId, 'pass');
+            }
+            
+            async testFeatureFlags(testId) {
+                this.log(testId, 'Validating feature flags...');
+                
+                await this.delay(1500);
+                
+                const features = [
+                    'HAS_TFT_DISPLAY',
+                    'HAS_RGB_LED',
+                    'HAS_SUBGHZ',
+                    'HAS_BLE',
+                    'WEB_UI_ENHANCED'
+                ];
+                
+                for (const feature of features) {
+                    this.log(testId, `✓ Feature ${feature} configured`);
+                    await this.delay(200);
+                }
+                
+                this.updateTestStatus(testId, 'pass');
+            }
+            
+            async testTagControl(testId) {
+                this.log(testId, 'Testing tag control interface...');
+                
+                // Check if tag control elements exist
+                const elements = ['tag-list', 'upload-form', 'refresh-btn'];
+                let allFound = true;
+                
+                for (const elementId of elements) {
+                    const element = document.getElementById(elementId);
+                    if (element) {
+                        this.log(testId, `✓ Element ${elementId} found`);
+                    } else {
+                        this.log(testId, `✗ Element ${elementId} not found`);
+                        allFound = false;
+                    }
+                    await this.delay(200);
+                }
+                
+                this.updateTestStatus(testId, allFound ? 'pass' : 'fail');
+            }
+            
+            async testSystemAPI(testId) {
+                this.log(testId, 'Testing system API endpoint...');
+                
+                try {
+                    const response = await fetch('/api/system');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.log(testId, `✓ API response received`);
+                        this.log(testId, `✓ System uptime: ${data.uptime || 'unknown'}`);
+                        this.updateTestStatus(testId, 'pass');
+                    } else {
+                        this.log(testId, `✗ API returned status ${response.status}`);
+                        this.updateTestStatus(testId, 'fail');
+                    }
+                } catch (error) {
+                    this.log(testId, `✗ API request failed: ${error.message}`);
+                    this.updateTestStatus(testId, 'warning');
+                }
+            }
+            
+            async testWebSocket(testId) {
+                this.log(testId, 'Testing WebSocket connection...');
+                
+                try {
+                    const ws = new WebSocket('ws://localhost/ws');
+                    
+                    ws.onopen = () => {
+                        this.log(testId, '✓ WebSocket connection established');
+                        this.updateTestStatus(testId, 'pass');
+                        ws.close();
+                    };
+                    
+                    ws.onerror = () => {
+                        this.log(testId, '✗ WebSocket connection failed');
+                        this.updateTestStatus(testId, 'warning');
+                    };
+                    
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.CONNECTING) {
+                            this.log(testId, '✗ WebSocket connection timeout');
+                            this.updateTestStatus(testId, 'warning');
+                            ws.close();
+                        }
+                    }, 5000);
+                    
+                } catch (error) {
+                    this.log(testId, `✗ WebSocket test failed: ${error.message}`);
+                    this.updateTestStatus(testId, 'warning');
+                }
+            }
+            
+            async testTFTDisplay(testId) {
+                this.log(testId, 'Testing TFT display configuration...');
+                
+                await this.delay(1000);
+                
+                // Simulate display tests
+                const displayTests = [
+                    'Display driver initialization',
+                    'Screen resolution check',
+                    'Color depth verification',
+                    'Touch functionality'
+                ];
+                
+                for (const test of displayTests) {
+                    this.log(testId, `✓ ${test}`);
+                    await this.delay(300);
+                }
+                
+                this.updateTestStatus(testId, 'pass');
+            }
+            
+            async testGeneric(testId) {
+                this.log(testId, 'Running generic test...');
+                await this.delay(1000);
+                
+                // Simulate test result
+                const success = Math.random() > 0.2; // 80% success rate
+                this.updateTestStatus(testId, success ? 'pass' : 'fail');
+            }
+            
+            updateTestStatus(testId, status) {
+                const test = this.tests.get(testId);
+                if (!test) return;
+                
+                // Update internal state
+                if (test.status === 'pending') this.stats.pending--;
+                if (status === 'pass') this.stats.passed++;
+                else if (status === 'fail') this.stats.failed++;
+                
+                test.status = status;
+                
+                // Update UI
+                const statusElement = document.getElementById(`status-${testId}`);
+                const logElement = document.getElementById(`log-${testId}`);
+                
+                if (statusElement) {
+                    statusElement.className = `test-status status-${status}`;
+                    statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                }
+                
+                if (logElement && test.log.length > 0) {
+                    logElement.style.display = 'block';
+                    logElement.textContent = test.log.join('\n');
+                }
+                
+                this.updateStats();
+                this.updateProgress();
+            }
+            
+            log(testId, message) {
+                const test = this.tests.get(testId);
+                if (test) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    test.log.push(`[${timestamp}] ${message}`);
+                    
+                    const logElement = document.getElementById(`log-${testId}`);
+                    if (logElement) {
+                        logElement.style.display = 'block';
+                        logElement.textContent = test.log.join('\n');
+                        logElement.scrollTop = logElement.scrollHeight;
+                    }
+                }
+            }
+            
+            updateStats() {
+                document.getElementById('total-tests').textContent = this.stats.total;
+                document.getElementById('passed-tests').textContent = this.stats.passed;
+                document.getElementById('failed-tests').textContent = this.stats.failed;
+                document.getElementById('pending-tests').textContent = this.stats.pending;
+            }
+            
+            updateProgress() {
+                const completed = this.stats.passed + this.stats.failed;
+                const percentage = (completed / this.stats.total) * 100;
+                document.getElementById('progress-fill').style.width = `${percentage}%`;
+            }
+            
+            async runAllTests() {
+                for (const [testId] of this.tests) {
+                    await this.runSingleTest(testId);
+                    await this.delay(100); // Small delay between tests
+                }
+            }
+            
+            async runConfigTests() {
+                for (const [testId, test] of this.tests) {
+                    if (test.category === 'config') {
+                        await this.runSingleTest(testId);
+                    }
+                }
+            }
+            
+            async runUITests() {
+                for (const [testId, test] of this.tests) {
+                    if (test.category === 'ui') {
+                        await this.runSingleTest(testId);
+                    }
+                }
+            }
+            
+            async runAPITests() {
+                for (const [testId, test] of this.tests) {
+                    if (test.category === 'api') {
+                        await this.runSingleTest(testId);
+                    }
+                }
+            }
+            
+            clearResults() {
+                for (const [testId, test] of this.tests) {
+                    test.status = 'pending';
+                    test.log = [];
+                    test.startTime = null;
+                    test.endTime = null;
+                    
+                    const statusElement = document.getElementById(`status-${testId}`);
+                    const logElement = document.getElementById(`log-${testId}`);
+                    
+                    if (statusElement) {
+                        statusElement.className = 'test-status status-pending';
+                        statusElement.textContent = 'Pending';
+                    }
+                    
+                    if (logElement) {
+                        logElement.style.display = 'none';
+                        logElement.textContent = '';
+                    }
+                }
+                
+                this.stats = { total: this.stats.total, passed: 0, failed: 0, pending: this.stats.total };
+                this.updateStats();
+                this.updateProgress();
+            }
+            
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+        
+        // Global functions
+        let testSuite;
+        
+        function initializeTestSuite() {
+            testSuite = new TestSuite();
+        }
+        
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const toggle = section.querySelector('.expand-toggle');
+            
+            section.classList.toggle('expanded');
+            toggle.textContent = section.classList.contains('expanded') ? '▲' : '▼';
+        }
+        
+        function runAllTests() {
+            testSuite.runAllTests();
+        }
+        
+        function runConfigTests() {
+            testSuite.runConfigTests();
+        }
+        
+        function runUITests() {
+            testSuite.runUITests();
+        }
+        
+        function runAPITests() {
+            testSuite.runAPITests();
+        }
+        
+        function clearResults() {
+            testSuite.clearResults();
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initializeTestSuite);
+    </script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-const $ = document.querySelector.bind(document);
+// $ is already defined in constants.js
+// const $ = document.querySelector.bind(document);
 
 window.addEventListener("load", function () {
     fetch("get_wifi_config")

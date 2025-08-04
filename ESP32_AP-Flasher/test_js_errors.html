@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 JavaScript Error Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: white; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .pass { background: #27ae60; }
+        .fail { background: #e74c3c; }
+        .warning { background: #f39c12; }
+        .info { background: #3498db; }
+    </style>
+</head>
+<body>
+    <h1>🔧 ESP32 JavaScript Error Test Results</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = message;
+            results.appendChild(div);
+        }
+        
+        // Test 1: Check for duplicate class declarations
+        let duplicateErrors = 0;
+        const originalError = console.error;
+        console.error = function(...args) {
+            const message = args.join(' ');
+            if (message.includes('already been declared')) {
+                duplicateErrors++;
+            }
+            originalError.apply(console, args);
+        };
+        
+        // Test 2: Try to access classes
+        setTimeout(() => {
+            addResult('🧪 <strong>JavaScript Error Tests</strong>', 'info');
+            
+            // Check OptimizedApp
+            if (typeof OptimizedApp !== 'undefined') {
+                addResult('✅ OptimizedApp class loaded successfully', 'pass');
+            } else {
+                addResult('❌ OptimizedApp class not found', 'fail');
+            }
+            
+            // Check APIManager
+            if (typeof APIManager !== 'undefined') {
+                addResult('✅ APIManager class loaded successfully', 'pass');
+            } else {
+                addResult('❌ APIManager class not found', 'fail');
+            }
+            
+            // Check UIComponents
+            if (typeof UIComponents !== 'undefined') {
+                addResult('✅ UIComponents class loaded successfully', 'pass');
+                
+                // Test UIComponents initialization
+                try {
+                    const ui = new UIComponents();
+                    addResult('✅ UIComponents initialized without errors', 'pass');
+                } catch (error) {
+                    addResult('❌ UIComponents initialization failed: ' + error.message, 'fail');
+                }
+            } else {
+                addResult('❌ UIComponents class not found', 'fail');
+            }
+            
+            // Check for duplicate errors
+            if (duplicateErrors === 0) {
+                addResult('✅ No duplicate class declaration errors detected', 'pass');
+            } else {
+                addResult(`❌ Found ${duplicateErrors} duplicate class declaration errors`, 'fail');
+            }
+            
+            // Count total console errors
+            let errorCount = 0;
+            const originalConsoleError = console.error;
+            console.error = function(...args) {
+                errorCount++;
+                originalConsoleError.apply(console, args);
+            };
+            
+            setTimeout(() => {
+                if (errorCount < 5) {
+                    addResult(`✅ Low error count: ${errorCount} errors (Good!)`, 'pass');
+                } else if (errorCount < 10) {
+                    addResult(`⚠️ Moderate error count: ${errorCount} errors`, 'warning');
+                } else {
+                    addResult(`❌ High error count: ${errorCount} errors`, 'fail');
+                }
+                
+                addResult('🔄 Test completed. Check browser console (F12) for detailed error messages.', 'info');
+            }, 2000);
+            
+        }, 1000);
+    </script>
+</body>
+</html>

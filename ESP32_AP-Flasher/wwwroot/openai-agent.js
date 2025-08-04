@@ -878,12 +878,11 @@ Always provide clear, helpful responses and explain what actions you're taking.`
             }
         ];
 
-        // Call OpenAI API
-        const response = await fetch(this.apiUrl, {
+        // Call OpenAI API via ESP32 proxy
+        const response = await fetch('/api/openai/chat', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.apiKey}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 model: this.model,
@@ -944,11 +943,10 @@ Always provide clear, helpful responses and explain what actions you're taking.`
             ...this.conversationHistory.slice(-10)
         ];
 
-        const response = await fetch(this.apiUrl, {
+        const response = await fetch('/api/openai/chat', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.apiKey}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 model: this.model,

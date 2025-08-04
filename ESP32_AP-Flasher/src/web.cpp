@@ -6,9 +6,11 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <FS.h>
+#include <HTTPClient.h>
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 #include <algorithm>
 
@@ -27,6 +29,14 @@
 #include "tag_db.h"
 #include "udp.h"
 #include "wifimanager.h"
+
+#ifdef HAS_IR_REMOTE
+#include "ir_interface.h"
+#endif
+
+#ifdef HAS_RC522
+#include "rc522_interface.h"
+#endif
 
 #ifdef HAS_EXT_FLASHER
 #include "webflasher.h"
@@ -811,10 +821,64 @@ void init_web() {
     // OTA related calls
 
     server.on("/sysinfo", HTTP_GET, handleSysinfoRequest);
+    // Add alias for JavaScript compatibility
+    server.on("/sysinfo.json", HTTP_GET, handleSysinfoRequest);
     server.on("/check_file", HTTP_GET, handleCheckFile);
     server.on("/rollback", HTTP_POST, handleRollback);
     server.on("/update_c6", HTTP_POST, handleUpdateC6);
     server.on("/update_actions", HTTP_POST, handleUpdateActions);
+
+    // JavaScript API endpoints
+    server.on("/api/error_report", HTTP_POST, [](AsyncWebServerRequest *request) {
+        // Log error reports from JavaScript
+        if (request->hasParam("error", true) && request->hasParam("url", true)) {
+            String error = request->getParam("error", true)->value();
+            String url = request->getParam("url", true)->value();
+            Serial.printf("[JS ERROR] %s at %s\n", error.c_str(), url.c_str());
+        }
+        request->send(200, "application/json", "{\"status\":\"logged\"}");
+    });
+
+    server.on("/api/features", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        doc["HAS_RGB_LED"] = false;
+        doc["HAS_TFT"] = false;
+        doc["HAS_BLE_WRITER"] = false;
+        doc["HAS_SUBGHZ"] = false;
+        doc["C6_OTA_FLASHING"] = false;
+        doc["HAS_IR_REMOTE"] = false;
+        doc["HAS_RC522_RFID"] = false;
+        doc["HAS_EXT_FLASHER"] = false;
+        
+        #ifdef HAS_RGB_LED
+        doc["HAS_RGB_LED"] = true;
+        #endif
+        #ifdef HAS_TFT
+        doc["HAS_TFT"] = true;
+        #endif
+        #ifdef HAS_BLE_WRITER
+        doc["HAS_BLE_WRITER"] = true;
+        #endif
+        #ifdef HAS_SUBGHZ
+        doc["HAS_SUBGHZ"] = true;
+        #endif
+        #ifdef C6_OTA_FLASHING
+        doc["C6_OTA_FLASHING"] = true;
+        #endif
+        #ifdef HAS_IR_REMOTE
+        doc["HAS_IR_REMOTE"] = true;
+        #endif
+        #ifdef HAS_RC522_RFID
+        doc["HAS_RC522_RFID"] = true;
+        #endif
+        #ifdef HAS_EXT_FLASHER
+        doc["HAS_EXT_FLASHER"] = true;
+        #endif
+        
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
 
     // C6 Module Management Endpoints
     server.on("/get_c6_settings", HTTP_GET, handleGetC6Settings);
@@ -843,6 +907,331 @@ void init_web() {
     server.on("/list_drives", HTTP_GET, handleListDrives);
     server.on("/list_serial_ports", HTTP_GET, handleListSerialPorts);
     server.on("/flash_c6_ota", HTTP_POST, handleFlashC6OTA);
+    
+    // Feature detection endpoints (HEAD requests)
+    server.on("/tft_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_TFT
+        request->send(200, "text/plain", "TFT available");
+        #else
+        request->send(404, "text/plain", "TFT not available");
+        #endif
+    });
+    
+    server.on("/led_control", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_RGB_LED
+        request->send(200, "text/plain", "LED control available");
+        #else
+        request->send(404, "text/plain", "LED control not available");
+        #endif
+    });
+    
+    server.on("/ble_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_BLE_WRITER
+        request->send(200, "text/plain", "BLE available");
+        #else
+        request->send(404, "text/plain", "BLE not available");
+        #endif
+    });
+    
+    server.on("/subghz_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_SUBGHZ
+        request->send(200, "text/plain", "SubGHz available");
+        #else
+        request->send(404, "text/plain", "SubGHz not available");
+        #endif
+    });
+    
+    server.on("/c6_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef C6_OTA_FLASHING
+        request->send(200, "text/plain", "C6 OTA available");
+        #else
+        request->send(404, "text/plain", "C6 OTA not available");
+        #endif
+    });
+    
+    server.on("/rfid/status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_RC522_RFID
+        request->send(200, "text/plain", "RFID available");
+        #else
+        request->send(404, "text/plain", "RFID not available");
+        #endif
+    });
+    
+    server.on("/flasher_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
+        #ifdef HAS_EXT_FLASHER
+        request->send(200, "text/plain", "External flasher available");
+        #else
+        request->send(404, "text/plain", "External flasher not available");
+        #endif
+    });
+    
+#ifdef HAS_IR_REMOTE
+    // IR Remote control endpoints
+    server.on("/ir/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String response = irInterface.getStatusJSON();
+        request->send(200, "application/json", response);
+    });
+    
+    server.on("/ir/send", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("command", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing command parameter\"}");
+            return;
+        }
+        
+        String command = request->getParam("command", true)->value();
+        IRCommandType cmdType = stringToIRCommandType(command);
+        
+        if (cmdType == IR_CMD_UNKNOWN) {
+            request->send(400, "application/json", "{\"error\":\"Unknown command type\"}");
+            return;
+        }
+        
+        bool success = irInterface.sendProfileCommand(cmdType);
+        String response = success ? 
+            "{\"success\":true,\"message\":\"Command sent\"}" :
+            "{\"success\":false,\"error\":\"Failed to send command\"}";
+        request->send(success ? 200 : 500, "application/json", response);
+    });
+    
+    server.on("/ir/learn", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("timeout", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing timeout parameter\"}");
+            return;
+        }
+        
+        unsigned long timeout = request->getParam("timeout", true)->value().toInt();
+        if (timeout == 0) timeout = 10000; // Default 10 seconds
+        
+        irInterface.startLearning();
+        IRCommand learned = irInterface.learnCommand(timeout);
+        irInterface.stopLearning();
+        
+        if (learned.code != 0) {
+            DynamicJsonDocument doc(512);
+            doc["success"] = true;
+            doc["protocol"] = irProtocolTypeToString(learned.protocol);
+            doc["code"] = "0x" + String(learned.code, HEX);
+            doc["bits"] = learned.bits;
+            doc["description"] = learned.description;
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        } else {
+            request->send(408, "application/json", "{\"success\":false,\"error\":\"Learn timeout\"}");
+        }
+    });
+    
+    server.on("/ir/profiles", HTTP_GET, [](AsyncWebServerRequest *request) {
+        std::vector<String> profiles = irInterface.getProfileList();
+        DynamicJsonDocument doc(1024);
+        JsonArray profileArray = doc.createNestedArray("profiles");
+        
+        for (const String& profile : profiles) {
+            profileArray.add(profile);
+        }
+        
+        doc["current"] = irInterface.getCurrentProfile().name;
+        doc["count"] = profiles.size();
+        
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+    
+    server.on("/ir/receive", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (irInterface.hasReceivedCommand()) {
+            IRCommand cmd = irInterface.getLastCommand();
+            
+            DynamicJsonDocument doc(512);
+            doc["hasCommand"] = true;
+            doc["protocol"] = irProtocolTypeToString(cmd.protocol);
+            doc["code"] = "0x" + String(cmd.code, HEX);
+            doc["bits"] = cmd.bits;
+            doc["type"] = irCommandTypeToString(cmd.type);
+            doc["description"] = cmd.description;
+            doc["timestamp"] = cmd.timestamp;
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        } else {
+            request->send(200, "application/json", "{\"hasCommand\":false}");
+        }
+    });
+#endif
+
+// Temporarily disable RC522 until IR is working
+#ifdef HAS_RC522
+    // RC522 RFID control endpoints
+    server.on("/rfid/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String response = rc522Interface.getStatusJSON();
+        request->send(200, "application/json", response);
+    });
+    
+    server.on("/rfid/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        bool cardFound = rc522Interface.readCard();
+        
+        if (cardFound) {
+            RFIDCardInfo card = rc522Interface.getCardInfo();
+            
+            DynamicJsonDocument doc(1024);
+            doc["success"] = true;
+            doc["cardPresent"] = true;
+            doc["uid"] = card.uid;
+            doc["uidHex"] = card.uidHex;
+            doc["type"] = card.typeName;
+            doc["blockCount"] = card.blockCount;
+            doc["sectorCount"] = card.sectorCount;
+            doc["lastSeen"] = card.lastSeen;
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        } else {
+            request->send(200, "application/json", "{\"success\":true,\"cardPresent\":false}");
+        }
+    });
+    
+    server.on("/rfid/read", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("type", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing type parameter\"}");
+            return;
+        }
+        
+        String type = request->getParam("type", true)->value();
+        
+        if (type == "text") {
+            String text;
+            RFIDResult result = rc522Interface.readText(text);
+            
+            DynamicJsonDocument doc(1024);
+            doc["success"] = result.success;
+            doc["message"] = result.message;
+            if (result.success) {
+                doc["text"] = text;
+                doc["length"] = text.length();
+            }
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(result.success ? 200 : 400, "application/json", response);
+            
+        } else if (type == "block") {
+            if (!request->hasParam("block", true)) {
+                request->send(400, "application/json", "{\"error\":\"Missing block parameter\"}");
+                return;
+            }
+            
+            uint8_t blockNumber = request->getParam("block", true)->value().toInt();
+            uint8_t buffer[18];
+            uint8_t bufferSize = sizeof(buffer);
+            
+            RFIDResult result = rc522Interface.readBlock(blockNumber, buffer, bufferSize);
+            
+            DynamicJsonDocument doc(512);
+            doc["success"] = result.success;
+            doc["message"] = result.message;
+            doc["block"] = blockNumber;
+            if (result.success) {
+                doc["data"] = result.data;
+            }
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(result.success ? 200 : 400, "application/json", response);
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Invalid read type\"}");
+        }
+    });
+    
+    server.on("/rfid/write", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("type", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing type parameter\"}");
+            return;
+        }
+        
+        String type = request->getParam("type", true)->value();
+        
+        if (type == "text") {
+            if (!request->hasParam("text", true)) {
+                request->send(400, "application/json", "{\"error\":\"Missing text parameter\"}");
+                return;
+            }
+            
+            String text = request->getParam("text", true)->value();
+            uint8_t sector = 1; // Default to sector 1
+            
+            if (request->hasParam("sector", true)) {
+                sector = request->getParam("sector", true)->value().toInt();
+            }
+            
+            RFIDResult result = rc522Interface.writeText(text, sector);
+            
+            DynamicJsonDocument doc(512);
+            doc["success"] = result.success;
+            doc["message"] = result.message;
+            doc["text"] = text;
+            doc["sector"] = sector;
+            if (result.success) {
+                doc["data"] = result.data;
+            }
+            
+            String response;
+            serializeJson(doc, response);
+            request->send(result.success ? 200 : 400, "application/json", response);
+            
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Invalid write type\"}");
+        }
+    });
+    
+    server.on("/rfid/cards", HTTP_GET, [](AsyncWebServerRequest *request) {
+        std::vector<RFIDCardInfo> cards = rc522Interface.getDetectedCards();
+        
+        DynamicJsonDocument doc(2048);
+        JsonArray cardArray = doc.createNestedArray("cards");
+        
+        for (const RFIDCardInfo& card : cards) {
+            JsonObject cardObj = cardArray.createNestedObject();
+            cardObj["uid"] = card.uid;
+            cardObj["type"] = card.typeName;
+            cardObj["blockCount"] = card.blockCount;
+            cardObj["sectorCount"] = card.sectorCount;
+            cardObj["lastSeen"] = card.lastSeen;
+        }
+        
+        doc["count"] = cards.size();
+        doc["monitoring"] = rc522Interface.isMonitoring();
+        
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+    
+    server.on("/rfid/clear", HTTP_POST, [](AsyncWebServerRequest *request) {
+        rc522Interface.clearDetectedCards();
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Card database cleared\"}");
+    });
+    
+    server.on("/rfid/monitor", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("enable", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing enable parameter\"}");
+            return;
+        }
+        
+        bool enable = request->getParam("enable", true)->value() == "true";
+        
+        if (enable) {
+            rc522Interface.startMonitoring();
+        } else {
+            rc522Interface.stopMonitoring();
+        }
+        
+        String response = "{\"success\":true,\"monitoring\":" + String(enable ? "true" : "false") + "}";
+        request->send(200, "application/json", response);
+    });
+#endif
     
     // OpenAI Agent API endpoints for file management
     server.on("/create_file", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1530,6 +1919,85 @@ void init_web() {
 
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "content-type");
+
+    // === OPENAI API PROXY ENDPOINT ===
+    server.on("/api/openai/chat", HTTP_POST, 
+        [](AsyncWebServerRequest *request) {
+            // This will be handled by the body handler
+        },
+        NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            // Handle OpenAI API proxy request
+            static String requestBody = "";
+            
+            // Accumulate the request body
+            if (index == 0) {
+                requestBody = "";
+            }
+            
+            for (size_t i = 0; i < len; i++) {
+                requestBody += (char)data[i];
+            }
+            
+            // When we have the complete body
+            if (index + len == total) {
+                // Parse the request
+                DynamicJsonDocument requestDoc(8192);
+                DeserializationError error = deserializeJson(requestDoc, requestBody);
+                
+                if (error) {
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                    return;
+                }
+                
+                // Load OpenAI configuration
+                String configPath = "/openai_config.json";
+                DynamicJsonDocument configDoc(4096);
+                
+                if (contentFS->exists(configPath)) {
+                    File configFile = contentFS->open(configPath, "r");
+                    if (configFile) {
+                        deserializeJson(configDoc, configFile);
+                        configFile.close();
+                    }
+                }
+                
+                // Extract config values
+                String apiKey = configDoc["openai"]["api_key"].as<String>();
+                String apiUrl = configDoc["openai"]["api_url"].as<String>();
+                
+                if (apiKey.isEmpty()) {
+                    request->send(500, "application/json", "{\"error\":\"OpenAI API key not configured\"}");
+                    return;
+                }
+                
+                if (apiUrl.isEmpty()) {
+                    apiUrl = "https://api.openai.com/v1/chat/completions";
+                }
+                
+                // Make HTTP request to OpenAI
+                WiFiClientSecure client;
+                client.setInsecure(); // For simplicity - in production you should verify certificates
+                
+                HTTPClient http;
+                http.begin(client, apiUrl);
+                http.addHeader("Content-Type", "application/json");
+                http.addHeader("Authorization", "Bearer " + apiKey);
+                
+                int httpCode = http.POST(requestBody);
+                
+                if (httpCode > 0) {
+                    String response = http.getString();
+                    request->send(httpCode, "application/json", response);
+                } else {
+                    String errorMsg = "{\"error\":\"HTTP request failed: " + String(httpCode) + "\"}";
+                    request->send(500, "application/json", errorMsg);
+                }
+                
+                http.end();
+                requestBody = ""; // Clear for next request
+            }
+        });
 
     server.begin();
 }

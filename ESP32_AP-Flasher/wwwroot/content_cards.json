@@ -1,0 +1,44 @@
+{
+  "cards": [
+    {
+      "id": "default_weather",
+      "name": "Weather Card",
+      "type": "weather",
+      "enabled": true,
+      "config": {
+        "location": "New York",
+        "units": "metric"
+      }
+    },
+    {
+      "id": "default_clock",
+      "name": "Clock Card", 
+      "type": "clock",
+      "enabled": true,
+      "config": {
+        "format": "24h",
+        "timezone": "UTC"
+      }
+    },
+    {
+      "id": "default_text",
+      "name": "Text Card",
+      "type": "text", 
+      "enabled": true,
+      "config": {
+        "message": "Welcome to OpenEPL",
+        "font": "medium"
+      }
+    }
+  ],
+  "templates": [
+    {
+      "id": "template_1",
+      "name": "Basic Template",
+      "description": "Simple text display",
+      "width": 296,
+      "height": 128,
+      "elements": []
+    }
+  ]
+}

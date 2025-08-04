@@ -30,6 +30,14 @@
 		<span class="material-symbols-outlined" style="font-size: 14px;">developer_board</span>
 		C6 Module
 	</a>
+	<a href="ir_remote.html" class="menu-btn" data-page="ir_remote">
+		<span class="material-symbols-outlined" style="font-size: 14px;">remote_gen</span>
+		IR Remote
+	</a>
+	<a href="rfid_control.html" class="menu-btn" data-page="rfid_control">
+		<span class="material-symbols-outlined" style="font-size: 14px;">contactless</span>
+		RFID Control
+	</a>
 	<a href="ai-agent.html" class="menu-btn" data-page="ai-agent">
 		<span class="material-symbols-outlined" style="font-size: 14px;">smart_toy</span>
 		AI Assistant
@@ -53,15 +61,23 @@
 (function() {
 	// Auto-detect current page and set active state
 	function setActiveMenuItem() {
-		const currentPage = window.location.pathname.split('/').pop().replace('.html', '') || 'index';
-		const menuItems = document.querySelectorAll('#universal-menu .menu-btn');
-		
-		menuItems.forEach(item => {
-			item.classList.remove('active');
-			if (item.getAttribute('data-page') === currentPage) {
-				item.classList.add('active');
-			}
-		});
+		try {
+			const currentPage = window.location.pathname.split('/').pop().replace('.html', '') || 'index';
+			const menuItems = document.querySelectorAll('#universal-menu .menu-btn');
+			
+			menuItems.forEach(item => {
+				item.classList.remove('active');
+				const itemPage = item.getAttribute('data-page') || 
+								item.href.split('/').pop().replace('.html', '');
+				if (itemPage === currentPage) {
+					item.classList.add('active');
+				}
+			});
+			
+			console.log(`Menu: Set active item for page '${currentPage}'`);
+		} catch (error) {
+			console.warn('Menu: Error setting active item:', error);
+		}
 	}
 	
 	// Initialize when DOM is loaded
@@ -70,5 +86,8 @@
 	} else {
 		setActiveMenuItem();
 	}
+	
+	// Export function for external use
+	window.setActiveMenuItem = setActiveMenuItem;
 })();
 </script>

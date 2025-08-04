@@ -9,16 +9,14 @@
 	<!-- Core JavaScript modules -->
 	<script src="constants.js?3.0" defer></script>
 	<script src="utils.js?3.0" defer></script>
-	<script src="app-core.js?3.0" defer></script>
-	<script src="ui-components.js?3.0" defer></script>
-	<script src="main.js?3.0" defer></script>
+	<script src="app-core.js?3.2" defer></script>
+	<script src="ui-components.js?3.2" defer></script>
+	<script src="main.js?3.2" defer></script>
 	<!-- Feature-specific modules -->
 	<script src="compact-ui.js?2.75" defer></script>
 	<script src="setup.js?2.75" defer></script>
 	<script src="universal-menu.js" defer></script>
-	<link rel="stylesheet" href="main.css?2.74" type="text/css" />
-	<link rel="stylesheet" href="advanced-styles.css" type="text/css" />
-	<link rel="stylesheet" href="compact-ui.css?2.75" type="text/css" />
+	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 	<link rel="stylesheet"
 		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 	<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -525,7 +523,9 @@
 					}
 					
 					if (tagCount) {
-						const totalTags = Object.keys(tagDB || {}).length;
+						// Initialize tagDB if not defined
+						const tagDB = window.tagDB || {};
+						const totalTags = Object.keys(tagDB).length;
 						tagCount.textContent = `${totalTags} Tags`;
 					}
 					

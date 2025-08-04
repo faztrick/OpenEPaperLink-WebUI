@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 JavaScript Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #2c3e50; color: white; }
+        .status { padding: 10px; margin: 5px; border-radius: 5px; }
+        .pass { background: #27ae60; }
+        .fail { background: #e74c3c; }
+        .info { background: #3498db; }
+    </style>
+</head>
+<body>
+    <h1>🔧 ESP32 JavaScript Fix Verification</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addStatus(message, type) {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = message;
+            results.appendChild(div);
+        }
+        
+        // Test our fixes
+        addStatus('🧪 Testing JavaScript fixes...', 'info');
+        
+        // Check if main classes load without errors
+        setTimeout(() => {
+            let errorCount = 0;
+            let duplicateErrors = 0;
+            
+            // Capture console errors
+            const originalError = console.error;
+            console.error = function(...args) {
+                const message = args.join(' ');
+                if (message.includes('already been declared')) {
+                    duplicateErrors++;
+                }
+                errorCount++;
+                originalError.apply(console, args);
+            };
+            
+            // Test class availability
+            const tests = [
+                { name: 'OptimizedApp', check: () => typeof OptimizedApp !== 'undefined' },
+                { name: 'APIManager', check: () => typeof APIManager !== 'undefined' },
+                { name: 'UIComponents', check: () => typeof UIComponents !== 'undefined' }
+            ];
+            
+            tests.forEach(test => {
+                try {
+                    if (test.check()) {
+                        addStatus(`✅ ${test.name} class loaded successfully`, 'pass');
+                    } else {
+                        addStatus(`❌ ${test.name} class not found`, 'fail');
+                    }
+                } catch (error) {
+                    addStatus(`❌ Error testing ${test.name}: ${error.message}`, 'fail');
+                }
+            });
+            
+            // Summary
+            setTimeout(() => {
+                if (duplicateErrors === 0) {
+                    addStatus('✅ No duplicate class declaration errors!', 'pass');
+                } else {
+                    addStatus(`❌ Found ${duplicateErrors} duplicate errors`, 'fail');
+                }
+                
+                addStatus(`📊 Total console errors: ${errorCount}`, errorCount < 5 ? 'pass' : 'fail');
+                addStatus('🔍 Check browser console (F12) for details', 'info');
+            }, 2000);
+            
+        }, 1000);
+    </script>
+</body>
+</html>

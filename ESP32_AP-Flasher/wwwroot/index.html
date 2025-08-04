@@ -7,22 +7,23 @@
 
 	<title>OpenEPL ESP32 - Advanced Control Center</title>
 	<!-- Core JavaScript modules -->
-	<script src="constants.js?3.0" defer></script>
-	<script src="utils.js?3.0" defer></script>
-	<script src="app-core.js?3.0" defer></script>
-	<script src="performance.js?3.0" defer></script>
-	<script src="ui-components.js?3.0" defer></script>
-	<script src="tag-manager.js?3.0" defer></script>
-	<script src="canvas-renderer.js?3.0" defer></script>
-	<script src="main.js?3.0" defer></script>
+	<script src="constants.js?3.2" defer></script>
+	<script src="utils.js?3.2" defer></script>
+	<script src="app-core.js?3.2" defer></script>
+	<script src="performance.js?3.2" defer></script>
+	<script src="ui-components.js?3.2" defer></script>
+	<script src="tag-manager.js?3.2" defer></script>
+	<script src="canvas-renderer.js?3.2" defer></script>
+	<script src="main.js?3.2" defer></script>
+	<!-- Enhanced Feature & API Management -->
+	<script src="feature-manager.js?3.2" defer></script>
+	<script src="api-manager-enhanced.js?3.2" defer></script>
+	<script src="debug-system.js?3.2" defer></script>
 	<!-- Feature-specific modules -->
-	<script src="api-manager.js?2.75" defer></script>
-	<script src="compact-ui.js?2.75" defer></script>
-	<script src="g5decoder.js?2.74" defer></script>
-	<script src="universal-menu.js" defer></script>
-	<link rel="stylesheet" href="main.css?2.74" type="text/css" />
-	<link rel="stylesheet" href="advanced-styles.css?2.74" type="text/css" />
-	<link rel="stylesheet" href="compact-ui.css?2.75" type="text/css" />
+	<script src="compact-ui.js?3.2" defer></script>
+	<script src="g5decoder.js?3.2" defer></script>
+	<script src="universal-menu.js?3.2" defer></script>
+	<link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
 	<!--<link rel="icon" type="image/vnd.icon" href="favicon.ico">-->
 	<link rel="stylesheet"
 		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -53,6 +54,15 @@
 			to {
 				transform: translateX(100%);
 				opacity: 0;
+			}
+		}
+		
+		@keyframes spin {
+			from {
+				transform: rotate(0deg);
+			}
+			to {
+				transform: rotate(360deg);
 			}
 		}
 		
@@ -95,58 +105,82 @@
 </head>
 
 <body>
-	<!-- Enhanced Compact Header with Menu and Status -->
-	<header class="advanced-header">
+	<!-- Compact Single-Line Header: Logo + Navigation + Status -->
+	<header class="advanced-header compact-header">
 		<div class="compact-header-content">
-			<div class="header-left">
-				<div class="logo-section">
-					<div class="logo-icon">🏠</div>
-					<div class="logo-text">
-						<h1>OpenEPL ESP32 Control Center</h1>
+			<!-- Single Line: Logo + Menu + Status -->
+			<div class="header-single-line">
+				<!-- Left: Logo -->
+				<div class="header-left">
+					<div class="logo-section">
+						<div class="logo-icon">📱</div>
+						<div class="logo-text">
+							<h1>OpenEPL ESP32</h1>
+							<span class="version">v3.1</span>
+						</div>
+					</div>
+				</div>
+				
+				<!-- Center: Navigation Menu -->
+				<div class="header-center">
+					<div id="menu-container" class="menu-container"></div>
+				</div>
+				
+				<!-- Right: Compact Status -->
+				<div class="header-right">
+					<div class="compact-status">
+						<div class="status-group">
+							<div class="status-dot" id="systemDot"></div>
+							<span id="systemStatus">Ready</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">devices</span>
+							<span id="tagCount">0</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">wifi</span>
+							<span id="wifiStatus">WiFi</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">schedule</span>
+							<span id="uptimeDisplay">--:--</span>
+						</div>
+					</div>
+					
+					<!-- Quick Actions -->
+					<div class="quick-actions">
+						<button class="action-btn" onclick="refreshData()" title="Refresh Data">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+						<button class="action-btn" onclick="findAllTags()" title="Find All Tags">
+							<span class="material-symbols-outlined">search</span>
+						</button>
+						<button class="action-btn" onclick="window.open('settings.html')" title="Settings">
+							<span class="material-symbols-outlined">settings</span>
+						</button>
 					</div>
 				</div>
 			</div>
-			
-			<div class="header-status">
-				<div class="status-item">
-					<div class="status-dot" id="systemDot"></div>
-					<span id="systemStatus">Ready</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
-					<span id="tagCount">Tags</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
-					<span id="wifiStatus">WiFi</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
-					<span id="uptimeDisplay">--:--</span>
-				</div>
-			</div>
-			
-			<!-- Universal Menu Container -->
-			<div id="menu-container" class="menu-container"></div>
 		</div>
 	</header>
 
 	<div class="container">
-		<!-- Main Home Page Content -->
-		<div class="window">
-			<!-- Enhanced Dashboard -->
-			<div class="dashboard-grid">
-				<!-- System Overview Card -->
-				<div class="dashboard-card overview-card">
-					<div class="card-header">
-						<span class="material-symbols-outlined">dashboard</span>
-						<h3>System Overview</h3>
-						<div class="card-actions">
-							<button onclick="refreshData()" class="icon-btn" title="Refresh">
-								<span class="material-symbols-outlined">refresh</span>
-							</button>
-						</div>
+		<!-- Enhanced Dashboard -->
+		<div class="dashboard-grid">
+			<!-- System Overview Card -->
+			<div class="dashboard-card overview-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">dashboard</span>
+					<h3>System Overview</h3>
+					<div class="card-actions">
+						<button onclick="refreshData()" class="icon-btn" title="Refresh">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
 					</div>
+				</div>
 					<div class="card-content">
 						<div class="overview-grid">
 							<div class="overview-item">
@@ -182,274 +216,268 @@
 					</div>
 				</div>
 
-					<!-- Real-time Analytics Card -->
-					<div class="dashboard-card analytics-card">
-						<div class="card-header">
+			<!-- Real-time Analytics Card -->
+			<div class="dashboard-card analytics-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">analytics</span>
+					<h3>Real-time Analytics</h3>
+				</div>
+				<div class="card-content">
+					<canvas id="batteryChart" width="300" height="200"></canvas>
+				</div>
+			</div>
+
+			<!-- Quick Actions Card -->
+			<div class="dashboard-card actions-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">flash_on</span>
+					<h3>Quick Actions</h3>
+				</div>
+				<div class="card-content">
+					<div class="actions-grid">
+						<button class="action-card" onclick="findAllTags()">
+							<span class="material-symbols-outlined">search</span>
+							<span>Find All Tags</span>
+						</button>
+						<button class="action-card" onclick="blinkAllTags()">
+							<span class="material-symbols-outlined">visibility</span>
+							<span>Blink All</span>
+						</button>
+						<button class="action-card" onclick="refreshAllTags()">
+							<span class="material-symbols-outlined">refresh</span>
+							<span>Refresh All</span>
+						</button>
+						<button class="action-card" onclick="openAdvancedControl()">
+							<span class="material-symbols-outlined">tune</span>
+							<span>Advanced Control</span>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- System Control Card -->
+			<div class="dashboard-card system-control-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">settings</span>
+					<h3>System Control</h3>
+				</div>
+				<div class="card-content">
+					<div class="control-section">
+						<div class="status-display">
+							<div class="status-item">
+								<span class="status-label">Content Generation:</span>
+								<span id="content-gen-status" class="status-value">Loading...</span>
+							</div>
+							<div class="status-item">
+								<span class="status-label">AP Status:</span>
+								<span id="ap-status" class="status-value">Loading...</span>
+							</div>
+						</div>
+						<div class="control-buttons">
+							<button id="start-content-btn" class="control-btn start-btn" onclick="startContentGeneration()">
+								<span class="material-symbols-outlined">play_arrow</span>
+								<span>Start Content Generation</span>
+							</button>
+							<button id="pause-content-btn" class="control-btn pause-btn" onclick="pauseContentGeneration()">
+								<span class="material-symbols-outlined">pause</span>
+								<span>Pause Content Generation</span>
+							</button>
+							<button id="stop-content-btn" class="control-btn stop-btn" onclick="stopContentGeneration()">
+								<span class="material-symbols-outlined">stop</span>
+								<span>Stop Content Generation</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Recent Activity Card -->
+			<div class="dashboard-card activity-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">history</span>
+					<h3>Recent Activity</h3>
+				</div>
+				<div class="card-content">
+					<div id="activity-feed" class="activity-feed">
+						<div class="activity-item">
+							<span class="activity-icon">📡</span>
+							<span class="activity-text">System started</span>
+							<span class="activity-time">Ready</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Network Status Card -->
+			<div class="dashboard-card network-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">wifi</span>
+					<h3>Network Status</h3>
+				</div>
+				<div class="card-content">
+					<div class="network-stats">
+						<div class="network-item">
+							<span class="network-label">AP Status:</span>
+							<span id="network-ap-status" class="network-value">Active</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Clients:</span>
+							<span id="network-clients" class="network-value">0</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Signal:</span>
+							<span id="network-signal" class="network-value">Strong</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Uptime:</span>
+							<span id="network-uptime" class="network-value">0h 0m</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- System Performance Card -->
+			<div class="dashboard-card performance-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">memory</span>
+					<h3>System Performance</h3>
+					<div class="card-actions">
+						<button onclick="refreshPerformanceData()" class="icon-btn" title="Refresh">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+						<button onclick="togglePerformanceDetails()" class="icon-btn" title="Details">
+							<span class="material-symbols-outlined">info</span>
+						</button>
+					</div>
+				</div>
+				<div class="card-content">
+					<div class="performance-metrics">
+						<div class="metric-item">
+							<div class="metric-label">Memory</div>
+							<div class="metric-bar">
+								<div id="memory-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="memory-text">0%</div>
+							<div class="metric-details hide-mobile" id="memory-details">
+								<span id="memory-used">0</span> / <span id="memory-total">0</span> KB
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">CPU Load</div>
+							<div class="metric-bar">
+								<div id="cpu-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="cpu-text">0%</div>
+							<div class="metric-details hide-mobile" id="cpu-details">
+								<span id="cpu-freq">0</span> MHz
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">Storage</div>
+							<div class="metric-bar">
+								<div id="storage-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="storage-text">0%</div>
+							<div class="metric-details hide-mobile" id="storage-details">
+								<span id="storage-used">0</span> / <span id="storage-total">0</span> KB
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">WiFi Signal</div>
+							<div class="metric-bar">
+								<div id="wifi-signal" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="wifi-text">0 dBm</div>
+							<div class="metric-details hide-mobile" id="wifi-details">
+								<span id="wifi-ssid">Not connected</span>
+							</div>
+						</div>
+					</div>
+					<div id="performance-details" class="performance-details collapsed">
+						<div class="detail-row">
+							<span>Uptime:</span>
+							<span id="system-uptime">0h 0m</span>
+						</div>
+						<div class="detail-row">
+							<span>Free Heap:</span>
+							<span id="free-heap">0 KB</span>
+						</div>
+						<div class="detail-row">
+							<span>Largest Block:</span>
+							<span id="largest-block">0 KB</span>
+						</div>
+						<div class="detail-row">
+							<span>Flash Size:</span>
+							<span id="flash-size">0 MB</span>
+						</div>
+						<div class="detail-row">
+							<span>Chip Model:</span>
+							<span id="chip-model">ESP32</span>
+						</div>
+						<div class="detail-row">
+							<span>SDK Version:</span>
+							<span id="sdk-version">Unknown</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- All Modules Quick Access Card -->
+			<div class="dashboard-card modules-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">apps</span>
+					<h3>All Modules</h3>
+				</div>
+				<div class="card-content">
+					<div class="modules-grid">
+						<a href="tag_control_panel.html" class="module-card">
+							<span class="material-symbols-outlined">settings_remote</span>
+							<span>Tag Control</span>
+						</a>
+						<a href="dashboard.html" class="module-card">
 							<span class="material-symbols-outlined">analytics</span>
-							<h3>Real-time Analytics</h3>
-						</div>
-						<div class="card-content">
-							<canvas id="batteryChart" width="300" height="200"></canvas>
-						</div>
-					</div>
-
-					<!-- Quick Actions Card -->
-					<div class="dashboard-card actions-card">
-						<div class="card-header">
+							<span>Analytics</span>
+						</a>
+						<a href="tags.html" class="module-card">
+							<span class="material-symbols-outlined">sell</span>
+							<span>Tags</span>
+						</a>
+						<a href="flasher.html" class="module-card">
 							<span class="material-symbols-outlined">flash_on</span>
-							<h3>Quick Actions</h3>
-						</div>
-						<div class="card-content">
-							<div class="actions-grid">
-								<button class="action-card" onclick="findAllTags()">
-									<span class="material-symbols-outlined">search</span>
-									<span>Find All Tags</span>
-								</button>
-								<button class="action-card" onclick="blinkAllTags()">
-									<span class="material-symbols-outlined">visibility</span>
-									<span>Blink All</span>
-								</button>
-								<button class="action-card" onclick="refreshAllTags()">
-									<span class="material-symbols-outlined">refresh</span>
-									<span>Refresh All</span>
-								</button>
-								<button class="action-card" onclick="openAdvancedControl()">
-									<span class="material-symbols-outlined">tune</span>
-									<span>Advanced Control</span>
-								</button>
-							</div>
-						</div>
-					</div>
-
-					<!-- System Control Card -->
-					<div class="dashboard-card system-control-card">
-						<div class="card-header">
-							<span class="material-symbols-outlined">settings</span>
-							<h3>System Control</h3>
-						</div>
-						<div class="card-content">
-							<div class="control-section">
-								<div class="status-display">
-									<div class="status-item">
-										<span class="status-label">Content Generation:</span>
-										<span id="content-gen-status" class="status-value">Loading...</span>
-									</div>
-									<div class="status-item">
-										<span class="status-label">AP Status:</span>
-										<span id="ap-status" class="status-value">Loading...</span>
-									</div>
-								</div>
-								<div class="control-buttons">
-									<button id="start-content-btn" class="control-btn start-btn" onclick="startContentGeneration()">
-										<span class="material-symbols-outlined">play_arrow</span>
-										<span>Start Content Generation</span>
-									</button>
-									<button id="pause-content-btn" class="control-btn pause-btn" onclick="pauseContentGeneration()">
-										<span class="material-symbols-outlined">pause</span>
-										<span>Pause Content Generation</span>
-									</button>
-									<button id="stop-content-btn" class="control-btn stop-btn" onclick="stopContentGeneration()">
-										<span class="material-symbols-outlined">stop</span>
-										<span>Stop Content Generation</span>
-									</button>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Recent Activity Card -->
-					<div class="dashboard-card activity-card">
-						<div class="card-header">
-							<span class="material-symbols-outlined">history</span>
-							<h3>Recent Activity</h3>
-						</div>
-						<div class="card-content">
-							<div id="activity-feed" class="activity-feed">
-								<div class="activity-item">
-									<span class="activity-icon">📡</span>
-									<span class="activity-text">System started</span>
-									<span class="activity-time">Ready</span>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Network Status Card -->
-					<div class="dashboard-card network-card">
-						<div class="card-header">
-							<span class="material-symbols-outlined">wifi</span>
-							<h3>Network Status</h3>
-						</div>
-						<div class="card-content">
-							<div class="network-stats">
-								<div class="network-item">
-									<span class="network-label">AP Status:</span>
-									<span id="network-ap-status" class="network-value">Active</span>
-								</div>
-								<div class="network-item">
-									<span class="network-label">Clients:</span>
-									<span id="network-clients" class="network-value">0</span>
-								</div>
-								<div class="network-item">
-									<span class="network-label">Signal:</span>
-									<span id="network-signal" class="network-value">Strong</span>
-								</div>
-								<div class="network-item">
-									<span class="network-label">Uptime:</span>
-									<span id="network-uptime" class="network-value">0h 0m</span>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- System Performance Card -->
-					<div class="dashboard-card performance-card">
-						<div class="card-header">
+							<span>Flasher</span>
+						</a>
+						<a href="nrf52_swd.html" class="module-card">
 							<span class="material-symbols-outlined">memory</span>
-							<h3>System Performance</h3>
-							<div class="card-actions">
-								<button onclick="refreshPerformanceData()" class="icon-btn" title="Refresh">
-									<span class="material-symbols-outlined">refresh</span>
-								</button>
-								<button onclick="togglePerformanceDetails()" class="icon-btn" title="Details">
-									<span class="material-symbols-outlined">info</span>
-								</button>
-							</div>
-						</div>
-						<div class="card-content">
-							<div class="performance-metrics">
-								<div class="metric-item">
-									<div class="metric-label">Memory</div>
-									<div class="metric-bar">
-										<div id="memory-usage" class="metric-fill" style="width: 0%"></div>
-									</div>
-									<div class="metric-value" id="memory-text">0%</div>
-									<div class="metric-details hide-mobile" id="memory-details">
-										<span id="memory-used">0</span> / <span id="memory-total">0</span> KB
-									</div>
-								</div>
-								<div class="metric-item">
-									<div class="metric-label">CPU Load</div>
-									<div class="metric-bar">
-										<div id="cpu-usage" class="metric-fill" style="width: 0%"></div>
-									</div>
-									<div class="metric-value" id="cpu-text">0%</div>
-									<div class="metric-details hide-mobile" id="cpu-details">
-										<span id="cpu-freq">0</span> MHz
-									</div>
-								</div>
-								<div class="metric-item">
-									<div class="metric-label">Storage</div>
-									<div class="metric-bar">
-										<div id="storage-usage" class="metric-fill" style="width: 0%"></div>
-									</div>
-									<div class="metric-value" id="storage-text">0%</div>
-									<div class="metric-details hide-mobile" id="storage-details">
-										<span id="storage-used">0</span> / <span id="storage-total">0</span> KB
-									</div>
-								</div>
-								<div class="metric-item">
-									<div class="metric-label">WiFi Signal</div>
-									<div class="metric-bar">
-										<div id="wifi-signal" class="metric-fill" style="width: 0%"></div>
-									</div>
-									<div class="metric-value" id="wifi-text">0 dBm</div>
-									<div class="metric-details hide-mobile" id="wifi-details">
-										<span id="wifi-ssid">Not connected</span>
-									</div>
-								</div>
-							</div>
-							<div id="performance-details" class="performance-details collapsed">
-								<div class="detail-row">
-									<span>Uptime:</span>
-									<span id="system-uptime">0h 0m</span>
-								</div>
-								<div class="detail-row">
-									<span>Free Heap:</span>
-									<span id="free-heap">0 KB</span>
-								</div>
-								<div class="detail-row">
-									<span>Largest Block:</span>
-									<span id="largest-block">0 KB</span>
-								</div>
-								<div class="detail-row">
-									<span>Flash Size:</span>
-									<span id="flash-size">0 MB</span>
-								</div>
-								<div class="detail-row">
-									<span>Chip Model:</span>
-									<span id="chip-model">ESP32</span>
-								</div>
-								<div class="detail-row">
-									<span>SDK Version:</span>
-									<span id="sdk-version">Unknown</span>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- All Modules Quick Access Card -->
-					<div class="dashboard-card modules-card">
-						<div class="card-header">
-							<span class="material-symbols-outlined">apps</span>
-							<h3>All Modules</h3>
-						</div>
-						<div class="card-content">
-							<div class="modules-grid">
-								<a href="tag_control_panel.html" class="module-card">
-									<span class="material-symbols-outlined">settings_remote</span>
-									<span>Tag Control</span>
-								</a>
-								<a href="dashboard.html" class="module-card">
-									<span class="material-symbols-outlined">analytics</span>
-									<span>Analytics</span>
-								</a>
-								<a href="flasher.html" class="module-card">
-									<span class="material-symbols-outlined">flash_on</span>
-									<span>Flasher</span>
-								</a>
-								<a href="nrf52_swd.html" class="module-card">
-									<span class="material-symbols-outlined">memory</span>
-									<span>nRF52 SWD</span>
-								</a>
-								<a href="c6_module.html" class="module-card">
-									<span class="material-symbols-outlined">developer_board</span>
-									<span>C6 Module</span>
-								</a>
-								<a href="updates.html" class="module-card">
-									<span class="material-symbols-outlined">system_update</span>
-									<span>Updates</span>
-								</a>
-								<a href="settings.html" class="module-card">
-									<span class="material-symbols-outlined">settings</span>
-									<span>Settings</span>
-								</a>
-								<a href="logs.html" class="module-card">
-									<span class="material-symbols-outlined">text_snippet</span>
-									<span>Logs</span>
-								</a>
-								<a href="edit.html" class="module-card">
-									<span class="material-symbols-outlined">edit</span>
-									<span>File Editor</span>
-								</a>
-								<a href="jsontemplate-demo-v2.html" class="module-card">
-									<span class="material-symbols-outlined">design_services</span>
-									<span>Templates</span>
-								</a>
-								<a href="upload-demo.html" class="module-card">
-									<span class="material-symbols-outlined">upload</span>
-									<span>Upload</span>
-								</a>
-								<a href="variables-demo.html" class="module-card">
-									<span class="material-symbols-outlined">data_object</span>
-									<span>Variables</span>
-								</a>
-								<a href="esp32_endpoint_checker.html" class="module-card">
-									<span class="material-symbols-outlined">network_check</span>
-									<span>Endpoint Check</span>
-								</a>
-							</div>
-						</div>
+							<span>nRF52 SWD</span>
+						</a>
+						<a href="c6_module.html" class="module-card">
+							<span class="material-symbols-outlined">developer_board</span>
+							<span>C6 Module</span>
+						</a>
+						<a href="ai-agent.html" class="module-card">
+							<span class="material-symbols-outlined">smart_toy</span>
+							<span>AI Assistant</span>
+						</a>
+						<a href="updates.html" class="module-card">
+							<span class="material-symbols-outlined">system_update</span>
+							<span>Updates</span>
+						</a>
+						<a href="settings.html" class="module-card">
+							<span class="material-symbols-outlined">settings</span>
+							<span>Settings</span>
+						</a>
+						<a href="logs.html" class="module-card">
+							<span class="material-symbols-outlined">text_snippet</span>
+							<span>Logs</span>
+						</a>
+						<a href="edit.html" class="module-card">
+							<span class="material-symbols-outlined">edit</span>
+							<span>File Editor</span>
+						</a>
+						<a href="jsontemplate-demo-v2.html" class="module-card">
+							<span class="material-symbols-outlined">design_services</span>
+							<span>Templates</span>
+						</a>
 					</div>
 				</div>
 			</div>
@@ -488,19 +516,24 @@
 	<script>
 		// Application initialization with proper script loading wait
 		document.addEventListener('DOMContentLoaded', function() {
+			console.log('Index page: DOM loaded, initializing...');
+			
 			// Wait for all essential classes to be loaded
 			const waitForClasses = () => {
-				const requiredClasses = ['OptimizedApp', 'UIComponents', 'TagManager'];
+				const requiredClasses = ['OptimizedApp'];
 				const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
 				
 				if (allLoaded) {
 					// Initialize the optimized application
 					try {
+						console.log('Index page: Initializing OptimizedApp...');
 						window.app = new OptimizedApp();
+						console.log('Index page: OptimizedApp initialized successfully');
 					} catch (error) {
 						console.error('Failed to initialize OptimizedApp:', error);
-						// Fallback initialization
+						// Fallback to legacy initialization
 						if (typeof loadTags === 'function') {
+							console.log('Index page: Using fallback loadTags initialization');
 							loadTags(0);
 						}
 					}
@@ -510,7 +543,31 @@
 				}
 			};
 			
+			// Also wait for menu to load
+			const waitForMenu = () => {
+				if (window.universalMenu && (window.universalMenu.menuLoaded || document.getElementById('universal-menu'))) {
+					console.log('Index page: Menu is ready');
+					return true;
+				}
+				return false;
+			};
+			
+			// Start both checks
 			waitForClasses();
+			
+			// Menu check with timeout
+			let menuCheckCount = 0;
+			const checkMenu = () => {
+				menuCheckCount++;
+				if (waitForMenu() || menuCheckCount > 50) { // 5 second timeout
+					if (menuCheckCount > 50) {
+						console.warn('Index page: Menu loading timed out');
+					}
+					return;
+				}
+				setTimeout(checkMenu, 100);
+			};
+			checkMenu();
 		});
 
 		// Enhanced Dashboard Functionality
@@ -608,7 +665,7 @@
 					
 					// Update tag count
 					if (tagCount) {
-						const totalTags = Object.keys(tagDB || {}).length;
+						const totalTags = Object.keys(window.tagDB || {}).length;
 						tagCount.textContent = `${totalTags} Tags`;
 					}
 					
@@ -659,8 +716,8 @@
 					}
 					
 					if (footerTagInfo) {
-						const tagCount = Object.keys(tagDB || {}).length;
-						const activeCount = Object.values(tagDB || {}).filter(tag => 
+						const tagCount = Object.keys(window.tagDB || {}).length;
+						const activeCount = Object.values(window.tagDB || {}).filter(tag => 
 							tag.lastseen && (Date.now() - tag.lastseen * 1000) < 300000 // 5 minutes
 						).length;
 						footerTagInfo.textContent = `${activeCount}/${tagCount} Tags Active`;
@@ -717,7 +774,7 @@
 
 		// Update dashboard statistics
 		function updateDashboardStats() {
-			const tags = Object.values(tagDB || {});
+			const tags = Object.values(window.tagDB || {});
 			const currentTime = Date.now();
 			
 			// Calculate statistics
@@ -767,10 +824,13 @@
 				types: onlineTagTypes,
 				tags: onlineTags
 			};
+			
+			console.log(`Index page: Dashboard stats updated - ${totalTags} total, ${onlineTagsCount} online`);
 		}
 
 		// Enhanced refresh function with visual feedback and real data
 		function refreshData() {
+			console.log('Index page: Refreshing data...');
 			const refreshBtn = document.querySelector('[onclick="refreshData()"]');
 			if (refreshBtn) {
 				const icon = refreshBtn.querySelector('.material-symbols-outlined');
@@ -782,21 +842,37 @@
 			// Refresh all data sources
 			Promise.all([
 				// Refresh AP config
-				fetch('get_ap_config').then(response => response.json()),
+				fetch('get_ap_config').then(response => {
+					if (!response.ok) throw new Error(`AP config fetch failed: ${response.status}`);
+					return response.json();
+				}).catch(error => {
+					console.warn('AP config fetch failed:', error);
+					return null;
+				}),
 				// Refresh tag database
-				fetch('get_db?pos=0').then(response => response.json())
+				fetch('get_db?pos=0').then(response => {
+					if (!response.ok) throw new Error(`Tag DB fetch failed: ${response.status}`);
+					return response.json();
+				}).catch(error => {
+					console.warn('Tag DB fetch failed:', error);
+					return null;
+				})
 			])
 			.then(([apData, tagData]) => {
+				console.log('Index page: Data fetched, updating...');
 				// Update AP configuration
 				if (apData) {
-					apConfig = apData;
+					window.apConfig = apData;
+					console.log('Index page: AP config updated');
 				}
 				
 				// Update tag database
 				if (tagData && tagData.tags) {
+					if (!window.tagDB) window.tagDB = {};
 					tagData.tags.forEach(tag => {
-						tagDB[tag.mac] = tag;
+						window.tagDB[tag.mac] = tag;
 					});
+					console.log(`Index page: Updated ${tagData.tags.length} tags`);
 					
 					// Continue loading if there are more tags
 					if (tagData.continu) {
@@ -805,9 +881,13 @@
 							.then(moreData => {
 								if (moreData && moreData.tags) {
 									moreData.tags.forEach(tag => {
-										tagDB[tag.mac] = tag;
+										window.tagDB[tag.mac] = tag;
 									});
+									console.log(`Index page: Loaded ${moreData.tags.length} additional tags`);
 								}
+							})
+							.catch(error => {
+								console.warn('Additional tags fetch failed:', error);
 							});
 					}
 				}
@@ -819,10 +899,10 @@
 				updateSystemControlStatus();
 				updateDashboardStats();
 				
-				console.log('Data refresh completed');
+				console.log('Index page: Data refresh completed successfully');
 			})
 			.catch(error => {
-				console.error('Refresh error:', error);
+				console.error('Index page: Refresh error:', error);
 			})
 			.finally(() => {
 				// Stop loading animation
@@ -839,8 +919,9 @@
 
 		// Quick action functions for dashboard
 		function findAllTags() {
+			console.log('Index page: Finding all tags...');
 			// Send LED flash command to all active tags to help locate them
-			Object.keys(tagDB || {}).forEach(mac => {
+			Object.keys(window.tagDB || {}).forEach(mac => {
 				const formData = new FormData();
 				formData.append('mac', mac);
 				formData.append('cmd', 'ledflash');
@@ -864,8 +945,9 @@
 		}
 
 		function blinkAllTags() {
+			console.log('Index page: Blinking all tags...');
 			// Send LED flash command to all active tags
-			Object.keys(tagDB || {}).forEach(mac => {
+			Object.keys(window.tagDB || {}).forEach(mac => {
 				const formData = new FormData();
 				formData.append('mac', mac);
 				formData.append('cmd', 'ledflash');
@@ -885,6 +967,7 @@
 		}
 
 		function refreshAllTags() {
+			console.log('Index page: Refreshing all tags...');
 			// Refresh all tag data from the server
 			if (typeof loadTags === 'function') {
 				loadTags(0);
@@ -894,12 +977,15 @@
 					.then(response => response.json())
 					.then(data => {
 						if (data.tags) {
+							// Initialize tagDB if it doesn't exist
+							if (!window.tagDB) window.tagDB = {};
 							// Update tagDB with fresh data
 							data.tags.forEach(tag => {
-								tagDB[tag.mac] = tag;
+								window.tagDB[tag.mac] = tag;
 							});
 							updateDashboardStats();
 							updateCompactHeaderStatus();
+							console.log('Index page: Tag refresh completed');
 						}
 					})
 					.catch(error => {
@@ -1082,9 +1168,28 @@
 
 		// Initialize all enhancements when DOM is ready
 		document.addEventListener('DOMContentLoaded', function() {
+			console.log('Index page: Setting up initialization...');
+			
+			// Initialize global variables if they don't exist
+			if (typeof window.tagDB === 'undefined') {
+				window.tagDB = {};
+				console.log('Index page: Initialized empty tagDB');
+			}
+			if (typeof window.apConfig === 'undefined') {
+				window.apConfig = {};
+				console.log('Index page: Initialized empty apConfig');
+			}
+			
 			// Wait for main.js to load and initialize
 			const initializeWhenReady = () => {
-				if (typeof tagDB !== 'undefined' && typeof loadTags === 'function') {
+				const hasTagDB = typeof window.tagDB !== 'undefined';
+				const hasLoadTags = typeof loadTags === 'function';
+				const hasClasses = typeof window.OptimizedApp !== 'undefined';
+				
+				console.log(`Index page: Readiness check - tagDB: ${hasTagDB}, loadTags: ${hasLoadTags}, classes: ${hasClasses}`);
+				
+				if (hasTagDB && (hasLoadTags || hasClasses)) {
+					console.log('Index page: Core functionality ready, initializing enhancements');
 					initializeEnhancements();
 					updateHeaderUptime();
 					
@@ -1103,10 +1208,11 @@
 								updateCompactHeaderStatus();
 							}, 100);
 						};
+						console.log('Index page: WebSocket event handler attached');
 					}
 				} else {
-					// Retry in 100ms if main.js isn't ready yet
-					setTimeout(initializeWhenReady, 100);
+					// Retry in 200ms if main.js isn't ready yet
+					setTimeout(initializeWhenReady, 200);
 				}
 			};
 			

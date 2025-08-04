@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RC522 RFID Control - OpenEPL</title>
+    <link rel="stylesheet" href="merged-styles.css">
+    <style>
+        .rfid-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .rfid-section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .rfid-section h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .status-display {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .status-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        
+        .status-value {
+            color: #28a745;
+        }
+        
+        .status-value.inactive {
+            color: #dc3545;
+        }
+        
+        .card-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-display::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: cardShimmer 3s ease-in-out infinite;
+        }
+        
+        @keyframes cardShimmer {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+        }
+        
+        .card-info {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .card-uid {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-family: monospace;
+        }
+        
+        .card-type {
+            font-size: 1.1em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .card-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            font-size: 0.9em;
+        }
+        
+        .no-card {
+            text-align: center;
+            font-size: 1.2em;
+            opacity: 0.7;
+        }
+        
+        .control-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .ctrl-btn {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .ctrl-btn:hover {
+            background: linear-gradient(135deg, #0056b3, #004085);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .ctrl-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .ctrl-btn.scan-btn {
+            background: linear-gradient(135deg, #28a745, #1e7e34);
+        }
+        
+        .ctrl-btn.read-btn {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+        }
+        
+        .ctrl-btn.write-btn {
+            background: linear-gradient(135deg, #ffc107, #e0a800);
+            color: #212529;
+        }
+        
+        .ctrl-btn.danger-btn {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+        }
+        
+        .data-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .data-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+            margin-bottom: 15px;
+            resize: vertical;
+        }
+        
+        .data-output {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+        
+        .card-database {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .card-entry {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+        }
+        
+        .card-entry:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card-entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .card-entry-uid {
+            font-weight: bold;
+            font-family: monospace;
+            color: #495057;
+        }
+        
+        .card-entry-time {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+        
+        .card-entry-type {
+            color: #007bff;
+            font-weight: 500;
+        }
+        
+        .responsive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .input-group label {
+            min-width: 80px;
+            font-weight: 600;
+        }
+        
+        .input-group input, .input-group select {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        
+        .progress-indicator {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #007bff;
+        }
+        
+        .progress-indicator.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .alert-info {
+            background: #cce5ff;
+            border: 1px solid #b3d7ff;
+            color: #004085;
+        }
+        
+        @media (max-width: 768px) {
+            .rfid-container {
+                padding: 10px;
+            }
+            
+            .responsive-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-buttons {
+                grid-template-columns: 1fr;
+            }
+            
+            .input-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .input-group label {
+                min-width: auto;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="rfid-container">
+        <div class="header-section">
+            <h1>🔷 RC522 RFID Control</h1>
+            <p>Read and write MIFARE cards and tags using your ESP32</p>
+        </div>
+        
+        <!-- Status Section -->
+        <div class="rfid-section">
+            <h3>📊 System Status</h3>
+            <div class="status-display" id="status-display">
+                <div class="status-item">
+                    <span class="status-label">RC522 Interface:</span>
+                    <span class="status-value" id="rfid-status">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Monitoring:</span>
+                    <span class="status-value" id="monitoring-status">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">SS Pin:</span>
+                    <span class="status-value" id="ss-pin">--</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">RST Pin:</span>
+                    <span class="status-value" id="rst-pin">--</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Detected Cards:</span>
+                    <span class="status-value" id="detected-count">--</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Current Card Section -->
+        <div class="rfid-section">
+            <h3>💳 Current Card</h3>
+            <div class="card-display" id="card-display">
+                <div class="no-card" id="no-card">
+                    Place a card near the RC522 reader
+                </div>
+                <div class="card-info" id="card-info" style="display: none;">
+                    <div class="card-uid" id="card-uid">--</div>
+                    <div class="card-type" id="card-type">--</div>
+                    <div class="card-details">
+                        <div>Blocks: <span id="card-blocks">--</span></div>
+                        <div>Sectors: <span id="card-sectors">--</span></div>
+                        <div>Last seen: <span id="card-time">--</span></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-buttons">
+                <button class="ctrl-btn scan-btn" onclick="scanCard()">🔍 Scan Card</button>
+                <button class="ctrl-btn" onclick="refreshStatus()">🔄 Refresh</button>
+                <button class="ctrl-btn" onclick="clearCard()">🗑️ Clear</button>
+                <button class="ctrl-btn" onclick="toggleMonitoring()" id="monitor-btn">📡 Toggle Monitor</button>
+            </div>
+        </div>
+        
+        <div class="responsive-grid">
+            <!-- Data Operations Section -->
+            <div class="rfid-section">
+                <h3>📝 Data Operations</h3>
+                
+                <div class="data-section">
+                    <h4>Write Text to Card</h4>
+                    <div class="input-group">
+                        <label>Text:</label>
+                        <textarea class="data-input" id="write-text" rows="3" placeholder="Enter text to write to card..."></textarea>
+                    </div>
+                    <div class="input-group">
+                        <label>Sector:</label>
+                        <input type="number" id="write-sector" value="1" min="1" max="15">
+                        <button class="ctrl-btn write-btn" onclick="writeText()">✍️ Write Text</button>
+                    </div>
+                </div>
+                
+                <div class="data-section">
+                    <h4>Read Data from Card</h4>
+                    <div class="control-buttons">
+                        <button class="ctrl-btn read-btn" onclick="readText()">📖 Read Text</button>
+                        <button class="ctrl-btn read-btn" onclick="readBlock()">🧱 Read Block</button>
+                        <button class="ctrl-btn read-btn" onclick="readAllData()">📚 Read All</button>
+                    </div>
+                    
+                    <div class="input-group" id="block-input" style="display: none;">
+                        <label>Block:</label>
+                        <input type="number" id="read-block-num" value="1" min="0" max="255">
+                    </div>
+                </div>
+                
+                <div class="progress-indicator" id="progress-indicator">
+                    <div class="spinner"></div>
+                    <div>Processing...</div>
+                </div>
+                
+                <div class="data-output" id="data-output">Ready to read/write RFID data...</div>
+            </div>
+            
+            <!-- Card Database Section -->
+            <div class="rfid-section">
+                <h3>🗃️ Card Database</h3>
+                
+                <div class="control-buttons">
+                    <button class="ctrl-btn" onclick="loadCards()">🔄 Refresh Cards</button>
+                    <button class="ctrl-btn danger-btn" onclick="clearDatabase()">🗑️ Clear Database</button>
+                    <button class="ctrl-btn" onclick="exportCards()">💾 Export Cards</button>
+                </div>
+                
+                <div class="card-database" id="card-database">
+                    <div style="text-align: center; padding: 20px; color: #6c757d;">
+                        No cards detected yet
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alert Section -->
+        <div id="alert-container"></div>
+    </div>
+
+    <script>
+        class RFIDController {
+            constructor() {
+                this.currentCard = null;
+                this.monitoring = false;
+                this.detectedCards = [];
+                this.init();
+            }
+            
+            async init() {
+                this.log('🚀 RC522 RFID Controller initialized');
+                await this.refreshStatus();
+                await this.loadCards();
+                
+                // Auto-refresh status every 3 seconds
+                setInterval(() => this.refreshStatus(), 3000);
+                
+                // Auto-refresh cards every 5 seconds if monitoring
+                setInterval(() => {
+                    if (this.monitoring) {
+                        this.loadCards();
+                    }
+                }, 5000);
+                
+                // Auto-scan for cards every 2 seconds
+                setInterval(() => this.autoScan(), 2000);
+            }
+            
+            async refreshStatus() {
+                try {
+                    const response = await fetch('/rfid/status');
+                    if (response.ok) {
+                        const status = await response.json();
+                        this.updateStatusDisplay(status);
+                    } else {
+                        this.log('❌ Failed to get RFID status');
+                    }
+                } catch (error) {
+                    this.log(`❌ Error getting status: ${error.message}`);
+                }
+            }
+            
+            updateStatusDisplay(status) {
+                document.getElementById('rfid-status').textContent = status.enabled ? 'Enabled' : 'Disabled';
+                document.getElementById('rfid-status').className = status.enabled ? 'status-value' : 'status-value inactive';
+                
+                document.getElementById('monitoring-status').textContent = status.monitoring ? 'Active' : 'Inactive';
+                document.getElementById('monitoring-status').className = status.monitoring ? 'status-value' : 'status-value inactive';
+                
+                document.getElementById('ss-pin').textContent = status.ssPin || '--';
+                document.getElementById('rst-pin').textContent = status.rstPin || '--';
+                document.getElementById('detected-count').textContent = status.detectedCardsCount || 0;
+                
+                this.monitoring = status.monitoring;
+                
+                // Update current card if present
+                if (status.currentCard) {
+                    this.displayCard(status.currentCard);
+                } else if (!this.currentCard) {
+                    this.clearCardDisplay();
+                }
+                
+                // Update monitor button
+                const monitorBtn = document.getElementById('monitor-btn');
+                monitorBtn.textContent = this.monitoring ? '📡 Stop Monitor' : '📡 Start Monitor';
+            }
+            
+            async scanCard() {
+                this.log('🔍 Scanning for RFID card...');
+                this.showProgress();
+                
+                try {
+                    const response = await fetch('/rfid/scan');
+                    if (response.ok) {
+                        const result = await response.json();
+                        
+                        if (result.cardPresent) {
+                            this.displayCard(result);
+                            this.log(`✅ Card detected: ${result.uid}`);
+                            this.showAlert('Card detected successfully!', 'success');
+                        } else {
+                            this.clearCardDisplay();
+                            this.log('ℹ️ No card detected');
+                            this.showAlert('No card found. Please place a card near the reader.', 'info');
+                        }
+                    } else {
+                        this.log('❌ Failed to scan for card');
+                        this.showAlert('Failed to scan for card', 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Scan error: ${error.message}`);
+                    this.showAlert(`Scan error: ${error.message}`, 'error');
+                } finally {
+                    this.hideProgress();
+                }
+            }
+            
+            async autoScan() {
+                // Silent background scan
+                try {
+                    const response = await fetch('/rfid/scan');
+                    if (response.ok) {
+                        const result = await response.json();
+                        
+                        if (result.cardPresent && (!this.currentCard || this.currentCard.uid !== result.uid)) {
+                            this.displayCard(result);
+                        } else if (!result.cardPresent && this.currentCard) {
+                            this.clearCardDisplay();
+                        }
+                    }
+                } catch (error) {
+                    // Silent fail for background scans
+                }
+            }
+            
+            displayCard(card) {
+                this.currentCard = card;
+                
+                document.getElementById('no-card').style.display = 'none';
+                document.getElementById('card-info').style.display = 'block';
+                
+                document.getElementById('card-uid').textContent = card.uid;
+                document.getElementById('card-type').textContent = card.type;
+                document.getElementById('card-blocks').textContent = card.blockCount;
+                document.getElementById('card-sectors').textContent = card.sectorCount;
+                
+                if (card.lastSeen) {
+                    const timeAgo = Math.round((Date.now() - card.lastSeen) / 1000);
+                    document.getElementById('card-time').textContent = `${timeAgo}s ago`;
+                } else {
+                    document.getElementById('card-time').textContent = 'Just now';
+                }
+            }
+            
+            clearCardDisplay() {
+                this.currentCard = null;
+                
+                document.getElementById('no-card').style.display = 'block';
+                document.getElementById('card-info').style.display = 'none';
+            }
+            
+            clearCard() {
+                this.clearCardDisplay();
+                this.log('🗑️ Card display cleared');
+            }
+            
+            async readText() {
+                if (!this.currentCard) {
+                    this.showAlert('No card present. Please scan a card first.', 'error');
+                    return;
+                }
+                
+                this.log('📖 Reading text from card...');
+                this.showProgress();
+                
+                try {
+                    const response = await fetch('/rfid/read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: 'type=text'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.log(`✅ Text read successfully (${result.length} characters)`);
+                        this.displayData(`Text from card:\n\n${result.text}`);
+                        this.showAlert('Text read successfully!', 'success');
+                    } else {
+                        this.log(`❌ Read failed: ${result.message}`);
+                        this.displayData(`Read failed: ${result.message}`);
+                        this.showAlert(`Read failed: ${result.message}`, 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Read error: ${error.message}`);
+                    this.showAlert(`Read error: ${error.message}`, 'error');
+                } finally {
+                    this.hideProgress();
+                }
+            }
+            
+            async writeText() {
+                if (!this.currentCard) {
+                    this.showAlert('No card present. Please scan a card first.', 'error');
+                    return;
+                }
+                
+                const text = document.getElementById('write-text').value;
+                const sector = document.getElementById('write-sector').value;
+                
+                if (!text.trim()) {
+                    this.showAlert('Please enter some text to write.', 'error');
+                    return;
+                }
+                
+                this.log(`✍️ Writing text to card (sector ${sector})...`);
+                this.showProgress();
+                
+                try {
+                    const response = await fetch('/rfid/write', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `type=text&text=${encodeURIComponent(text)}&sector=${sector}`
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.log(`✅ Text written successfully`);
+                        this.displayData(`Write successful:\n\nText: ${text}\nSector: ${sector}\n${result.data}`);
+                        this.showAlert('Text written successfully!', 'success');
+                        
+                        // Clear the input
+                        document.getElementById('write-text').value = '';
+                    } else {
+                        this.log(`❌ Write failed: ${result.message}`);
+                        this.displayData(`Write failed: ${result.message}`);
+                        this.showAlert(`Write failed: ${result.message}`, 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Write error: ${error.message}`);
+                    this.showAlert(`Write error: ${error.message}`, 'error');
+                } finally {
+                    this.hideProgress();
+                }
+            }
+            
+            async readBlock() {
+                if (!this.currentCard) {
+                    this.showAlert('No card present. Please scan a card first.', 'error');
+                    return;
+                }
+                
+                const blockInput = document.getElementById('block-input');
+                blockInput.style.display = blockInput.style.display === 'none' ? 'flex' : 'none';
+                
+                if (blockInput.style.display === 'none') return;
+                
+                const blockNumber = document.getElementById('read-block-num').value;
+                
+                this.log(`🧱 Reading block ${blockNumber}...`);
+                this.showProgress();
+                
+                try {
+                    const response = await fetch('/rfid/read', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `type=block&block=${blockNumber}`
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.log(`✅ Block ${blockNumber} read successfully`);
+                        this.displayData(`Block ${blockNumber} data:\n\n${result.data}`);
+                        this.showAlert('Block read successfully!', 'success');
+                    } else {
+                        this.log(`❌ Block read failed: ${result.message}`);
+                        this.displayData(`Block read failed: ${result.message}`);
+                        this.showAlert(`Block read failed: ${result.message}`, 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Block read error: ${error.message}`);
+                    this.showAlert(`Block read error: ${error.message}`, 'error');
+                } finally {
+                    this.hideProgress();
+                }
+            }
+            
+            async loadCards() {
+                try {
+                    const response = await fetch('/rfid/cards');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.detectedCards = data.cards;
+                        this.displayCardDatabase(data.cards);
+                    } else {
+                        this.log('❌ Failed to load card database');
+                    }
+                } catch (error) {
+                    this.log(`❌ Error loading cards: ${error.message}`);
+                }
+            }
+            
+            displayCardDatabase(cards) {
+                const container = document.getElementById('card-database');
+                
+                if (cards.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 20px; color: #6c757d;">No cards detected yet</div>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                
+                cards.forEach(card => {
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'card-entry';
+                    
+                    const timeDiff = card.lastSeen ? Math.round((Date.now() - card.lastSeen) / 1000) : 0;
+                    const timeText = timeDiff > 0 ? `${timeDiff}s ago` : 'Just now';
+                    
+                    cardDiv.innerHTML = `
+                        <div class="card-entry-header">
+                            <div class="card-entry-uid">${card.uid}</div>
+                            <div class="card-entry-time">${timeText}</div>
+                        </div>
+                        <div class="card-entry-type">${card.type}</div>
+                        <div style="font-size: 0.85em; color: #6c757d;">
+                            Blocks: ${card.blockCount} | Sectors: ${card.sectorCount}
+                        </div>
+                    `;
+                    
+                    container.appendChild(cardDiv);
+                });
+            }
+            
+            async toggleMonitoring() {
+                const newState = !this.monitoring;
+                
+                try {
+                    const response = await fetch('/rfid/monitor', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `enable=${newState}`
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        this.monitoring = result.monitoring;
+                        this.log(`📡 Monitoring ${this.monitoring ? 'started' : 'stopped'}`);
+                        this.showAlert(`Monitoring ${this.monitoring ? 'started' : 'stopped'}`, 'success');
+                        
+                        // Update button
+                        const monitorBtn = document.getElementById('monitor-btn');
+                        monitorBtn.textContent = this.monitoring ? '📡 Stop Monitor' : '📡 Start Monitor';
+                    } else {
+                        this.log('❌ Failed to toggle monitoring');
+                        this.showAlert('Failed to toggle monitoring', 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Monitor toggle error: ${error.message}`);
+                    this.showAlert(`Monitor error: ${error.message}`, 'error');
+                }
+            }
+            
+            async clearDatabase() {
+                if (!confirm('Are you sure you want to clear the card database?')) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/rfid/clear', { method: 'POST' });
+                    
+                    if (response.ok) {
+                        this.detectedCards = [];
+                        this.displayCardDatabase([]);
+                        this.log('🗑️ Card database cleared');
+                        this.showAlert('Card database cleared', 'success');
+                    } else {
+                        this.log('❌ Failed to clear database');
+                        this.showAlert('Failed to clear database', 'error');
+                    }
+                } catch (error) {
+                    this.log(`❌ Clear error: ${error.message}`);
+                    this.showAlert(`Clear error: ${error.message}`, 'error');
+                }
+            }
+            
+            exportCards() {
+                if (this.detectedCards.length === 0) {
+                    this.showAlert('No cards to export', 'info');
+                    return;
+                }
+                
+                const exportData = {
+                    exportDate: new Date().toISOString(),
+                    cardCount: this.detectedCards.length,
+                    cards: this.detectedCards
+                };
+                
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `rfid-cards-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.log(`💾 Exported ${this.detectedCards.length} cards`);
+                this.showAlert(`Exported ${this.detectedCards.length} cards`, 'success');
+            }
+            
+            displayData(data) {
+                const output = document.getElementById('data-output');
+                const timestamp = new Date().toLocaleTimeString();
+                output.textContent = `[${timestamp}] ${data}`;
+                output.scrollTop = output.scrollHeight;
+            }
+            
+            showProgress() {
+                document.getElementById('progress-indicator').classList.add('active');
+            }
+            
+            hideProgress() {
+                document.getElementById('progress-indicator').classList.remove('active');
+            }
+            
+            showAlert(message, type) {
+                const container = document.getElementById('alert-container');
+                
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type}`;
+                alert.textContent = message;
+                
+                container.appendChild(alert);
+                
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (alert.parentNode) {
+                        container.removeChild(alert);
+                    }
+                }, 5000);
+            }
+            
+            log(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                console.log(`[${timestamp}] ${message}`);
+                
+                // Also display in data output if no other content
+                const output = document.getElementById('data-output');
+                if (output.textContent === 'Ready to read/write RFID data...') {
+                    output.textContent = `[${timestamp}] ${message}`;
+                }
+            }
+        }
+        
+        // Global functions
+        let rfidController;
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            rfidController = new RFIDController();
+        });
+        
+        // Global function wrappers
+        function scanCard() {
+            rfidController.scanCard();
+        }
+        
+        function refreshStatus() {
+            rfidController.refreshStatus();
+        }
+        
+        function clearCard() {
+            rfidController.clearCard();
+        }
+        
+        function readText() {
+            rfidController.readText();
+        }
+        
+        function writeText() {
+            rfidController.writeText();
+        }
+        
+        function readBlock() {
+            rfidController.readBlock();
+        }
+        
+        function readAllData() {
+            rfidController.readText(); // For now, same as read text
+        }
+        
+        function loadCards() {
+            rfidController.loadCards();
+        }
+        
+        function clearDatabase() {
+            rfidController.clearDatabase();
+        }
+        
+        function exportCards() {
+            rfidController.exportCards();
+        }
+        
+        function toggleMonitoring() {
+            rfidController.toggleMonitoring();
+        }
+    </script>
+</body>
+</html>

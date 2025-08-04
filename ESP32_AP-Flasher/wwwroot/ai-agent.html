@@ -6,8 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
     
     <title>OpenAI Agent - ESP32 AP-Flasher</title>
-    <link rel="stylesheet" href="main.css?2.74" type="text/css" />
-    <link rel="stylesheet" href="advanced-styles.css" type="text/css" />
+    <link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
     <link rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     
@@ -17,8 +16,34 @@
     <script src="app-core.js?3.0" defer></script>
     <script src="ui-components.js?3.0" defer></script>
     <script src="main.js?3.0" defer></script>
-    <script src="universal-menu.js" defer></script>
-    <script src="openai-agent-enhanced.js" defer></script>
+    <script src="universal-menu.js?3.1" defer></script>
+    <script src="openai-agent-enhanced.js?3.1" defer></script>
+    
+    <!-- Debug script loading -->
+    <script>
+        console.log('AI-Agent page: Scripts loading started');
+        
+        // Track script loading
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('AI-Agent page: DOM loaded');
+            
+            // Check if required scripts are loaded
+            setTimeout(() => {
+                console.log('Script status check:');
+                console.log('- universalMenu:', !!window.universalMenu);
+                console.log('- openAIAgentEnhanced:', !!window.openAIAgentEnhanced);
+                console.log('- app-core loaded:', !!window.app);
+                console.log('- main.js loaded:', !!window.main);
+                
+                if (!window.universalMenu) {
+                    console.warn('Universal menu not loaded, menu may not appear');
+                }
+                if (!window.openAIAgentEnhanced) {
+                    console.warn('OpenAI Enhanced Agent not loaded, AI functionality may not work');
+                }
+            }, 3000);
+        });
+    </script>
     
     <style>
         .agent-showcase {
@@ -333,29 +358,55 @@
             if (window.openAIAgentEnhanced) {
                 openAIAgentEnhanced.togglePanel();
                 setTimeout(() => {
-                    document.getElementById('agent-input').value = question;
-                    openAIAgentEnhanced.sendMessage();
+                    const inputEl = document.getElementById('agent-input');
+                    if (inputEl) {
+                        inputEl.value = question;
+                        openAIAgentEnhanced.sendMessage();
+                    } else {
+                        console.warn('Agent input element not found');
+                    }
                 }, 500);
             } else {
                 alert('Enhanced AI Agent is still loading. Please wait a moment and try again.');
+                console.warn('openAIAgentEnhanced not available');
             }
         }
 
         // Status updates
         document.addEventListener('DOMContentLoaded', function() {
-            // Update status indicators
+            // Wait for menu to load before initializing
+            let menuCheckInterval = setInterval(() => {
+                if (document.getElementById('universal-menu') || window.universalMenu?.menuLoaded) {
+                    clearInterval(menuCheckInterval);
+                    console.log('Menu is ready, initializing AI agent page...');
+                }
+            }, 100);
+            
+            // Update status indicators with timeout
             setTimeout(() => {
-                document.getElementById('apiStatus').innerHTML = 'Connected ✅';
-                document.getElementById('functionCount').textContent = '25';
+                const apiStatusEl = document.getElementById('apiStatus');
+                const functionCountEl = document.getElementById('functionCount');
+                const aiStatusEl = document.getElementById('aiStatus');
+                
+                if (apiStatusEl) apiStatusEl.innerHTML = 'Connected ✅';
+                if (functionCountEl) functionCountEl.textContent = '25';
                 
                 // Check if enhanced AI agent is loaded
                 const checkAgent = setInterval(() => {
                     if (window.openAIAgentEnhanced) {
-                        document.getElementById('aiStatus').innerHTML = 'Enhanced AI Ready ✅';
+                        if (aiStatusEl) aiStatusEl.innerHTML = 'Enhanced AI Ready ✅';
                         clearInterval(checkAgent);
                     }
                 }, 1000);
+                
+                // Clear the check after 10 seconds to avoid infinite checking
+                setTimeout(() => clearInterval(checkAgent), 10000);
             }, 2000);
+            
+            // Listen for menu loaded event
+            window.addEventListener('menuLoaded', function() {
+                console.log('Menu loaded event received');
+            });
         });
     </script>
 

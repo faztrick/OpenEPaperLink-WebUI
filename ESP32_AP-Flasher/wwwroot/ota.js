@@ -1,4 +1,4 @@
-var repo = apConfig.repo || 'OpenEPaperLink/OpenEPaperLink';
+var repo = (typeof apConfig !== 'undefined' && apConfig.repo) || 'OpenEPaperLink/OpenEPaperLink';
 var repoUrl = 'https://api.github.com/repos/' + repo + '/releases';
 
 // Repository suggestions for better functionality
