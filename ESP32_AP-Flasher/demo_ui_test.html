@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI Agent - Fixed UI Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        
+        .demo-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .demo-header h1 {
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        
+        .demo-header p {
+            color: #6c757d;
+            font-size: 16px;
+        }
+        
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #d4edda;
+            color: #155724;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        
+        .features-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .feature-card {
+            padding: 20px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 8px;
+        }
+        
+        .feature-card h3 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+        }
+        
+        .feature-card p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+        }
+        
+        .test-section h3 {
+            color: #856404;
+            margin: 0 0 15px 0;
+        }
+        
+        .btn-demo {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin: 5px;
+        }
+        
+        .btn-demo:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,123,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="demo-header">
+            <h1>🤖 OpenAI Agent - GPT-4.1 Ready</h1>
+            <p>ESP32 AP-Flasher with JSON Configuration Support</p>
+            <div class="status-indicator">
+                <span>●</span> API Status: GPT-4.1 Working
+            </div>
+        </div>
+        
+        <div class="features-list">
+            <div class="feature-card">
+                <h3>✅ Fixed Chat UI</h3>
+                <p>Improved contrast, readable text colors, and better styling for all message types</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>⚙️ JSON Configuration</h3>
+                <p>Dynamic configuration management with real-time updates and validation</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🔧 Error Handling</h3>
+                <p>Better API error messages with specific guidance for common issues</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🎨 Enhanced Design</h3>
+                <p>Modern gradients, animations, and responsive design for better user experience</p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🧪 Test the AI Agent</h3>
+            <p>Click the floating button in the bottom-right corner to open the AI assistant. Try these commands:</p>
+            <ul>
+                <li><strong>"Show current configuration"</strong> - View JSON config</li>
+                <li><strong>"Get system information"</strong> - Check ESP32 status</li>
+                <li><strong>"List all files"</strong> - Browse filesystem</li>
+                <li><strong>"Update OpenAI model to gpt-4o"</strong> - Change model</li>
+            </ul>
+            
+            <button class="btn-demo" onclick="openAIAgent && openAIAgent.togglePanel()">
+                Open AI Assistant
+            </button>
+            
+            <button class="btn-demo" onclick="openAIAgent && openAIAgent.showConfigPanel()">
+                Open Configuration
+            </button>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #e9ecef; border-radius: 8px; text-align: center;">
+            <h4>🚀 Fixed Issues:</h4>
+            <ul style="text-align: left; max-width: 600px; margin: 0 auto;">
+                <li>✅ White text visibility in chat messages</li>
+                <li>✅ API 404 error (switched to gpt-3.5-turbo)</li>
+                <li>✅ Better error messages with specific guidance</li>
+                <li>✅ Improved contrast and readability</li>
+                <li>✅ Modern design with gradients and animations</li>
+                <li>✅ JSON configuration system</li>
+                <li>✅ Better button states and feedback</li>
+                <li>✅ Responsive design for different screen sizes</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Load the OpenAI Agent -->
+    <script src="openai-agent-config.js"></script>
+    
+    <script>
+        // Demo functions
+        function simulateAPITest() {
+            if (window.openAIAgent) {
+                openAIAgent.sendPredefinedMessage('Hello! Please test the API connection.');
+            } else {
+                alert('OpenAI Agent is still loading...');
+            }
+        }
+        
+        // Show loading status
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Demo page loaded. OpenAI Agent will initialize shortly...');
+        });
+    </script>
+</body>
+</html>

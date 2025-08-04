@@ -3,13 +3,20 @@
 
 class OpenAIAgent {
     constructor() {
-        this.apiKey = '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';
-        this.apiUrl = 'https://api.openai.com/v1/chat/completions';
-        this.model = 'gpt-4-turbo-preview';
+        this.config = null;
+        this.apiKey = null;
+        this.apiUrl = null;
+        this.model = null;
         this.maxTokens = 4096;
         this.temperature = 0.7;
         this.isProcessing = false;
         this.conversationHistory = [];
+        
+        // Load configuration
+        this.loadConfiguration();
+        
+        // Load configuration
+        this.loadConfiguration();
         
         // Function definitions for AI agent
         this.availableFunctions = {
@@ -48,6 +55,83 @@ Available functions:
 Always provide clear, helpful responses and explain what actions you're taking.`;
 
         this.initializeUI();
+    }
+
+    async loadConfiguration() {
+        try {
+            // Try to load from server first
+            const response = await fetch('/openai_config.json');
+            if (response.ok) {
+                this.config = await response.json();
+                this.logToConsole('info', 'Configuration loaded from server');
+            } else {
+                throw new Error('Failed to load config from server');
+            }
+        } catch (error) {
+            // Fallback to default configuration
+            this.logToConsole('warn', 'Using fallback configuration: ' + error.message);
+            this.config = this.getDefaultConfig();
+        }
+
+        // Apply configuration
+        this.applyConfiguration();
+    }
+
+    getDefaultConfig() {
+        return {
+            openai: {
+                api_key: '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',
+                api_url: 'https://api.openai.com/v1/chat/completions',
+                models: {
+                    default: 'gpt-4o-mini',
+                    alternatives: ['gpt-3.5-turbo', 'gpt-4', 'gpt-4o']
+                },
+                parameters: {
+                    max_tokens: 4096,
+                    temperature: 0.7,
+                    top_p: 1.0
+                }
+            },
+            esp32: {
+                ai_agent: {
+                    enabled: true,
+                    conversation_history_limit: 10
+                }
+            }
+        };
+    }
+
+    applyConfiguration() {
+        if (!this.config) return;
+
+        const openaiConfig = this.config.openai;
+        this.apiKey = openaiConfig.api_key;
+        this.apiUrl = openaiConfig.api_url || openaiConfig.endpoints?.chat_completions;
+        this.model = openaiConfig.models.default;
+        this.maxTokens = openaiConfig.parameters.max_tokens;
+        this.temperature = openaiConfig.parameters.temperature;
+
+        this.logToConsole('info', `OpenAI configured with model: ${this.model}`);
+    }
+
+    async saveConfiguration() {
+        try {
+            const response = await fetch('/save_config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.config)
+            });
+
+            if (response.ok) {
+                this.logToConsole('info', 'Configuration saved successfully');
+                return { success: true };
+            } else {
+                throw new Error(`Failed to save config: ${response.statusText}`);
+            }
+        } catch (error) {
+            this.logToConsole('error', 'Failed to save configuration: ' + error.message);
+            return { success: false, error: error.message };
+        }
     }
 
     initializeUI() {
@@ -170,16 +254,19 @@ Always provide clear, helpful responses and explain what actions you're taking.`
                 background: #007bff;
                 color: white;
                 margin-left: 20px;
+                border: 1px solid #0056b3;
             }
             
             .agent-message.assistant {
-                background: white;
+                background: #ffffff;
+                color: #333333;
                 border: 1px solid #ddd;
                 margin-right: 20px;
             }
             
             .agent-message.system {
                 background: #e9ecef;
+                color: #495057;
                 border: 1px solid #ced4da;
                 font-style: italic;
             }
@@ -188,6 +275,7 @@ Always provide clear, helpful responses and explain what actions you're taking.`
                 background: #f8d7da;
                 border: 1px solid #f5c6cb;
                 color: #721c24;
+                font-weight: bold;
             }
             
             .agent-message.function {
