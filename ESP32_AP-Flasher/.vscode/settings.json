@@ -55,9 +55,9 @@
         "ratio": "cpp"
     },
     "idf.currentSetup": "C:\\Users\\faztrick\\esp\\v5.3.1\\esp-idf",
-    "idf.portWin": "COM10",
+    "idf.portWin": "COM11",
     "idf.openOcdConfigs": [
-        "board/esp32s3-builtin.cfg"
+        "board/esp32c6-builtin.cfg"
     ],
     "idf.customExtraVars": {
         "IDF_TARGET": "esp32s3"

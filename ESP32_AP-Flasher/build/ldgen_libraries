@@ -1,4 +1,4 @@
-D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/xtensa/libxtensa.a
+D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/riscv/libriscv.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_gpio/libesp_driver_gpio.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_pm/libesp_pm.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/mbedtls/libmbedtls.a
@@ -34,13 +34,14 @@ D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_spi/lib
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_mcpwm/libesp_driver_mcpwm.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_i2s/libesp_driver_i2s.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/sdmmc/libsdmmc.a
-D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_sdmmc/libesp_driver_sdmmc.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_sdspi/libesp_driver_sdspi.a
+D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_sdio/libesp_driver_sdio.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_rmt/libesp_driver_rmt.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_tsens/libesp_driver_tsens.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_sdm/libesp_driver_sdm.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_i2c/libesp_driver_i2c.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_ledc/libesp_driver_ledc.a
+D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_parlio/libesp_driver_parlio.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_driver_usb_serial_jtag/libesp_driver_usb_serial_jtag.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/driver/libdriver.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_phy/libesp_phy.a
@@ -73,11 +74,9 @@ D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/esp_local_ctrl/lib
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/espcoredump/libespcoredump.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/wear_levelling/libwear_levelling.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/fatfs/libfatfs.a
+D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/ieee802154/libieee802154.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/json/libjson.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/mqtt/libmqtt.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/nvs_sec_provider/libnvs_sec_provider.a
-D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/perfmon/libperfmon.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/spiffs/libspiffs.a
-D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/touch_element/libtouch_element.a
-D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/usb/libusb.a
 D:/projects/esp/OpenEPaperLink/ESP32_AP-Flasher/build/esp-idf/wifi_provisioning/libwifi_provisioning.a
