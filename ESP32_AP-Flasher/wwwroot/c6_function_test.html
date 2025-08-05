@@ -1,0 +1,303 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>C6 Function Test - OpenEPaperLink</title>
+    <link rel="stylesheet" href="merged-styles.css?2.74">
+    <style>
+        .test-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .test-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .test-section {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .test-section h3 {
+            margin-top: 0;
+            color: #495057;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 5px;
+        }
+
+        .test-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+
+        .test-button:hover {
+            background-color: #0056b3;
+        }
+
+        .test-button.success {
+            background-color: #28a745;
+        }
+
+        .test-button.warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .test-button.danger {
+            background-color: #dc3545;
+        }
+
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .result-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .result-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .result-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 15px;
+        }
+
+        .endpoint-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .endpoint-table th,
+        .endpoint-table td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .endpoint-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+
+        .status-ok {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .status-unknown {
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1>🔧 ESP32-C6 Function Test Suite</h1>
+            <p>Test all C6 module functions and verify C++ backend connectivity</p>
+        </div>
+
+        <!-- Test Overview -->
+        <div class="test-section">
+            <h3>📊 Test Overview</h3>
+            <div class="test-grid">
+                <div>
+                    <h4>C++ Backend Endpoints</h4>
+                    <table class="endpoint-table">
+                        <thead>
+                            <tr>
+                                <th>Endpoint</th>
+                                <th>Method</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="endpointStatus">
+                            <tr>
+                                <td>/sysinfo</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/test_c6_connection</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/test_c6_radio</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/get_c6_settings</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/save_c6_settings</td>
+                                <td>POST</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/restart_c6</td>
+                                <td>POST</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/ap_list</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                            <tr>
+                                <td>/c6_update_status</td>
+                                <td>GET</td>
+                                <td class="status-unknown">Not Tested</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <h4>Quick Actions</h4>
+                    <button class="test-button" onclick="runAllTests()">🚀 Run All Tests</button>
+                    <button class="test-button warning" onclick="clearAllResults()">🧹 Clear Results</button>
+                    <button class="test-button success" onclick="exportTestResults()">📄 Export Results</button>
+                    <div style="margin-top: 15px;">
+                        <strong>Test Progress:</strong>
+                        <div style="background: #e9ecef; border-radius: 4px; height: 20px; margin-top: 5px;">
+                            <div id="progressBar"
+                                style="background: #007bff; height: 100%; border-radius: 4px; width: 0%; transition: width 0.3s;">
+                            </div>
+                        </div>
+                        <div id="progressText" style="text-align: center; margin-top: 5px; font-size: 12px;">Ready to
+                            start tests</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Individual Tests -->
+        <div class="test-grid">
+            <!-- System Information Test -->
+            <div class="test-section">
+                <h3>🖥️ System Information</h3>
+                <p>Test system info endpoint and C6 capability detection</p>
+                <button class="test-button" onclick="testSystemInfo()">Test /sysinfo</button>
+                <div id="sysInfoResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- Connection Test -->
+            <div class="test-section">
+                <h3>🔗 C6 Connection Test</h3>
+                <p>Test C6 module connectivity and communication</p>
+                <button class="test-button" onclick="testC6Connection()">Test Connection</button>
+                <div id="connectionResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- Radio Test -->
+            <div class="test-section">
+                <h3>📡 Radio Functionality</h3>
+                <p>Test C6 radio functionality and signal quality</p>
+                <button class="test-button" onclick="testC6Radio()">Test Radio</button>
+                <div id="radioResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- Settings Test -->
+            <div class="test-section">
+                <h3>⚙️ Settings Management</h3>
+                <p>Test C6 settings read/write functionality</p>
+                <button class="test-button" onclick="testC6Settings()">Test Settings</button>
+                <div id="settingsResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- AP List Test -->
+            <div class="test-section">
+                <h3>📋 AP List</h3>
+                <p>Test AP list endpoint for C6 module detection</p>
+                <button class="test-button" onclick="testAPList()">Test AP List</button>
+                <div id="apListResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- Update Status Test -->
+            <div class="test-section">
+                <h3>🔄 Update Status</h3>
+                <p>Test firmware update status monitoring</p>
+                <button class="test-button" onclick="testUpdateStatus()">Test Update Status</button>
+                <div id="updateStatusResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- Drives and Ports Test -->
+            <div class="test-section">
+                <h3>💾 Drives & Ports</h3>
+                <p>Test drive listing and serial port detection</p>
+                <button class="test-button" onclick="testDrivesAndPorts()">Test Drives/Ports</button>
+                <div id="drivesPortsResult" class="test-result" style="display: none;"></div>
+            </div>
+
+            <!-- C6 Control Test -->
+            <div class="test-section">
+                <h3>🎛️ C6 Control</h3>
+                <p>Test C6 module control commands (restart, etc.)</p>
+                <button class="test-button warning" onclick="testC6Control()">Test Control (Safe)</button>
+                <div id="controlResult" class="test-result" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Test Results Summary -->
+        <div class="test-section">
+            <h3>📈 Test Results Summary</h3>
+            <div id="testSummary">
+                <p>Run tests to see results summary...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="c6_function_test.js"></script>
+</body>
+
+</html>

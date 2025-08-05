@@ -14,6 +14,10 @@
 #include "ips_display.h"
 #include "tag_db.h"
 
+// WiFi optimization includes for ESP32-S3
+#include "esp_wifi.h"
+#include "esp_wifi_types.h"
+
 uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
 uint8_t x_position = 0;
@@ -203,17 +207,35 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
 
     _APstarted = false;
     WiFi.disconnect(true, true);
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(200));  // Non-blocking delay
     WiFi.mode(WIFI_MODE_NULL);
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    // Optimize WiFi settings for ESP32-S3
     WiFi.setHostname(buildHostname(ESP_MAC_WIFI_STA).c_str());
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(WIFI_PS_MIN_MODEM);
 
-    terminalLog("Connecting to WiFi...");
-    // logLine("Connecting to WiFi...");
+    // Performance optimizations
+    esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving for faster connection
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
+
+    // Configure for faster connection
+    wifi_config_t wifi_config;
+    memset(&wifi_config, 0, sizeof(wifi_config));
+    strncpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, pass.c_str(), sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.scan_method = WIFI_FAST_SCAN;             // Fast scan method
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;  // Connect to strongest signal
+    wifi_config.sta.threshold.rssi = -127;                    // Accept any signal strength
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;      // Accept any auth mode initially
+
+    terminalLog("Connecting to WiFi with optimized settings...");
     WiFi.persistent(savewhensuccessfull);
-    WiFi.begin(_ssid.c_str(), _pass.c_str());
+
+    // Use optimized connection
+    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    esp_wifi_connect();
+
     _connected = waitForConnection();
     return _connected;
 }
@@ -261,9 +283,31 @@ void WifiManager::startManagementServer() {
         logLine("Starting configuration AP, ssid OpenEPaperLink");
         WiFi.disconnect(true, true);
         delay(100);
+
+        // Optimized WiFi settings for ESP32-S3
         WiFi.mode(WIFI_AP_STA);  // Use dual mode to allow scanning while in AP mode
-        WiFi.softAP("OpenEPaperLink", "", 1, false);
+
+        // Configure WiFi performance settings
+        esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving for better performance
+        WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Set optimal power for ESP32-S3
+
+        // Configure scan settings for better performance
+        wifi_scan_config_t scanConf;
+        scanConf.ssid = NULL;
+        scanConf.bssid = NULL;
+        scanConf.channel = 0;
+        scanConf.show_hidden = true;
+        scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+        scanConf.scan_time.active.min = 100;  // Faster scan timing
+        scanConf.scan_time.active.max = 300;
+        esp_wifi_scan_start(&scanConf, false);
+
+        WiFi.softAP("OpenEPaperLink", "", 1, false, 8);  // Allow up to 8 connections
         WiFi.softAPsetHostname("OpenEPaperLink");
+
+        // Set optimal bandwidth for AP mode
+        esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+
         IPAddress IP = WiFi.softAPIP();
         terminalLog("Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
         _APstarted = true;
@@ -519,18 +563,59 @@ bool onCommandCallback(improv::ImprovCommand cmd) {
 }
 
 void getAvailableWifiNetworks() {
-    int networkNum = WiFi.scanNetworks();
+    // Use async scan for better performance
+    WiFi.scanDelete();  // Clear previous results
 
-    for (int id = 0; id < networkNum; ++id) {
-        std::vector<uint8_t> data = improv::build_rpc_response(
-            improv::GET_WIFI_NETWORKS, {WiFi.SSID(id), String(WiFi.RSSI(id)), (WiFi.encryptionType(id) == WIFI_AUTH_OPEN ? "NO" : "YES")}, false);
-        send_response(data);
-        delay(1);
+    // Configure optimized scan parameters
+    wifi_scan_config_t scanConf;
+    scanConf.ssid = NULL;
+    scanConf.bssid = NULL;
+    scanConf.channel = 0;
+    scanConf.show_hidden = true;
+    scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    scanConf.scan_time.active.min = 100;  // Fast scan
+    scanConf.scan_time.active.max = 200;
+
+    // Start optimized scan
+    esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
+
+    int networkNum = WiFi.scanComplete();
+
+    if (networkNum > 0) {
+        // Create array for sorting by signal strength
+        std::vector<std::pair<int, int>> networks;  // index, rssi
+        for (int i = 0; i < networkNum; i++) {
+            if (WiFi.SSID(i).length() > 0) {
+                networks.push_back(std::make_pair(i, WiFi.RSSI(i)));
+            }
+        }
+
+        // Sort by signal strength (strongest first)
+        std::sort(networks.begin(), networks.end(),
+                  [](const std::pair<int, int> &a, const std::pair<int, int> &b) {
+                      return a.second > b.second;
+                  });
+
+        // Send sorted results (limit to prevent memory issues)
+        int maxNetworks = std::min((int)networks.size(), 30);
+        for (int idx = 0; idx < maxNetworks; idx++) {
+            int id = networks[idx].first;
+            std::vector<uint8_t> data = improv::build_rpc_response(
+                improv::GET_WIFI_NETWORKS,
+                {WiFi.SSID(id), String(WiFi.RSSI(id)), (WiFi.encryptionType(id) == WIFI_AUTH_OPEN ? "NO" : "YES")},
+                false);
+            send_response(data);
+            vTaskDelay(pdMS_TO_TICKS(1));  // Non-blocking delay
+        }
     }
+
     // final response
     std::vector<uint8_t> data =
         improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
     send_response(data);
+
+    // Clean up
+    WiFi.scanDelete();
 }
 
 void set_state(improv::State state) {

@@ -35,7 +35,7 @@ class APIManager {
             wifiStatus: '/status',
             
             // System Info
-            systemInfo: '/sysinfo',
+            systemInfo: 'get_ap_config',
             memory: '/heap',
             uptime: '/uptime',
             

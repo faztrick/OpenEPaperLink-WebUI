@@ -676,6 +676,121 @@ class UIComponents {
     }
 
     /**
+     * Create accordion component
+     */
+    createAccordion(options = {}) {
+        const {
+            items = [],
+            allowMultiple = false,
+            className = ''
+        } = options;
+
+        const accordion = document.createElement('div');
+        accordion.className = `accordion ${className}`;
+
+        items.forEach((item, index) => {
+            const panel = document.createElement('div');
+            panel.className = 'accordion-panel';
+
+            panel.innerHTML = `
+                <div class="accordion-header" data-index="${index}">
+                    <span class="accordion-title">${item.title || `Panel ${index + 1}`}</span>
+                    <span class="accordion-toggle">▼</span>
+                </div>
+                <div class="accordion-content">
+                    <div class="accordion-body">
+                        ${item.content || ''}
+                    </div>
+                </div>
+            `;
+
+            const header = panel.querySelector('.accordion-header');
+            const content = panel.querySelector('.accordion-content');
+            const toggle = panel.querySelector('.accordion-toggle');
+
+            header.addEventListener('click', () => {
+                const isOpen = panel.classList.contains('open');
+
+                if (!allowMultiple) {
+                    // Close all other panels
+                    accordion.querySelectorAll('.accordion-panel.open').forEach(p => {
+                        if (p !== panel) {
+                            p.classList.remove('open');
+                            p.querySelector('.accordion-toggle').textContent = '▼';
+                        }
+                    });
+                }
+
+                if (isOpen) {
+                    panel.classList.remove('open');
+                    toggle.textContent = '▼';
+                } else {
+                    panel.classList.add('open');
+                    toggle.textContent = '▲';
+                }
+            });
+
+            accordion.appendChild(panel);
+        });
+
+        return accordion;
+    }
+
+    /**
+     * Create slider component
+     */
+    createSlider(options = {}) {
+        const {
+            min = 0,
+            max = 100,
+            value = 0,
+            step = 1,
+            label = '',
+            unit = '',
+            onChange = null,
+            className = ''
+        } = options;
+
+        const slider = document.createElement('div');
+        slider.className = `slider-component ${className}`;
+
+        slider.innerHTML = `
+            <div class="slider-header">
+                <label class="slider-label">${label}</label>
+                <span class="slider-value">${value}${unit}</span>
+            </div>
+            <div class="slider-track">
+                <input type="range" 
+                       class="slider-input" 
+                       min="${min}" 
+                       max="${max}" 
+                       value="${value}" 
+                       step="${step}">
+                <div class="slider-fill"></div>
+            </div>
+        `;
+
+        const input = slider.querySelector('.slider-input');
+        const valueDisplay = slider.querySelector('.slider-value');
+        const fill = slider.querySelector('.slider-fill');
+
+        const updateSlider = () => {
+            const percent = ((input.value - min) / (max - min)) * 100;
+            fill.style.width = `${percent}%`;
+            valueDisplay.textContent = `${input.value}${unit}`;
+
+            if (onChange) {
+                onChange(parseFloat(input.value));
+            }
+        };
+
+        input.addEventListener('input', updateSlider);
+        updateSlider(); // Initialize
+
+        return slider;
+    }
+
+    /**
      * Destroy component and cleanup
      */
     destroyComponent(component) {

@@ -377,7 +377,8 @@ class OptimizedApp {
      */
     async loadSystemInfo() {
         try {
-            const response = await fetch('/sysinfo');
+            // Use get_ap_config instead of sysinfo as it's the working endpoint
+            const response = await fetch('get_ap_config');
             const sysInfo = await response.json();
             
             this.updateSystemDisplay(sysInfo);

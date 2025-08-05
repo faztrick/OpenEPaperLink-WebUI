@@ -1,18 +1,18 @@
 {
     // See http://go.microsoft.com/fwlink/?LinkId=827846
     // for the documentation about the extensions.json format
-    // ESP32 Emulation and Development Extensions
     "recommendations": [
-        "platformio.platformio-ide",
-        "ms-vscode.cpptools",
-        "wokwi.wokwi-vscode",
+        "espressif.esp-idf-extension",
         "marus25.cortex-debug",
-        "webfreak.debug",
         "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools",
+        "platformio.platformio-ide",
         "twxs.cmake",
-        "espressif.esp-idf-extension"
+        "webfreak.debug",
+        "wokwi.wokwi-vscode"
     ],
     "unwantedRecommendations": [
+        "ms-vscode.cpptools-extension-pack",
         "ms-vscode.vscode-json"
     ]
 }

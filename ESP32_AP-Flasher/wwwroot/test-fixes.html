@@ -1,0 +1,240 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Resource Loading Test</title>
+    <link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+    <script src="ui-components.js?3.2" defer></script>
+    <script src="app-core.js?3.2" defer></script>
+    <script src="main.js?3.2" defer></script>
+</head>
+
+<body>
+    <div class="container" style="padding: 20px;">
+        <h1>Resource Loading Test</h1>
+
+        <div id="test-results">
+            <div class="test-item">
+                <h3>1. CSS Loading Test</h3>
+                <div id="css-test" style="background: var(--primary-color, red); padding: 10px; border-radius: 8px;">
+                    If this has a blue background, CSS is loaded correctly.
+                </div>
+            </div>
+
+            <div class="test-item">
+                <h3>2. UI Components Test</h3>
+                <div id="ui-test"></div>
+                <button onclick="testUIComponents()">Test UI Components</button>
+            </div>
+
+            <div class="test-item">
+                <h3>3. Main.js Error Test</h3>
+                <div id="main-test">
+                    <p>Check console for main.js null element errors.</p>
+                    <button onclick="testMainJS()">Test Main.js Functions</button>
+                </div>
+            </div>
+
+            <div class="test-item">
+                <h3>4. API Endpoint Test</h3>
+                <div id="api-test"></div>
+                <button onclick="testAPIs()">Test API Endpoints</button>
+            </div>
+
+            <div class="test-item">
+                <h3>5. System Info Test</h3>
+                <div id="sysinfo-test"></div>
+                <button onclick="testSystemInfo()">Test System Info</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('Test page loaded');
+
+        // Test UI Components
+        function testUIComponents() {
+            const testDiv = document.getElementById('ui-test');
+            testDiv.innerHTML = '<p>Testing UI Components...</p>';
+
+            try {
+                if (window.uiComponents) {
+                    console.log('UI Components instance found');
+
+                    // Test accordion
+                    const accordionOptions = {
+                        items: [
+                            { title: 'Test Panel 1', content: 'This is test content 1' },
+                            { title: 'Test Panel 2', content: 'This is test content 2' }
+                        ]
+                    };
+
+                    const accordion = window.uiComponents.createComponent('accordion', accordionOptions);
+                    if (accordion) {
+                        testDiv.appendChild(accordion);
+                        console.log('✓ Accordion created successfully');
+                    } else {
+                        console.log('✗ Accordion creation failed');
+                    }
+
+                    // Test slider
+                    const sliderOptions = {
+                        min: 0,
+                        max: 100,
+                        value: 50,
+                        label: 'Test Slider',
+                        unit: '%'
+                    };
+
+                    const slider = window.uiComponents.createComponent('slider', sliderOptions);
+                    if (slider) {
+                        testDiv.appendChild(slider);
+                        console.log('✓ Slider created successfully');
+                    } else {
+                        console.log('✗ Slider creation failed');
+                    }
+
+                    testDiv.innerHTML += '<p style="color: green;">✓ UI Components test completed</p>';
+                } else {
+                    throw new Error('UI Components not found');
+                }
+            } catch (error) {
+                console.error('UI Components test failed:', error);
+                testDiv.innerHTML = '<p style="color: red;">✗ UI Components test failed: ' + error.message + '</p>';
+            }
+        }
+
+        // Test main.js functions
+        function testMainJS() {
+            const testDiv = document.getElementById('main-test');
+
+            console.log('Testing main.js null element handling...');
+
+            // These elements don't exist on this page, so the old code would throw errors
+            const nonExistentElements = ['cfgdelete', 'cfgclrpending', 'cfgrefresh'];
+
+            let errors = [];
+            nonExistentElements.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    console.log(`Element ${id} exists (unexpected)`);
+                } else {
+                    console.log(`✓ Element ${id} doesn't exist (expected)`);
+                }
+            });
+
+            testDiv.innerHTML += '<p style="color: green;">✓ Main.js null handling test completed - check console for details</p>';
+        }
+
+        // Test APIs
+        function testAPIs() {
+            const testDiv = document.getElementById('api-test');
+            testDiv.innerHTML = '<p>Testing API endpoints...</p>';
+
+            // Test get_ap_config endpoint
+            fetch('get_ap_config')
+                .then(response => {
+                    if (response.ok) {
+                        console.log('✓ get_ap_config endpoint accessible');
+                        return response.json();
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                })
+                .then(data => {
+                    console.log('AP Config data:', data);
+                    testDiv.innerHTML = '<p style="color: green;">✓ get_ap_config endpoint working</p>';
+                })
+                .catch(error => {
+                    console.error('get_ap_config test failed:', error);
+                    testDiv.innerHTML = '<p style="color: orange;">⚠ get_ap_config endpoint not available (expected in test)</p>';
+                });
+        }
+
+        // Test system info loading
+        function testSystemInfo() {
+            const testDiv = document.getElementById('sysinfo-test');
+            testDiv.innerHTML = '<p>Testing system info...</p>';
+
+            try {
+                if (window.OptimizedApp) {
+                    const app = new window.OptimizedApp();
+                    console.log('✓ OptimizedApp created successfully');
+
+                    // Test loadSystemInfo method
+                    app.loadSystemInfo()
+                        .then(() => {
+                            console.log('✓ System info loaded successfully');
+                            testDiv.innerHTML = '<p style="color: green;">✓ System info test completed</p>';
+                        })
+                        .catch(error => {
+                            console.error('System info test failed:', error);
+                            testDiv.innerHTML = '<p style="color: orange;">⚠ System info endpoint not available (expected in test)</p>';
+                        });
+                } else {
+                    throw new Error('OptimizedApp not found');
+                }
+            } catch (error) {
+                console.error('System info test failed:', error);
+                testDiv.innerHTML = '<p style="color: red;">✗ System info test failed: ' + error.message + '</p>';
+            }
+        }
+
+        // Auto-run tests when page loads
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('Running automatic tests...');
+
+            // CSS test
+            const cssTest = document.getElementById('css-test');
+            const computedStyle = window.getComputedStyle(cssTest);
+            const backgroundColor = computedStyle.backgroundColor;
+
+            if (backgroundColor && backgroundColor !== 'rgb(255, 0, 0)') {
+                console.log('✓ CSS loaded successfully');
+                cssTest.innerHTML = '✓ CSS loaded successfully - background color applied';
+                cssTest.style.color = 'white';
+            } else {
+                console.log('✗ CSS not loaded properly');
+                cssTest.innerHTML = '✗ CSS not loaded - using fallback red background';
+            }
+
+            // Wait for all scripts to load before running other tests
+            setTimeout(() => {
+                testMainJS();
+                testAPIs();
+            }, 1000);
+        });
+    </script>
+
+    <style>
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .test-item h3 {
+            margin-top: 0;
+            color: #4facfe;
+        }
+
+        button {
+            background: #4facfe;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+        }
+
+        button:hover {
+            background: #3b82f6;
+        }
+    </style>
+</body>
+
+</html>

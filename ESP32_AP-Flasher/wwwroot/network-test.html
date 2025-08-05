@@ -1,0 +1,342 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>ESP32 Network Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: white;
+        }
+
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .success {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid #4CAF50;
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.3);
+            border: 1px solid #f44336;
+        }
+
+        .warning {
+            background: rgba(255, 152, 0, 0.3);
+            border: 1px solid #ff9800;
+        }
+
+        .info {
+            background: rgba(33, 150, 243, 0.3);
+            border: 1px solid #2196F3;
+        }
+
+        button {
+            background: #4facfe;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #3b82f6;
+        }
+
+        #log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            height: 200px;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="test-container">
+        <h1>🌐 ESP32 OpenEPaperLink Network Test</h1>
+
+        <div class="test-section">
+            <h2>📍 Connection Status</h2>
+            <p>Testing connection to ESP32 device at <strong>192.168.12.12</strong></p>
+            <div id="connection-status" class="status info">Testing...</div>
+            <button onclick="testConnection()">🔄 Test Connection</button>
+            <button onclick="testAllEndpoints()">🧪 Test All Endpoints</button>
+        </div>
+
+        <div class="test-section">
+            <h2>🔧 Resource Loading Test</h2>
+            <div id="resource-status" class="status info">Ready</div>
+            <button onclick="testResources()">📦 Test Resources</button>
+            <button onclick="testJavaScript()">⚡ Test JavaScript</button>
+        </div>
+
+        <div class="test-section">
+            <h2>🛠️ API Endpoints Test</h2>
+            <div id="api-status" class="status info">Ready</div>
+            <div id="endpoint-results"></div>
+            <button onclick="testAPIs()">🔗 Test APIs</button>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Console Log</h2>
+            <div id="log"></div>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+        </div>
+
+        <div class="test-section">
+            <h2>🚀 Quick Actions</h2>
+            <button onclick="openMainApp()">🏠 Open Main App</button>
+            <button onclick="openTags()">🏷️ Open Tags</button>
+            <button onclick="openSettings()">⚙️ Open Settings</button>
+            <button onclick="openFlasher()">⚡ Open Flasher</button>
+        </div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            log.textContent += logEntry;
+            log.scrollTop = log.scrollHeight;
+            console.log(logEntry);
+        }
+
+        function clearLog() {
+            log.textContent = '';
+        }
+
+        function updateStatus(elementId, message, className) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${className}`;
+        }
+
+        async function testConnection() {
+            addLog('Testing connection to ESP32 device...', 'info');
+            updateStatus('connection-status', 'Testing connection...', 'info');
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch(window.location.origin, {
+                    method: 'HEAD',
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    updateStatus('connection-status', '✅ Connected successfully!', 'success');
+                    addLog('Connection successful', 'success');
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    updateStatus('connection-status', '⏱️ Connection timeout', 'error');
+                    addLog('Connection timeout after 5 seconds', 'error');
+                } else {
+                    updateStatus('connection-status', `❌ Connection failed: ${error.message}`, 'error');
+                    addLog(`Connection failed: ${error.message}`, 'error');
+                }
+                return false;
+            }
+        }
+
+        async function testResources() {
+            addLog('Testing resource loading...', 'info');
+            updateStatus('resource-status', 'Testing resources...', 'info');
+
+            const resources = [
+                'merged-styles.css?3.2',
+                'main.js?3.2',
+                'app-core.js?3.2',
+                'ui-components.js?3.2'
+            ];
+
+            let successCount = 0;
+            let totalCount = resources.length;
+
+            for (const resource of resources) {
+                try {
+                    const response = await fetch(resource, { method: 'HEAD' });
+                    if (response.ok) {
+                        addLog(`✅ ${resource} loaded successfully`, 'success');
+                        successCount++;
+                    } else {
+                        addLog(`❌ ${resource} failed: HTTP ${response.status}`, 'error');
+                    }
+                } catch (error) {
+                    addLog(`❌ ${resource} failed: ${error.message}`, 'error');
+                }
+            }
+
+            if (successCount === totalCount) {
+                updateStatus('resource-status', `✅ All ${totalCount} resources loaded`, 'success');
+            } else {
+                updateStatus('resource-status', `⚠️ ${successCount}/${totalCount} resources loaded`, 'warning');
+            }
+        }
+
+        async function testJavaScript() {
+            addLog('Testing JavaScript functionality...', 'info');
+
+            const tests = [
+                {
+                    name: 'UI Components',
+                    test: () => typeof window.uiComponents !== 'undefined'
+                },
+                {
+                    name: 'OptimizedApp',
+                    test: () => typeof window.OptimizedApp !== 'undefined'
+                },
+                {
+                    name: 'jQuery ($)',
+                    test: () => typeof window.$ !== 'undefined'
+                },
+                {
+                    name: 'DOM Ready',
+                    test: () => document.readyState === 'complete'
+                }
+            ];
+
+            tests.forEach(({ name, test }) => {
+                try {
+                    if (test()) {
+                        addLog(`✅ ${name} working`, 'success');
+                    } else {
+                        addLog(`❌ ${name} not available`, 'error');
+                    }
+                } catch (error) {
+                    addLog(`❌ ${name} error: ${error.message}`, 'error');
+                }
+            });
+        }
+
+        async function testAPIs() {
+            addLog('Testing API endpoints...', 'info');
+            updateStatus('api-status', 'Testing APIs...', 'info');
+
+            const endpoints = [
+                'get_ap_config',
+                'get_db?pos=0',
+                'system_info',
+                'tag_list'
+            ];
+
+            const results = document.getElementById('endpoint-results');
+            results.innerHTML = '';
+
+            let successCount = 0;
+
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint);
+                    const resultDiv = document.createElement('div');
+
+                    if (response.ok) {
+                        const data = await response.text();
+                        resultDiv.className = 'status success';
+                        resultDiv.textContent = `✅ ${endpoint} - OK (${data.length} bytes)`;
+                        addLog(`✅ ${endpoint} responded successfully`, 'success');
+                        successCount++;
+                    } else {
+                        resultDiv.className = 'status error';
+                        resultDiv.textContent = `❌ ${endpoint} - HTTP ${response.status}`;
+                        addLog(`❌ ${endpoint} failed: HTTP ${response.status}`, 'error');
+                    }
+
+                    results.appendChild(resultDiv);
+                } catch (error) {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'status error';
+                    resultDiv.textContent = `❌ ${endpoint} - ${error.message}`;
+                    results.appendChild(resultDiv);
+                    addLog(`❌ ${endpoint} error: ${error.message}`, 'error');
+                }
+            }
+
+            if (successCount > 0) {
+                updateStatus('api-status', `✅ ${successCount}/${endpoints.length} APIs working`, 'success');
+            } else {
+                updateStatus('api-status', '❌ No APIs responding', 'error');
+            }
+        }
+
+        async function testAllEndpoints() {
+            addLog('Running comprehensive test...', 'info');
+
+            const connected = await testConnection();
+            if (connected) {
+                await testResources();
+                await testJavaScript();
+                await testAPIs();
+                addLog('Comprehensive test completed', 'info');
+            } else {
+                addLog('Cannot run full test - device not reachable', 'error');
+            }
+        }
+
+        // Quick action functions
+        function openMainApp() {
+            window.open('/', '_blank');
+        }
+
+        function openTags() {
+            window.open('/tags.html', '_blank');
+        }
+
+        function openSettings() {
+            window.open('/settings.html', '_blank');
+        }
+
+        function openFlasher() {
+            window.open('/flasher.html', '_blank');
+        }
+
+        // Auto-start connection test
+        document.addEventListener('DOMContentLoaded', function () {
+            addLog('Network test page loaded', 'info');
+            addLog(`Current URL: ${window.location.href}`, 'info');
+            addLog(`Target device: 192.168.12.12`, 'info');
+
+            // Automatically test connection on load
+            setTimeout(() => {
+                testConnection();
+            }, 1000);
+        });
+    </script>
+</body>
+
+</html>

@@ -14,12 +14,26 @@ param(
     [switch]$Monitor,
     [switch]$Clean,
     [switch]$Verbose,
-    [switch]$FilesystemOnly
+    [switch]$FilesystemOnly,
+    [switch]$FastBuild,
+    [int]$Jobs = 0  # 0 = auto-detect optimal job count
 )
 
 # Configuration
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+# Performance optimizations
+if ($FastBuild) {
+    $env:PLATFORMIO_BUILD_CACHE_DIR = ".pio\build_cache"
+    $env:PLATFORMIO_LIBDEPS_CACHE_DIR = ".pio\libdeps_cache"
+}
+
+# Optimize job count
+if ($Jobs -eq 0) {
+    $cpuCores = [Environment]::ProcessorCount
+    $Jobs = [Math]::Min(16, [Math]::Max(4, $cpuCores * 2))  # Use 2x CPU cores, max 16
+}
 
 # Colors for enhanced output
 $Colors = @{
@@ -53,10 +67,13 @@ function Get-AvailableComPorts {
 }
 
 # Header
-Write-ColorOutput "🚀 Enhanced OutdoorAP Build & Flash Tool v2.0" "Info"
-Write-ColorOutput "Environment: $Environment | Port: $ComPort | Baud: $BaudRate" "Info"
+Write-ColorOutput "🚀 Enhanced OutdoorAP Build & Flash Tool v2.1 (Speed Optimized)" "Info"
+Write-ColorOutput "Environment: $Environment | Port: $ComPort | Baud: $BaudRate | Jobs: $Jobs" "Info"
 if ($FilesystemOnly) {
     Write-ColorOutput "Mode: Filesystem Only (Build + Erase + Upload)" "Warning"
+}
+if ($FastBuild) {
+    Write-ColorOutput "Mode: Fast Build (With Caching)" "Info"
 }
 Write-ColorOutput "========================================" "Info"
 
@@ -100,22 +117,44 @@ if ($Clean) {
     Remove-Item -Recurse -Force "$Environment" -ErrorAction SilentlyContinue
 }
 
-# Step 1: Prepare web files
+# Step 1: Prepare web files (with caching)
 if (-not $SkipBuild) {
-    Write-ColorOutput "WEB Compressing web files..." "Progress"
+    Write-ColorOutput "WEB Checking web files..." "Progress"
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
     
-    try {
-        python gzip_wwwfiles.py
-        $timer.Stop()
-        Write-ColorOutput "SUCCESS Web files compressed in $($timer.ElapsedMilliseconds)ms" "Success"
+    # Check if web files need recompression
+    $webFilesNeedUpdate = $false
+    $gzipScript = "gzip_wwwfiles.py"
+    $dataWwwPath = "data\www"
+    
+    if (Test-Path $dataWwwPath) {
+        $lastGzipTime = if (Test-Path $gzipScript) { (Get-Item $gzipScript).LastWriteTime } else { [DateTime]::MinValue }
+        $newestWebFile = Get-ChildItem $dataWwwPath -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        
+        if ($newestWebFile -and $newestWebFile.LastWriteTime -gt $lastGzipTime) {
+            $webFilesNeedUpdate = $true
+        }
+    } else {
+        $webFilesNeedUpdate = $true
     }
-    catch {
-        Write-ColorOutput "ERROR Failed to compress web files: $_" "Error"
-        exit 1
+    
+    if ($webFilesNeedUpdate -or $Clean) {
+        Write-ColorOutput "  ├─ Compressing web files..." "Progress"
+        try {
+            python gzip_wwwfiles.py
+            $timer.Stop()
+            Write-ColorOutput "✅ Web files compressed in $($timer.ElapsedMilliseconds)ms" "Success"
+        }
+        catch {
+            Write-ColorOutput "❌ Failed to compress web files: $_" "Error"
+            exit 1
+        }
+    } else {
+        $timer.Stop()
+        Write-ColorOutput "✅ Web files up-to-date (skipped compression)" "Success"
     }
 
-    # Step 2: Build firmware or filesystem only
+    # Step 2: Build firmware or filesystem only (with optimizations)
     if ($FilesystemOnly) {
         Write-ColorOutput "BUILD Building filesystem only for $Environment..." "Progress"
         $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -126,9 +165,9 @@ if (-not $SkipBuild) {
         }
         
         try {
-            # Build filesystem only
+            # Build filesystem only with optimizations
             Write-ColorOutput "  ├─ Building filesystem..." "Progress"
-            & $pioPath run --target buildfs --environment $Environment
+            & $pioPath run --target buildfs --environment $Environment --jobs 8
             if ($LASTEXITCODE -ne 0) { throw "Filesystem build failed" }
             
             $buildTimer.Stop()
@@ -147,15 +186,38 @@ if (-not $SkipBuild) {
             $pioPath = "pio"  # Try global installation
         }
         
+        # Get CPU core count for optimal parallel jobs
+        $jobCount = $Jobs
+        
         try {
-            # Build main firmware
-            Write-ColorOutput "  ├─ Compiling firmware..." "Progress"
-            & $pioPath run --environment $Environment --jobs 4
+            # Build main firmware with parallel compilation
+            Write-ColorOutput "  ├─ Compiling firmware (${jobCount} parallel jobs)..." "Progress"
+            
+            # Add caching flags for faster builds
+            $buildArgs = @("run", "--environment", $Environment, "--jobs", $jobCount)
+            if ($FastBuild) {
+                $buildArgs += "--build-cache"
+            }
+            
+            & $pioPath @buildArgs
             if ($LASTEXITCODE -ne 0) { throw "Firmware build failed" }
             
-            # Build filesystem
+            # Build filesystem in parallel if possible
             Write-ColorOutput "  ├─ Building filesystem..." "Progress"
-            & $pioPath run --target buildfs --environment $Environment
+            $filesystemJob = Start-Job -ScriptBlock {
+                param($pioPath, $Environment, $FastBuild)
+                $fsArgs = @("run", "--target", "buildfs", "--environment", $Environment, "--jobs", "4")
+                if ($FastBuild) {
+                    $fsArgs += "--build-cache"
+                }
+                & $pioPath @fsArgs
+            } -ArgumentList $pioPath, $Environment, $FastBuild
+            
+            # Wait for filesystem build to complete
+            $filesystemJob | Wait-Job | Out-Null
+            $filesystemResult = $filesystemJob | Receive-Job
+            $filesystemJob | Remove-Job
+            
             if ($LASTEXITCODE -ne 0) { throw "Filesystem build failed" }
             
             $buildTimer.Stop()
@@ -168,7 +230,7 @@ if (-not $SkipBuild) {
     }
 }
 
-# Step 3: Prepare binary files
+# Step 3: Prepare binary files (with parallel copying)
 Write-ColorOutput "📁 Organizing binary files..." "Progress"
 
 # Create output directory
@@ -189,16 +251,29 @@ $files = @{
     "littlefs.bin" = "$buildPath\littlefs.bin"
 }
 
-# Copy files with verification
+# Copy files with verification (parallel where possible)
+$copyJobs = @()
 foreach ($file in $files.GetEnumerator()) {
-    $dest = Join-Path $outputDir $file.Key
     if (Test-Path $file.Value) {
-        Copy-Item $file.Value $dest -Force
-        $size = [math]::Round((Get-Item $dest).Length / 1KB, 1)
-        Write-ColorOutput "  ├─ $($file.Key): ${size}KB" "Info"
+        $copyJobs += Start-Job -ScriptBlock {
+            param($source, $dest, $fileName)
+            Copy-Item $source $dest -Force
+            return @{
+                Name = $fileName
+                Size = [math]::Round((Get-Item $dest).Length / 1KB, 1)
+            }
+        } -ArgumentList $file.Value, (Join-Path $outputDir $file.Key), $file.Key
     } else {
         Write-ColorOutput "  ├─ ⚠️  Missing: $($file.Key)" "Warning"
     }
+}
+
+# Wait for all copy operations to complete
+$copyJobs | Wait-Job | Out-Null
+foreach ($job in $copyJobs) {
+    $result = $job | Receive-Job
+    Write-ColorOutput "  ├─ $($result.Name): $($result.Size)KB" "Info"
+    $job | Remove-Job
 }
 
 # Step 4: Create merged firmware
@@ -405,9 +480,9 @@ if (-not $SkipUpload) {
 # Summary
 Write-ColorOutput "========================================" "Info"
 if ($FilesystemOnly) {
-    Write-ColorOutput "SUCCESS Filesystem Build, Erase & Upload Complete!" "Success"
+    Write-ColorOutput "✅ FAST Filesystem Build, Erase & Upload Complete!" "Success"
 } else {
-    Write-ColorOutput "SUCCESS OutdoorAP Build and Flash Complete!" "Success"
+    Write-ColorOutput "✅ FAST OutdoorAP Build and Flash Complete!" "Success"
 }
 if (Test-Path "$outputDir\firmware.bin") {
     $firmwareSize = [math]::Round((Get-Item "$outputDir\firmware.bin").Length / 1MB, 1)
@@ -419,4 +494,6 @@ if (Test-Path "$outputDir\littlefs.bin") {
 }
 Write-ColorOutput "📍 Files location: $outputDir\" "Info"
 Write-ColorOutput "🌐 Access at: http://192.168.4.1" "Info"
+Write-ColorOutput "💡 Use -FastBuild for even faster incremental builds!" "Info"
+Write-ColorOutput "⚡ Use fast_compile.ps1 for maximum speed!" "Info"
 Write-ColorOutput "========================================" "Info"
