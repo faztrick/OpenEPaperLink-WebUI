@@ -3,9 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IR Remote Control - OpenEPL</title>
+    <t .remote-btn.channel { background: linear-gradient(135deg, #a855f7, rgba(168, 85, 247, 0.8)); border-color: #a855f7; }
+        .remote-btn.channel:hover { background: linear-gradient(135deg, #a855f7, #9333ea); box-shadow: 0 8px 20px rgba(168,
+        85, 247, 0.4); } .remote-btn.nav { background: linear-gradient(135deg, var(--primary-color, #3b82f6), rgba(59, 130,
+        246, 0.8)); border-color: var(--primary-color, #3b82f6); } .remote-btn.nav:hover { background:
+        linear-gradient(135deg, #3b82f6, #2563eb); box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4); }emote Control -
+        OpenEPL</title>
     <link rel="stylesheet" href="merged-styles.css">
     <style>
+        /* Ensure CSS variables are available */
+        :root {
+            --primary-color: #3b82f6;
+            --success-color: #4ade80;
+            --warning-color: #fbbf24;
+            --error-color: #f87171;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
         .ir-container {
             max-width: 800px;
             margin: 0 auto;
@@ -13,45 +31,66 @@
         }
         
         .remote-section {
-            background: white;
-            border-radius: 12px;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 16px;
             padding: 25px;
             margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
+            transition: all 0.3s ease;
+        }
+        
+        .remote-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
         
         .remote-section h3 {
-            color: #2c3e50;
+            color: var(--text-primary, #ffffff);
             margin-bottom: 20px;
-            border-bottom: 2px solid #3498db;
+            border-bottom: 2px solid var(--primary-color, #3b82f6);
             padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         
         .status-display {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 12px;
+            padding: 20px;
             margin-bottom: 20px;
-            font-family: monospace;
+            font-family: 'Courier New', monospace;
+            backdrop-filter: blur(10px);
         }
         
         .status-item {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
         }
         
         .status-label {
-            font-weight: bold;
-            color: #495057;
+            font-weight: 500;
+            color: var(--text-secondary, rgba(255, 255, 255, 0.7));
         }
         
         .status-value {
-            color: #28a745;
+            color: var(--success-color, #4ade80);
+            font-weight: 600;
         }
         
         .status-value.inactive {
-            color: #dc3545;
+            color: var(--error-color, #f87171);
         }
         
         .remote-grid {
@@ -61,45 +100,60 @@
             gap: 10px;
             max-width: 300px;
             margin: 0 auto 30px auto;
-            background: #2c3e50;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
             padding: 20px;
-            border-radius: 15px;
+            border-radius: 16px;
+            box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
         }
         
         .remote-btn {
-            background: linear-gradient(135deg, #34495e, #2c3e50);
-            border: 2px solid #34495e;
-            border-radius: 8px;
-            color: white;
-            font-weight: bold;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 12px;
+            color: var(--text-primary, #ffffff);
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         
         .remote-btn:hover {
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            border-color: #3498db;
+            background: rgba(255, 255, 255, 0.2);
+            border-color: var(--primary-color, #3b82f6);
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
         
         .remote-btn:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         
         .remote-btn.power {
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            border-color: #e74c3c;
+            background: linear-gradient(135deg, var(--error-color, #f87171), rgba(248, 113, 113, 0.8));
+            border-color: var(--error-color, #f87171);
+        }
+        
+        .remote-btn.power:hover {
+            background: linear-gradient(135deg, #f87171, #ef4444);
+            box-shadow: 0 8px 20px rgba(248, 113, 113, 0.4);
         }
         
         .remote-btn.volume {
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            border-color: #f39c12;
+            background: linear-gradient(135deg, var(--warning-color, #fbbf24), rgba(251, 191, 36, 0.8));
+            border-color: var(--warning-color, #fbbf24);
+        }
+        
+        .remote-btn.volume:hover {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
         }
         
         .remote-btn.channel {
@@ -108,14 +162,24 @@
         }
         
         .remote-btn.nav {
-            background: linear-gradient(135deg, #1abc9c, #16a085);
-            border-color: #1abc9c;
+            background: linear-gradient(135deg, var(--primary-color, #3b82f6), rgba(59, 130, 246, 0.8));
+            border-color: var(--primary-color, #3b82f6);
+        }
+        
+        .remote-btn.nav:hover {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
         }
         
         .remote-btn.ok {
-            background: linear-gradient(135deg, #27ae60, #229954);
-            border-color: #27ae60;
+            background: linear-gradient(135deg, var(--success-color, #4ade80), rgba(74, 222, 128, 0.8));
+            border-color: var(--success-color, #4ade80);
             border-radius: 50%;
+        }
+        
+        .remote-btn.ok:hover {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            box-shadow: 0 8px 20px rgba(74, 222, 128, 0.4);
         }
         
         /* Grid positioning */
@@ -141,40 +205,56 @@
         }
         
         .ctrl-btn {
-            background: linear-gradient(135deg, #007bff, #0056b3);
-            color: white;
-            border: none;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(10px);
+            color: var(--text-primary, #ffffff);
+            border: 1px solid var(--primary-color, #3b82f6);
             padding: 12px 20px;
-            border-radius: 8px;
+            border-radius: 10px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         
         .ctrl-btn:hover {
-            background: linear-gradient(135deg, #0056b3, #004085);
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--primary-color, #3b82f6);
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
         }
         
         .ctrl-btn:disabled {
-            background: #6c757d;
+            background: rgba(108, 117, 125, 0.3);
+            border-color: rgba(108, 117, 125, 0.5);
+            color: rgba(255, 255, 255, 0.5);
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
         }
         
         .learn-section {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 8px;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
+            box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
+            transition: all 0.3s ease;
+        }
+        
+        .learn-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
         
         .learn-section h4 {
-            color: #856404;
+            color: var(--text-primary, #ffffff);
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         
         .learn-controls {
@@ -184,28 +264,63 @@
             flex-wrap: wrap;
         }
         
+        .learn-controls label {
+            color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+            font-weight: 500;
+        }
+        
         .learn-timeout {
-            padding: 8px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            width: 100px;
+            padding: 10px 14px;
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 8px;
+            width: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary, #ffffff);
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        
+        .learn-timeout:focus {
+            outline: none;
+            border-color: var(--primary-color, #3b82f6);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
         
         .received-commands {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            border-radius: 8px;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--success-color, #4ade80);
+            border-radius: 12px;
             padding: 15px;
             margin-top: 20px;
+            box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
+        }
+        
+        .received-commands h4 {
+            color: var(--success-color, #4ade80);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         
         .command-item {
-            background: white;
-            border-radius: 4px;
-            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 8px;
+            padding: 12px;
             margin-bottom: 10px;
-            font-family: monospace;
+            font-family: 'Courier New', monospace;
             font-size: 14px;
+            color: var(--text-primary, #ffffff);
+            transition: all 0.2s ease;
+        }
+        
+        .command-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(4px);
         }
         
         .command-item:last-child {
@@ -213,15 +328,33 @@
         }
         
         .log-display {
-            background: #2d3748;
-            color: #e2e8f0;
-            border-radius: 8px;
-            padding: 15px;
-            height: 200px;
+            background: var(--glass-bg, rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            color: var(--text-primary, #ffffff);
+            border-radius: 12px;
+            padding: 20px;
+            height: 220px;
             overflow-y: auto;
-            font-family: monospace;
-            font-size: 12px;
-            line-height: 1.4;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+            scrollbar-width: thin;
+            scrollbar-color: var(--glass-border) transparent;
+        }
+        
+        .log-display::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .log-display::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .log-display::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 3px;
         }
         
         .profile-selector {
@@ -232,11 +365,25 @@
         }
         
         .profile-select {
-            padding: 8px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            background: white;
+            padding: 10px 14px;
+            border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary, #ffffff);
             min-width: 150px;
+            transition: all 0.2s ease;
+        }
+        
+        .profile-select:focus {
+            outline: none;
+            border-color: var(--primary-color, #3b82f6);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .profile-select option {
+            background: #1a1a1a;
+            color: #ffffff;
         }
         
         .responsive-grid {

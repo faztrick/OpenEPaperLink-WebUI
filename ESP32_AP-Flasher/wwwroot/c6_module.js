@@ -22,6 +22,12 @@ let moduleInfo = {};
 let isUpdating = false;
 let updateInterval;
 
+// Search functionality variables
+let searchMatches = [];
+let currentSearchIndex = -1;
+let otaSearchMatches = [];
+let currentOTASearchIndex = -1;
+
 // Initialize the page
 document.addEventListener('DOMContentLoaded', function() {
     loadModuleInfo();
@@ -1410,11 +1416,17 @@ function logToConsole(level, message) {
 
 function clearConsole() {
     document.getElementById('diagnosticConsole').innerHTML = '';
+    // Clear search state when console is cleared
+    searchMatches = [];
+    currentSearchIndex = -1;
+    document.getElementById('searchResults').style.display = 'none';
+    document.getElementById('logSearch').value = '';
 }
 
 function clearLogs() {
     clearConsole();
     logToConsole('info', 'Console cleared');
+    logToConsole('info', 'Use search box above to find specific log entries');
 }
 
 function formatUptime(seconds) {
@@ -1840,4 +1852,552 @@ window.addEventListener('beforeunload', () => {
     } catch (error) {
         console.error('Error during cleanup:', error);
     }
+});
+
+// ==========================================
+// SEARCH FUNCTIONALITY FOR LOG CONSOLES
+// ==========================================
+
+/**
+ * Search functionality for diagnostic console logs
+ */
+function searchLogs() {
+    const searchTerm = document.getElementById('logSearch').value.trim();
+    const console = document.getElementById('diagnosticConsole');
+
+    if (!searchTerm) {
+        clearSearchHighlight();
+        return;
+    }
+
+    // Clear previous highlights
+    clearSearchHighlight();
+
+    // Get all log entries
+    const logEntries = console.children;
+    searchMatches = [];
+
+    // Search through log entries
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+
+        if (text.toLowerCase().includes(searchTerm.toLowerCase())) {
+            // Highlight the search term
+            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
+            const highlightedText = text.replace(regex, '<span class="search-highlight">$1</span>');
+            entry.innerHTML = highlightedText;
+
+            searchMatches.push({
+                element: entry,
+                index: i
+            });
+        }
+    }
+
+    // Update search results
+    updateSearchResults();
+
+    // Scroll to first match
+    if (searchMatches.length > 0) {
+        currentSearchIndex = 0;
+        scrollToSearchMatch(0);
+        highlightCurrentMatch();
+    }
+
+    logToConsole('info', `Search completed: Found ${searchMatches.length} matches for "${searchTerm}"`);
+}
+
+/**
+ * Search functionality for OTA flash console logs
+ */
+function searchOTALogs() {
+    const searchTerm = document.getElementById('otaLogSearch').value.trim();
+    const console = document.getElementById('otaFlashConsole');
+
+    if (!searchTerm) {
+        clearOTASearchHighlight();
+        return;
+    }
+
+    // Clear previous highlights
+    clearOTASearchHighlight();
+
+    // Get all log entries
+    const logEntries = console.children;
+    otaSearchMatches = [];
+
+    // Search through log entries
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+
+        if (text.toLowerCase().includes(searchTerm.toLowerCase())) {
+            // Highlight the search term
+            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
+            const highlightedText = text.replace(regex, '<span class="search-highlight">$1</span>');
+            entry.innerHTML = highlightedText;
+
+            otaSearchMatches.push({
+                element: entry,
+                index: i
+            });
+        }
+    }
+
+    // Update search results
+    updateOTASearchResults();
+
+    // Scroll to first match
+    if (otaSearchMatches.length > 0) {
+        currentOTASearchIndex = 0;
+        scrollToOTASearchMatch(0);
+        highlightCurrentOTAMatch();
+    }
+
+    logToOTAConsole('info', `Search completed: Found ${otaSearchMatches.length} matches for "${searchTerm}"`);
+}
+
+/**
+ * Clear search highlights from diagnostic console
+ */
+function clearSearchHighlight() {
+    const console = document.getElementById('diagnosticConsole');
+    const logEntries = console.children;
+
+    // Remove all search highlights
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+        entry.innerHTML = '';
+        entry.textContent = text; // This removes HTML and restores original text
+
+        // Restore original CSS class
+        if (text.includes('[INFO]')) {
+            entry.className = 'log-info';
+        } else if (text.includes('[SUCCESS]')) {
+            entry.className = 'log-success';
+        } else if (text.includes('[WARNING]')) {
+            entry.className = 'log-warning';
+        } else if (text.includes('[ERROR]')) {
+            entry.className = 'log-error';
+        }
+    }
+
+    // Reset search state
+    searchMatches = [];
+    currentSearchIndex = -1;
+
+    // Hide search results
+    document.getElementById('searchResults').style.display = 'none';
+    document.getElementById('logSearch').value = '';
+
+    logToConsole('info', 'Search highlights cleared');
+}
+
+/**
+ * Clear search highlights from OTA flash console
+ */
+function clearOTASearchHighlight() {
+    const console = document.getElementById('otaFlashConsole');
+    const logEntries = console.children;
+
+    // Remove all search highlights
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+        entry.innerHTML = '';
+        entry.textContent = text; // This removes HTML and restores original text
+
+        // Restore original CSS class
+        if (text.includes('[INFO]')) {
+            entry.className = 'log-info';
+        } else if (text.includes('[SUCCESS]')) {
+            entry.className = 'log-success';
+        } else if (text.includes('[WARNING]')) {
+            entry.className = 'log-warning';
+        } else if (text.includes('[ERROR]')) {
+            entry.className = 'log-error';
+        }
+    }
+
+    // Reset search state
+    otaSearchMatches = [];
+    currentOTASearchIndex = -1;
+
+    // Hide search results
+    document.getElementById('otaSearchResults').style.display = 'none';
+    document.getElementById('otaLogSearch').value = '';
+
+    logToOTAConsole('info', 'Search highlights cleared');
+}
+
+/**
+ * Navigate through search results in diagnostic console
+ */
+function navigateSearchResults(direction) {
+    if (searchMatches.length === 0) return;
+
+    // Remove current highlight
+    if (currentSearchIndex >= 0 && currentSearchIndex < searchMatches.length) {
+        removeCurrentHighlight(searchMatches[currentSearchIndex].element);
+    }
+
+    // Update index
+    currentSearchIndex += direction;
+
+    // Wrap around
+    if (currentSearchIndex >= searchMatches.length) {
+        currentSearchIndex = 0;
+    } else if (currentSearchIndex < 0) {
+        currentSearchIndex = searchMatches.length - 1;
+    }
+
+    // Highlight current match and scroll to it
+    scrollToSearchMatch(currentSearchIndex);
+    highlightCurrentMatch();
+    updateSearchResults();
+}
+
+/**
+ * Navigate through search results in OTA flash console
+ */
+function navigateOTASearchResults(direction) {
+    if (otaSearchMatches.length === 0) return;
+
+    // Remove current highlight
+    if (currentOTASearchIndex >= 0 && currentOTASearchIndex < otaSearchMatches.length) {
+        removeCurrentOTAHighlight(otaSearchMatches[currentOTASearchIndex].element);
+    }
+
+    // Update index
+    currentOTASearchIndex += direction;
+
+    // Wrap around
+    if (currentOTASearchIndex >= otaSearchMatches.length) {
+        currentOTASearchIndex = 0;
+    } else if (currentOTASearchIndex < 0) {
+        currentOTASearchIndex = otaSearchMatches.length - 1;
+    }
+
+    // Highlight current match and scroll to it
+    scrollToOTASearchMatch(currentOTASearchIndex);
+    highlightCurrentOTAMatch();
+    updateOTASearchResults();
+}
+
+/**
+ * Update search results display for diagnostic console
+ */
+function updateSearchResults() {
+    const resultsDiv = document.getElementById('searchResults');
+    const summarySpan = document.getElementById('searchSummary');
+
+    if (searchMatches.length > 0) {
+        resultsDiv.style.display = 'block';
+        summarySpan.textContent = `Found ${searchMatches.length} matches${currentSearchIndex >= 0 ? ` (${currentSearchIndex + 1}/${searchMatches.length})` : ''}`;
+    } else {
+        resultsDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Update search results display for OTA flash console
+ */
+function updateOTASearchResults() {
+    const resultsDiv = document.getElementById('otaSearchResults');
+    const summarySpan = document.getElementById('otaSearchSummary');
+
+    if (otaSearchMatches.length > 0) {
+        resultsDiv.style.display = 'block';
+        summarySpan.textContent = `Found ${otaSearchMatches.length} matches${currentOTASearchIndex >= 0 ? ` (${currentOTASearchIndex + 1}/${otaSearchMatches.length})` : ''}`;
+    } else {
+        resultsDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Scroll to specific search match in diagnostic console
+ */
+function scrollToSearchMatch(index) {
+    if (index >= 0 && index < searchMatches.length) {
+        const element = searchMatches[index].element;
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+/**
+ * Scroll to specific search match in OTA flash console
+ */
+function scrollToOTASearchMatch(index) {
+    if (index >= 0 && index < otaSearchMatches.length) {
+        const element = otaSearchMatches[index].element;
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+/**
+ * Highlight current search match in diagnostic console
+ */
+function highlightCurrentMatch() {
+    if (currentSearchIndex >= 0 && currentSearchIndex < searchMatches.length) {
+        const element = searchMatches[currentSearchIndex].element;
+        const highlights = element.querySelectorAll('.search-highlight');
+
+        // Remove previous current highlights
+        document.querySelectorAll('.search-highlight.current').forEach(el => {
+            el.classList.remove('current');
+        });
+
+        // Add current highlight to first match in this element
+        if (highlights.length > 0) {
+            highlights[0].classList.add('current');
+        }
+    }
+}
+
+/**
+ * Highlight current search match in OTA flash console
+ */
+function highlightCurrentOTAMatch() {
+    if (currentOTASearchIndex >= 0 && currentOTASearchIndex < otaSearchMatches.length) {
+        const element = otaSearchMatches[currentOTASearchIndex].element;
+        const highlights = element.querySelectorAll('.search-highlight');
+
+        // Remove previous current highlights
+        document.querySelectorAll('#otaFlashConsole .search-highlight.current').forEach(el => {
+            el.classList.remove('current');
+        });
+
+        // Add current highlight to first match in this element
+        if (highlights.length > 0) {
+            highlights[0].classList.add('current');
+        }
+    }
+}
+
+/**
+ * Remove current highlight from element
+ */
+function removeCurrentHighlight(element) {
+    const currentHighlights = element.querySelectorAll('.search-highlight.current');
+    currentHighlights.forEach(el => {
+        el.classList.remove('current');
+    });
+}
+
+/**
+ * Remove current highlight from OTA element
+ */
+function removeCurrentOTAHighlight(element) {
+    const currentHighlights = element.querySelectorAll('.search-highlight.current');
+    currentHighlights.forEach(el => {
+        el.classList.remove('current');
+    });
+}
+
+/**
+ * Export diagnostic console logs to file
+ */
+function exportLogs() {
+    const console = document.getElementById('diagnosticConsole');
+    const logEntries = console.children;
+
+    let logContent = '# ESP32-C6 Diagnostic Console Logs\n';
+    logContent += `# Exported on: ${new Date().toLocaleString()}\n`;
+    logContent += `# Total entries: ${logEntries.length}\n\n`;
+
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+        logContent += text + '\n';
+    }
+
+    // Create and download file
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `c6_diagnostic_logs_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    logToConsole('success', `Diagnostic logs exported (${logEntries.length} entries)`);
+}
+
+/**
+ * Export OTA flash console logs to file
+ */
+function exportOTALogs() {
+    const console = document.getElementById('otaFlashConsole');
+    const logEntries = console.children;
+
+    let logContent = '# ESP32-C6 OTA Flash Console Logs\n';
+    logContent += `# Exported on: ${new Date().toLocaleString()}\n`;
+    logContent += `# Total entries: ${logEntries.length}\n\n`;
+
+    for (let i = 0; i < logEntries.length; i++) {
+        const entry = logEntries[i];
+        const text = entry.textContent || entry.innerText;
+        logContent += text + '\n';
+    }
+
+    // Create and download file
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `c6_ota_flash_logs_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    logToOTAConsole('success', `OTA flash logs exported (${logEntries.length} entries)`);
+}
+
+/**
+ * Escape special regex characters
+ */
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Enhanced logToConsole function with search support
+ */
+function logToConsole(level, message) {
+    const console = document.getElementById('diagnosticConsole');
+    const timestamp = new Date().toLocaleTimeString();
+    const levelClass = `log-${level}`;
+
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry ${levelClass}`;
+    logEntry.textContent = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+
+    console.appendChild(logEntry);
+    console.scrollTop = console.scrollHeight;
+
+    // If there's an active search, check if this new entry matches
+    const searchTerm = document.getElementById('logSearch')?.value?.trim();
+    if (searchTerm && message.toLowerCase().includes(searchTerm.toLowerCase())) {
+        // Re-run search to include this new entry
+        setTimeout(() => searchLogs(), 100);
+    }
+}
+
+/**
+ * Enhanced logToOTAConsole function with search support
+ */
+function logToOTAConsole(type, message) {
+    const console = document.getElementById('otaFlashConsole');
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry log-${type}`;
+    logEntry.textContent = `[${timestamp}] [${type.toUpperCase()}] ${message}`;
+    console.appendChild(logEntry);
+    console.scrollTop = console.scrollHeight;
+
+    // If there's an active search, check if this new entry matches
+    const searchTerm = document.getElementById('otaLogSearch')?.value?.trim();
+    if (searchTerm && message.toLowerCase().includes(searchTerm.toLowerCase())) {
+        // Re-run search to include this new entry
+        setTimeout(() => searchOTALogs(), 100);
+    }
+}
+
+// Add keyboard shortcuts for search functionality
+document.addEventListener('DOMContentLoaded', function () {
+    // Add Enter key support for search boxes
+    const logSearchInput = document.getElementById('logSearch');
+    if (logSearchInput) {
+        logSearchInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                searchLogs();
+            }
+        });
+
+        // Add real-time search as user types (debounced)
+        let searchTimeout;
+        logSearchInput.addEventListener('input', function () {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (this.value.trim().length >= 2) {
+                    searchLogs();
+                } else if (this.value.trim().length === 0) {
+                    clearSearchHighlight();
+                }
+            }, 300);
+        });
+    }
+
+    const otaLogSearchInput = document.getElementById('otaLogSearch');
+    if (otaLogSearchInput) {
+        otaLogSearchInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                searchOTALogs();
+            }
+        });
+
+        // Add real-time search as user types (debounced)
+        let otaSearchTimeout;
+        otaLogSearchInput.addEventListener('input', function () {
+            clearTimeout(otaSearchTimeout);
+            otaSearchTimeout = setTimeout(() => {
+                if (this.value.trim().length >= 2) {
+                    searchOTALogs();
+                } else if (this.value.trim().length === 0) {
+                    clearOTASearchHighlight();
+                }
+            }, 300);
+        });
+    }
+
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function (e) {
+        // Ctrl+F to focus search
+        if (e.ctrlKey && e.key === 'f') {
+            e.preventDefault();
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'diagnostics') {
+                document.getElementById('logSearch')?.focus();
+            } else if (activeTab && activeTab.id === 'otaflash') {
+                document.getElementById('otaLogSearch')?.focus();
+            }
+        }
+
+        // Escape to clear search
+        if (e.key === 'Escape') {
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'diagnostics') {
+                clearSearchHighlight();
+            } else if (activeTab && activeTab.id === 'otaflash') {
+                clearOTASearchHighlight();
+            }
+        }
+
+        // F3 or Ctrl+G for next search result
+        if ((e.key === 'F3' || (e.ctrlKey && e.key === 'g')) && !e.shiftKey) {
+            e.preventDefault();
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'diagnostics' && searchMatches.length > 0) {
+                navigateSearchResults(1);
+            } else if (activeTab && activeTab.id === 'otaflash' && otaSearchMatches.length > 0) {
+                navigateOTASearchResults(1);
+            }
+        }
+
+        // Shift+F3 or Shift+Ctrl+G for previous search result
+        if ((e.key === 'F3' || (e.ctrlKey && e.key === 'g')) && e.shiftKey) {
+            e.preventDefault();
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'diagnostics' && searchMatches.length > 0) {
+                navigateSearchResults(-1);
+            } else if (activeTab && activeTab.id === 'otaflash' && otaSearchMatches.length > 0) {
+                navigateOTASearchResults(-1);
+            }
+        }
+    });
 });

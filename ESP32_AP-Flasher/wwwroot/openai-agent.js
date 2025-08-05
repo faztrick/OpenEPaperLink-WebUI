@@ -16,7 +16,7 @@
 // - Advanced reasoning capabilities
 // - Enhanced tool calling with better error handling
 // - Multi-step reasoning for complex tasks
- 
+
 class OpenAIAgent {
     constructor() {
         this.config = null;
@@ -25,12 +25,12 @@ class OpenAIAgent {
         this.model = null;
         this.maxTokens = 4096;
         this.temperature = 0.7;
-        this.isProcessing = false; 
+        this.isProcessing = false;
         this.conversationHistory = [];
-        
+
         // Load configuration
         this.loadConfiguration();
-        
+
         // Function definitions for AI agent
         this.availableFunctions = {
             createFile: this.createFile.bind(this),
@@ -44,7 +44,7 @@ class OpenAIAgent {
             flashFirmware: this.flashFirmware.bind(this),
             scanNetworks: this.scanNetworks.bind(this)
         };
-        
+
         this.systemPrompt = `You are an advanced AI assistant powered by GPT-4.1 for an ESP32 AP-Flasher system managing OpenEPaperLink devices. You have enhanced reasoning capabilities and can use structured outputs.
 
 **Your Advanced Capabilities:**
@@ -89,7 +89,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async makeApiRequest(endpoint, options = {}, operation = 'API request') {
         try {
             this.logToConsole('debug', `Making ${operation} to ${endpoint}`);
-            
+
             const response = await fetch(endpoint, {
                 headers: {
                     'Content-Type': 'application/json',
@@ -100,7 +100,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
 
             if (!response.ok) {
                 let errorMessage = `${operation} failed: ${response.status} ${response.statusText}`;
-                
+
                 // Handle specific error codes
                 switch (response.status) {
                     case 400:
@@ -119,7 +119,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                         errorMessage = `Server Error (500): Internal server error during ${operation}`;
                         break;
                 }
-                
+
                 // Try to get detailed error message from response
                 try {
                     const errorText = await response.text();
@@ -129,16 +129,27 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 } catch (e) {
                     // Ignore if can't read error text
                 }
-                
+
                 throw new Error(errorMessage);
             }
 
             // Handle different response types
             const contentType = response.headers.get('content-type');
             let data;
-            
+
             if (contentType && contentType.includes('application/json')) {
-                data = await response.json();
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    this.logToConsole('error', `Failed to parse JSON response from ${endpoint}: ${jsonError.message}`);
+                    // Fallback to text response
+                    try {
+                        data = await response.text();
+                        this.logToConsole('warn', `Using text response instead: ${data.substring(0, 100)}...`);
+                    } catch (textError) {
+                        throw new Error(`Failed to read response as JSON or text: ${jsonError.message}, ${textError.message}`);
+                    }
+                }
             } else {
                 data = await response.text();
             }
@@ -162,7 +173,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
      */
     async performFileOperation(endpoint, options, operation, extraData = {}) {
         const result = await this.makeApiRequest(endpoint, options, operation);
-        
+
         if (result.success) {
             return {
                 success: true,
@@ -188,7 +199,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async makeOpenAIRequest(messages, functions = null, options = {}) {
         const config = this.config?.openai || {};
         const isResponsesAPI = this.apiUrl?.includes('/responses');
-        
+
         const requestBody = {
             model: this.model,
             messages: messages,
@@ -206,7 +217,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     json_schema: options.response_format
                 };
             }
-            
+
             // Enable reasoning mode if configured
             if (config.parameters?.reasoning_mode) {
                 requestBody.reasoning = true;
@@ -229,7 +240,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         }
 
         const endpoint = isResponsesAPI ? '/api/openai/responses' : '/api/openai/chat';
-        
+
         return await this.makeApiRequest(endpoint, {
             method: 'POST',
             body: JSON.stringify(requestBody)
@@ -257,7 +268,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
     addToConversationHistory(role, content, extra = {}) {
         const message = { role, content, ...extra };
         this.conversationHistory.push(message);
-        
+
         // Keep conversation history within limits
         const maxHistory = this.config?.esp32?.ai_agent?.conversation_history_limit || 10;
         if (this.conversationHistory.length > maxHistory) {
@@ -278,24 +289,24 @@ Remember: You're not just executing commands, you're providing intelligent analy
         if (!actionConfig) {
             return { success: false, error: `Unknown ${operationName} action: ${action}` };
         }
-        
+
         const options = { method: actionConfig.method };
         if (actionConfig.body) {
             options.body = JSON.stringify(actionConfig.body);
         }
-        
+
         const result = await this.performFileOperation(
-            actionConfig.endpoint, 
-            options, 
-            `${operationName} ${action}`, 
+            actionConfig.endpoint,
+            options,
+            `${operationName} ${action}`,
             { action }
         );
-        
+
         if (result.success) {
             result.result = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
@@ -307,7 +318,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         try {
             // Try to load from server first
             const result = await this.makeApiRequest('/openai_config.json', { method: 'GET' }, 'Configuration loading');
-            
+
             if (result.success && result.data) {
                 this.config = result.data;
                 this.logToConsole('info', 'Configuration loaded from server');
@@ -316,13 +327,18 @@ Remember: You're not just executing commands, you're providing intelligent analy
             }
         } catch (error) {
             this.logToConsole('warn', 'Server config failed, trying localStorage: ' + error.message);
-            
+
             // Try localStorage fallback
             try {
                 const localConfig = localStorage.getItem('openai_agent_config');
                 if (localConfig) {
-                    this.config = JSON.parse(localConfig);
-                    this.logToConsole('info', 'Configuration loaded from localStorage');
+                    try {
+                        this.config = JSON.parse(localConfig);
+                        this.logToConsole('info', 'Configuration loaded from localStorage');
+                    } catch (parseError) {
+                        this.logToConsole('error', `Failed to parse localStorage config: ${parseError.message}`);
+                        throw new Error('Invalid JSON in localStorage configuration');
+                    }
                 } else {
                     throw new Error('No local configuration found');
                 }
@@ -418,6 +434,18 @@ Remember: You're not just executing commands, you're providing intelligent analy
 
     async saveConfiguration() {
         try {
+            // Validate configuration before saving
+            if (!this.config || typeof this.config !== 'object') {
+                throw new Error('Invalid configuration object');
+            }
+
+            let configString;
+            try {
+                configString = JSON.stringify(this.config, null, 2);
+            } catch (stringifyError) {
+                throw new Error(`Failed to serialize configuration: ${stringifyError.message}`);
+            }
+
             // First try to save to server using proper endpoint
             const result = await this.makeApiRequest('/littlefs_put', {
                 method: 'POST',
@@ -426,7 +454,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 },
                 body: new URLSearchParams({
                     path: '/openai_config.json',
-                    file: new Blob([JSON.stringify(this.config, null, 2)], { type: 'application/json' })
+                    file: new Blob([configString], { type: 'application/json' })
                 })
             }, 'Configuration saving');
 
@@ -438,10 +466,11 @@ Remember: You're not just executing commands, you're providing intelligent analy
             }
         } catch (error) {
             this.logToConsole('warn', 'Server save failed, using fallback: ' + error.message);
-            
+
             // Fallback: Save to localStorage for client-side persistence
             try {
-                localStorage.setItem('openai_agent_config', JSON.stringify(this.config));
+                const configString = JSON.stringify(this.config);
+                localStorage.setItem('openai_agent_config', configString);
                 this.logToConsole('info', 'Configuration saved to local storage as fallback');
                 return { success: true, fallback: true };
             } catch (localError) {
@@ -508,7 +537,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
 
         // Add to page
         document.body.insertAdjacentHTML('beforeend', agentHTML);
-        
+
         // Add CSS styles
         this.addAgentStyles();
     }
@@ -539,7 +568,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         const panel = document.getElementById('openai-agent-panel');
         const isVisible = panel.style.display !== 'none';
         panel.style.display = isVisible ? 'none' : 'block';
-        
+
         if (!isVisible) {
             // Focus input when panel opens
             setTimeout(() => {
@@ -563,18 +592,18 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async sendMessage() {
         const input = document.getElementById('agent-input');
         const message = input.value.trim();
-        
+
         if (!message || this.isProcessing) return;
-        
+
         // Clear input
         input.value = '';
-        
+
         // Add user message to chat
         this.addMessageToChat('user', message);
-        
+
         // Show typing indicator
         this.showTypingIndicator();
-        
+
         try {
             this.isProcessing = true;
             const response = await this.processMessage(message);
@@ -668,10 +697,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'C6 module action', 
-                            enum: ['status', 'restart', 'update', 'settings'] 
+                        action: {
+                            type: 'string',
+                            description: 'C6 module action',
+                            enum: ['status', 'restart', 'update', 'settings']
                         },
                         params: { type: 'object', description: 'Action parameters' }
                     },
@@ -708,10 +737,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'AP action', 
-                            enum: ['start', 'stop', 'reset', 'configure', 'setChannel', 'setPower'] 
+                        action: {
+                            type: 'string',
+                            description: 'AP action',
+                            enum: ['start', 'stop', 'reset', 'configure', 'setChannel', 'setPower']
                         },
                         channel: { type: 'number', description: 'Radio channel (1-11 for 2.4GHz)', minimum: 1, maximum: 11 },
                         power: { type: 'number', description: 'Transmission power (0-20 dBm)', minimum: 0, maximum: 20 },
@@ -720,7 +749,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['action']
                 }
             },
-            
+
             // === UDP COMMUNICATION ===
             {
                 name: 'getUDPStatus',
@@ -740,7 +769,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['target', 'message']
                 }
             },
-            
+
             // === WIFI MANAGER FUNCTIONS ===
             {
                 name: 'getWiFiStatus',
@@ -753,10 +782,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'WiFi action', 
-                            enum: ['connect', 'disconnect', 'scan', 'startAP', 'stopAP', 'reconnect', 'forget'] 
+                        action: {
+                            type: 'string',
+                            description: 'WiFi action',
+                            enum: ['connect', 'disconnect', 'scan', 'startAP', 'stopAP', 'reconnect', 'forget']
                         },
                         ssid: { type: 'string', description: 'WiFi network SSID' },
                         password: { type: 'string', description: 'WiFi network password' },
@@ -765,7 +794,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['action']
                 }
             },
-            
+
             // === ZBS INTERFACE (ZigBee) ===
             {
                 name: 'getZBSStatus',
@@ -778,10 +807,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'ZBS action', 
-                            enum: ['reset', 'scan', 'connect', 'disconnect', 'flash', 'read', 'write'] 
+                        action: {
+                            type: 'string',
+                            description: 'ZBS action',
+                            enum: ['reset', 'scan', 'connect', 'disconnect', 'flash', 'read', 'write']
                         },
                         target: { type: 'string', description: 'Target device address' },
                         data: { type: 'string', description: 'Data for read/write operations' },
@@ -790,7 +819,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['action']
                 }
             },
-            
+
             // === SWD PROGRAMMING ===
             {
                 name: 'getSWDStatus',
@@ -803,10 +832,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'SWD action', 
-                            enum: ['connect', 'disconnect', 'read', 'write', 'erase', 'program', 'verify', 'reset'] 
+                        action: {
+                            type: 'string',
+                            description: 'SWD action',
+                            enum: ['connect', 'disconnect', 'read', 'write', 'erase', 'program', 'verify', 'reset']
                         },
                         target: { type: 'string', description: 'Target device (nRF52832, nRF52840, etc.)' },
                         address: { type: 'string', description: 'Memory address for operations' },
@@ -816,7 +845,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['action']
                 }
             },
-            
+
             // === BLE FUNCTIONS ===
             {
                 name: 'getBLEStatus',
@@ -829,10 +858,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'BLE action', 
-                            enum: ['scan', 'connect', 'disconnect', 'advertise', 'stopAdvertise', 'filter', 'write'] 
+                        action: {
+                            type: 'string',
+                            description: 'BLE action',
+                            enum: ['scan', 'connect', 'disconnect', 'advertise', 'stopAdvertise', 'filter', 'write']
                         },
                         deviceAddress: { type: 'string', description: 'BLE device MAC address' },
                         serviceUUID: { type: 'string', description: 'BLE service UUID' },
@@ -843,7 +872,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     required: ['action']
                 }
             },
-            
+
             // === SPIFFS EDITOR ===
             {
                 name: 'manageSPIFFS',
@@ -851,17 +880,17 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'SPIFFS action', 
-                            enum: ['format', 'info', 'check', 'repair', 'backup', 'restore', 'analyze'] 
+                        action: {
+                            type: 'string',
+                            description: 'SPIFFS action',
+                            enum: ['format', 'info', 'check', 'repair', 'backup', 'restore', 'analyze']
                         },
                         path: { type: 'string', description: 'File path for specific operations' }
                     },
                     required: ['action']
                 }
             },
-            
+
             // === ADVANCED SYSTEM FUNCTIONS ===
             {
                 name: 'performSystemDiagnostic',
@@ -869,14 +898,14 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        level: { 
-                            type: 'string', 
-                            description: 'Diagnostic level', 
+                        level: {
+                            type: 'string',
+                            description: 'Diagnostic level',
                             enum: ['basic', 'detailed', 'full'],
                             default: 'detailed'
                         },
-                        components: { 
-                            type: 'array', 
+                        components: {
+                            type: 'array',
                             items: { type: 'string' },
                             description: 'Specific components to test (empty = all)'
                         }
@@ -889,10 +918,10 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 parameters: {
                     type: 'object',
                     properties: {
-                        component: { 
-                            type: 'string', 
-                            description: 'Component to configure', 
-                            enum: ['wifi', 'led', 'serial', 'tag', 'c6', 'ble', 'udp', 'system'] 
+                        component: {
+                            type: 'string',
+                            description: 'Component to configure',
+                            enum: ['wifi', 'led', 'serial', 'tag', 'c6', 'ble', 'udp', 'system']
                         },
                         settings: { type: 'object', description: 'Configuration settings object' },
                         save: { type: 'boolean', description: 'Save configuration permanently', default: true }
@@ -914,33 +943,67 @@ Remember: You're not just executing commands, you're providing intelligent analy
         // Check if AI wants to call a function/tool
         if (assistantMessage.function_call || assistantMessage.tool_calls) {
             let functionName, functionArgs;
-            
-            // Handle both legacy function_call and new tool_calls formats
-            if (assistantMessage.tool_calls) {
-                // New Responses API format
-                const toolCall = assistantMessage.tool_calls[0];
-                functionName = toolCall.function.name;
-                functionArgs = JSON.parse(toolCall.function.arguments);
-            } else {
-                // Legacy format
-                functionName = assistantMessage.function_call.name;
-                functionArgs = JSON.parse(assistantMessage.function_call.arguments);
+
+            try {
+                // Handle both legacy function_call and new tool_calls formats
+                if (assistantMessage.tool_calls) {
+                    // New Responses API format
+                    const toolCall = assistantMessage.tool_calls[0];
+                    functionName = toolCall.function.name;
+                    try {
+                        functionArgs = JSON.parse(toolCall.function.arguments);
+                    } catch (parseError) {
+                        this.logToConsole('error', `Failed to parse tool call arguments: ${toolCall.function.arguments}`);
+                        throw new Error(`Invalid JSON in tool call arguments: ${parseError.message}`);
+                    }
+                } else {
+                    // Legacy format
+                    functionName = assistantMessage.function_call.name;
+                    try {
+                        functionArgs = JSON.parse(assistantMessage.function_call.arguments);
+                    } catch (parseError) {
+                        this.logToConsole('error', `Failed to parse function call arguments: ${assistantMessage.function_call.arguments}`);
+                        throw new Error(`Invalid JSON in function call arguments: ${parseError.message}`);
+                    }
+                }
+            } catch (error) {
+                this.logToConsole('error', `Function call parsing error: ${error.message}`);
+                return `Sorry, I encountered an error parsing the function call: ${error.message}. Please try rephrasing your request.`;
             }
-            
-            this.addMessageToChat('function', `Executing: ${functionName}(${JSON.stringify(functionArgs)})`);
-            
+
+            let argsDisplay;
+            try {
+                argsDisplay = JSON.stringify(functionArgs);
+            } catch (displayError) {
+                argsDisplay = '[Complex arguments - display error]';
+                this.logToConsole('warn', `Failed to display function arguments: ${displayError.message}`);
+            }
+
+            this.addMessageToChat('function', `Executing: ${functionName}(${argsDisplay})`);
+
             // Execute the function
             const functionResult = await this.executeFunction(functionName, functionArgs);
-            
+
             // Add function result to conversation with proper format
+            let functionResultString;
+            try {
+                functionResultString = JSON.stringify(functionResult);
+            } catch (stringifyError) {
+                this.logToConsole('error', `Failed to stringify function result: ${stringifyError.message}`);
+                functionResultString = JSON.stringify({
+                    error: 'Failed to serialize function result',
+                    originalError: stringifyError.message
+                });
+            }
+
             if (assistantMessage.tool_calls) {
                 this.addToConversationHistory('assistant', null, { tool_calls: assistantMessage.tool_calls });
-                this.addToConversationHistory('tool', JSON.stringify(functionResult), { 
-                    tool_call_id: assistantMessage.tool_calls[0].id 
+                this.addToConversationHistory('tool', functionResultString, {
+                    tool_call_id: assistantMessage.tool_calls[0].id
                 });
             } else {
                 this.addToConversationHistory('assistant', null, { function_call: assistantMessage.function_call });
-                this.addToConversationHistory('function', JSON.stringify(functionResult), { name: functionName });
+                this.addToConversationHistory('function', functionResultString, { name: functionName });
             }
 
             // Get AI's response to the function result
@@ -960,14 +1023,14 @@ Remember: You're not just executing commands, you're providing intelligent analy
         ];
 
         const result = await this.makeOpenAIRequest(messages);
-        
+
         if (!result.success) {
             throw new Error(result.error);
         }
 
         const content = result.data.choices[0].message.content;
         this.addToConversationHistory('assistant', content);
-        
+
         return content;
     }
 
@@ -995,17 +1058,17 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async readFile(args) {
         const { path } = args;
         const result = await this.performFileOperation(
-            `/read_file?path=${encodeURIComponent(path)}`, 
-            { method: 'GET' }, 
-            `File reading: ${path}`, 
+            `/read_file?path=${encodeURIComponent(path)}`,
+            { method: 'GET' },
+            `File reading: ${path}`,
             { path }
         );
-        
+
         if (result.success) {
             result.content = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
@@ -1020,9 +1083,9 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async deleteFile(args) {
         const { path } = args;
         return await this.performFileOperation(
-            `/delete_file?path=${encodeURIComponent(path)}`, 
-            { method: 'DELETE' }, 
-            `File deletion: ${path}`, 
+            `/delete_file?path=${encodeURIComponent(path)}`,
+            { method: 'DELETE' },
+            `File deletion: ${path}`,
             { path }
         );
     }
@@ -1030,34 +1093,34 @@ Remember: You're not just executing commands, you're providing intelligent analy
     async listFiles(args) {
         const { directory = '/' } = args;
         const result = await this.performFileOperation(
-            `/list_files?dir=${encodeURIComponent(directory)}`, 
-            { method: 'GET' }, 
-            `Directory listing: ${directory}`, 
+            `/list_files?dir=${encodeURIComponent(directory)}`,
+            { method: 'GET' },
+            `Directory listing: ${directory}`,
             { directory }
         );
-        
+
         if (result.success) {
             result.files = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
     async getSystemInfo() {
         const result = await this.performFileOperation('/sysinfo', { method: 'GET' }, 'System info retrieval');
-        
+
         if (result.success) {
             result.systemInfo = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
     async manageC6Module(args) {
         const { action, params = {} } = args;
-        
+
         // Define endpoint mapping for C6 actions
         const actionMap = {
             'status': { endpoint: '/ap_list', method: 'GET' },
@@ -1065,7 +1128,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
             'update': { endpoint: '/update_c6', method: 'POST', body: params },
             'settings': { endpoint: '/get_c6_settings', method: 'GET' }
         };
-        
+
         return await this.executeActionBasedOperation(actionMap, action, params, 'C6');
     }
 
@@ -1083,23 +1146,23 @@ Remember: You're not just executing commands, you're providing intelligent analy
             method: 'POST',
             body: JSON.stringify({ type, file })
         }, `Firmware flash: ${type}`, { type, file });
-        
+
         if (result.success) {
             result.result = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
     async scanNetworks() {
         const result = await this.performFileOperation('/get_ssid_list', { method: 'GET' }, 'Network scan');
-        
+
         if (result.success) {
             result.networks = result.data;
             delete result.data; // Clean up for consistency
         }
-        
+
         return result;
     }
 
@@ -1108,7 +1171,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         const chat = document.getElementById('agent-chat');
         const messageDiv = document.createElement('div');
         messageDiv.className = `agent-message ${type}`;
-        
+
         if (type === 'user') {
             messageDiv.innerHTML = `<strong>You:</strong> ${content}`;
         } else if (type === 'assistant') {
@@ -1118,7 +1181,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         } else if (type === 'error') {
             messageDiv.innerHTML = `<strong>Error:</strong> ${content}`;
         }
-        
+
         chat.appendChild(messageDiv);
         chat.scrollTop = chat.scrollHeight;
     }
@@ -1145,7 +1208,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                 <span class="typing-dot"></span>
             </span>
         `;
-        
+
         chat.appendChild(typingDiv);
         chat.scrollTop = chat.scrollHeight;
     }
@@ -1160,7 +1223,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
     logToConsole(level, message) {
         const timestamp = new Date().toLocaleTimeString();
         const logMessage = `[${timestamp}] [OpenAI Agent] [${level.toUpperCase()}] ${message}`;
-        
+
         // Console logging based on level
         switch (level.toLowerCase()) {
             case 'error':
@@ -1175,7 +1238,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
             default:
                 console.log(logMessage);
         }
-        
+
         // Also log to diagnostics console if available
         if (typeof logToConsole === 'function') {
             logToConsole(level, `[AI Agent] ${message}`);
@@ -1186,7 +1249,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
 // Initialize the OpenAI Agent
 let openAIAgent;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Initialize with a small delay to ensure other components are ready
     setTimeout(() => {
         openAIAgent = new OpenAIAgent();
