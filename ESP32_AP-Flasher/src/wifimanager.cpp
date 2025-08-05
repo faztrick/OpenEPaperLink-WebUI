@@ -261,7 +261,7 @@ void WifiManager::startManagementServer() {
         logLine("Starting configuration AP, ssid OpenEPaperLink");
         WiFi.disconnect(true, true);
         delay(100);
-        WiFi.mode(WIFI_AP);
+        WiFi.mode(WIFI_AP_STA);  // Use dual mode to allow scanning while in AP mode
         WiFi.softAP("OpenEPaperLink", "", 1, false);
         WiFi.softAPsetHostname("OpenEPaperLink");
         IPAddress IP = WiFi.softAPIP();

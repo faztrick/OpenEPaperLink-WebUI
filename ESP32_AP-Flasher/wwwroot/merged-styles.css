@@ -9,33 +9,35 @@
    ================================================================= */
 
 :root {
-    /* Advanced Design Variables */
-    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    --accent-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    --glass-bg: rgba(255, 255, 255, 0.1);
-    --glass-border: rgba(255, 255, 255, 0.2);
-    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-    
-    /* Text Colors */
+    /* Color Variables */
+        --primary-color: #3b82f6;
+        --secondary-color: #6b7280;
+        --success-color: #4ade80;
+        --warning-color: #fbbf24;
+        --error-color: #f87171;
     --text-primary: #ffffff;
-    --text-secondary: rgba(255, 255, 255, 0.8);
+    --text-secondary: rgba(255, 255, 255, 0.7);
     --text-muted: rgba(255, 255, 255, 0.6);
     
-    /* Status Colors */
-    --success-color: #10b981;
-    --warning-color: #f59e0b;
-    --error-color: #ef4444;
-    --info-color: #3b82f6;
+    /* Glass Effect Variables */
+        --glass-bg: rgba(255, 255, 255, 0.1);
+        --glass-border: rgba(255, 255, 255, 0.2);
+        --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     
-    /* Compact UI Variables */
+    /* Layout Variables */
+        --compact-radius: 8px;
+        --compact-transition: all 0.2s ease;
     --compact-spacing: 0.5rem;
-    --compact-radius: 4px;
-    --compact-transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
     --compact-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     --compact-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
     --header-height: 60px;
     --content-padding: 1rem;
+    /* Advanced Design Variables */
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        --accent-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        --info-color: #3b82f6;
+    }
 }
 
 /* =================================================================
@@ -635,15 +637,46 @@ select {
 /* Dashboard Grid Layout */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 1.5rem;
-    padding: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1.25rem;
+        padding: 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
     position: relative;
     z-index: 0;
 }
 
+/* Responsive grid adjustments */
+@media (min-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
+        padding: 2rem;
+    }
+}
+
+@media (min-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Special layout for larger cards */
+.dashboard-card.overview-card {
+    grid-column: span 1;
+}
+
+@media (min-width: 768px) {
+    .dashboard-card.overview-card {
+        grid-column: span 2;
+    }
+}
+
+@media (min-width: 1200px) {
+    .dashboard-card.overview-card {
+        grid-column: span 1;
+    }
+}
 /* =================================================================
    CARDS AND CONTENT BLOCKS
    ================================================================= */
@@ -713,6 +746,235 @@ select {
     display: none;
 }
 
+/* Tag Status Card Styles */
+.tag-status-list {
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-border) transparent;
+}
+
+.tag-status-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tag-status-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tag-status-list::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 3px;
+}
+
+.tag-status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.tag-status-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateX(2px);
+}
+
+.tag-status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.tag-status-indicator.online {
+    background: var(--success-color, #4ade80);
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+.tag-status-indicator.offline {
+    background: var(--error-color, #f87171);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+}
+
+.tag-status-indicator.warning {
+    background: var(--warning-color, #fbbf24);
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+}
+
+.tag-info {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.tag-mac {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.125rem;
+}
+
+.tag-details {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 1rem;
+}
+
+.tag-battery {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.battery-bar {
+    width: 20px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.battery-fill {
+    height: 100%;
+    transition: width 0.3s ease;
+    border-radius: 2px;
+}
+
+.battery-fill.high {
+    background: var(--success-color, #4ade80);
+}
+
+.battery-fill.medium {
+    background: var(--warning-color, #fbbf24);
+}
+
+.battery-fill.low {
+    background: var(--error-color, #f87171);
+}
+
+.no-tags-message {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Card content improvements */
+.overview-grid,
+.actions-grid,
+.network-stats,
+.performance-metrics {
+    gap: 1rem;
+}
+
+.overview-item,
+.action-card {
+    transition: transform 0.2s ease;
+}
+
+.overview-item:hover,
+.action-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Analytics Card Styling */
+.analytics-card .card-content {
+    padding: 1rem;
+}
+
+.analytics-card canvas {
+    max-height: 200px;
+}
+
+/* Performance Card Styling */
+.performance-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.metric-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.metric-label {
+    min-width: 60px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.metric-bar {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.metric-fill {
+    height: 100%;
+    background: var(--success-color, #4ade80);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+    position: relative;
+}
+
+.metric-value {
+    min-width: 40px;
+    text-align: right;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Action cards improvements */
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.action-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+}
+
+.action-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.action-card .material-symbols-outlined {
+    font-size: 24px;
+    color: var(--primary-color);
+}
+
+.action-card span:last-child {
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: center;
+}
 /* =================================================================
    TAG STYLES
    ================================================================= */
@@ -1737,6 +1999,9 @@ h4 {
         gap: 1rem;
     }
     
+        .dashboard-card.overview-card {
+            grid-column: span 1;
+        }
     /* Simple Tabs Responsive */
     .simple-tabs {
         padding: 0.75rem;

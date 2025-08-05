@@ -191,19 +191,20 @@
 						</div>
 					</div>
 
-					<!-- Recent Activity Card -->
-					<div class="dashboard-card activity-card">
+					<!-- Tag Status Card -->
+					<div class="dashboard-card tag-status-card">
 						<div class="card-header">
-							<span class="material-symbols-outlined">history</span>
-							<h3>Recent Activity</h3>
+							<span class="material-symbols-outlined">devices</span>
+							<h3>Tag Status</h3>
+							<div class="card-actions">
+								<button onclick="refreshTagStatus()" class="icon-btn" title="Refresh Tag Status">
+									<span class="material-symbols-outlined">refresh</span>
+								</button>
+							</div>
 						</div>
 						<div class="card-content">
-							<div id="activity-feed" class="activity-feed">
-								<div class="activity-item">
-									<span class="activity-icon">📡</span>
-									<span class="activity-text">System started</span>
-									<span class="activity-time">Ready</span>
-								</div>
+							<div id="tag-status-list" class="tag-status-list">
+								<div class="no-tags-message">No tags found. Click "Find All Tags" to discover devices.</div>
 							</div>
 						</div>
 					</div>

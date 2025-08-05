@@ -1,0 +1,194 @@
+/* OpenAI Agent Assistant Styles */
+.agent-panel {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 400px;
+    max-height: 600px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+}
+
+.agent-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.agent-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.agent-content {
+    display: flex;
+    flex-direction: column;
+    height: 500px;
+}
+
+.agent-chat {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: #f8f9fa;
+}
+
+.agent-message {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.agent-message.user {
+    background: #007bff;
+    color: white;
+    margin-left: 20px;
+    border: 1px solid #0056b3;
+}
+
+.agent-message.assistant {
+    background: #ffffff;
+    color: #333333;
+    border: 1px solid #ddd;
+    margin-right: 20px;
+}
+
+.agent-message.system {
+    background: #e9ecef;
+    color: #495057;
+    border: 1px solid #ced4da;
+    font-style: italic;
+}
+
+.agent-message.error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    font-weight: bold;
+}
+
+.agent-message.function {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.agent-input-area {
+    border-top: 1px solid #ddd;
+    padding: 15px;
+    background: white;
+}
+
+.agent-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.suggestion-btn {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.suggestion-btn:hover {
+    background: #e9ecef;
+}
+
+.agent-input-container {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+#agent-input {
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 40px;
+}
+
+#agent-send-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+.floating-agent-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 12px 20px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    z-index: 9999;
+    transition: transform 0.2s;
+}
+
+.floating-agent-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #666;
+    font-style: italic;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 2px;
+}
+
+.typing-dot {
+    width: 4px;
+    height: 4px;
+    background: #666;
+    border-radius: 50%;
+    animation: typing 1.4s infinite;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0%, 60%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-10px);
+    }
+}

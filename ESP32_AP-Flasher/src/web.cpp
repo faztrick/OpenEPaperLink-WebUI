@@ -1,4 +1,5 @@
 #include "web.h"
+#include "c6_module.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -11,11 +12,9 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-
 #include <algorithm>
 
 #include "AsyncJson.h"
-#include "LittleFS.h"
 #include "SPIFFSEditor.h"
 #include "commstructs.h"
 #include "language.h"
@@ -42,6 +41,11 @@
 #include "webflasher.h"
 #endif
 
+// Constants for optimization
+static const size_t JSON_BUFFER_SIZE = 2048;
+static const size_t LARGE_JSON_BUFFER_SIZE = 4096;
+static const uint32_t WEBSOCKET_SEND_TIMEOUT_MS = 1000;
+
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 WifiManager wm;
@@ -49,47 +53,83 @@ WifiManager wm;
 SemaphoreHandle_t wsMutex;
 uint32_t lastssidscan = 0;
 
+// Optimized WebSocket message sending with error handling
+static bool sendWSMessage(const JsonDocument& doc, uint32_t timeout_ms = WEBSOCKET_SEND_TIMEOUT_MS) {
+    if (!wsMutex) return false;
+    
+    if (xSemaphoreTake(wsMutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
+        String message;
+        size_t serializedSize = serializeJson(doc, message);
+        if (serializedSize > 0 && ws.count() > 0) {
+            ws.textAll(message);
+        }
+        xSemaphoreGive(wsMutex);
+        return serializedSize > 0;
+    }
+    return false;
+}
+
 void wsLog(const String &text) {
-    DynamicJsonDocument doc(2048);
+    if (text.isEmpty() || ws.count() == 0) return;
+    
+    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     doc["logMsg"] = text;
-    if (wsMutex) xSemaphoreTake(wsMutex, portMAX_DELAY);
-    ws.textAll(doc.as<String>());
-    if (wsMutex) xSemaphoreGive(wsMutex);
+    sendWSMessage(doc);
 }
 
 void wsErr(const String &text) {
-    DynamicJsonDocument doc(2048);
+    if (text.isEmpty() || ws.count() == 0) return;
+    
+    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     doc["errMsg"] = text;
-    if (wsMutex) xSemaphoreTake(wsMutex, portMAX_DELAY);
-    ws.textAll(doc.as<String>());
-    if (wsMutex) xSemaphoreGive(wsMutex);
+    sendWSMessage(doc);
 }
 
+// Optimized database size calculation with caching
+static size_t cachedDbSize = 0;
+static uint32_t lastDbSizeUpdate = 0;
+static const uint32_t DB_SIZE_CACHE_INTERVAL_MS = 5000; // Cache for 5 seconds
+
 size_t dbSize() {
-    size_t size = tagDB.size() * sizeof(tagRecord);
-    for (auto &tag : tagDB) {
-        if (tag->data) {
-            size += tag->len;
+    uint32_t now = millis();
+    if (now - lastDbSizeUpdate > DB_SIZE_CACHE_INTERVAL_MS || lastDbSizeUpdate == 0) {
+        cachedDbSize = tagDB.size() * sizeof(tagRecord);
+        for (const auto &tag : tagDB) {
+            if (tag && tag->data) {
+                cachedDbSize += tag->len;
+            }
+            if (tag) {
+                cachedDbSize += tag->modeConfigJson.length();
+            }
         }
-        size += tag->modeConfigJson.length();
+        lastDbSizeUpdate = now;
     }
-    return size;
+    return cachedDbSize;
 }
 
 void wsSendSysteminfo() {
-    DynamicJsonDocument doc(2048);
+    if (ws.count() == 0) return; // No clients connected
+    
+    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     JsonObject sys = doc["sys"].to<JsonObject>();
     time_t now;
     time(&now);
-    static int freeSpaceLastRun = 0;
+    static uint32_t freeSpaceLastRun = 0;
     static size_t tagDBsize = 0;
-    static uint64_t freeSpace = Storage.freeSpace();
+    static uint64_t freeSpace = 0;
 
+    // Essential system info
     sys["currtime"] = now;
     sys["heap"] = ESP.getFreeHeap();
     sys["recordcount"] = tagDBsize;
     sys["dbsize"] = dbSize();
+    sys["apstate"] = apInfo.state;
+    sys["runstate"] = config.runStatus;
+    sys["rssi"] = WiFi.RSSI();
+    sys["wifistatus"] = WiFi.status();
+    sys["uptime"] = esp_timer_get_time() / 1000000;
 
+    // Update expensive operations less frequently
     if (millis() - freeSpaceLastRun > 30000 || freeSpaceLastRun == 0) {
         freeSpace = Storage.freeSpace();
         tagDBsize = tagDB.size();
@@ -101,13 +141,16 @@ void wsSendSysteminfo() {
     sys["psfree"] = ESP.getFreePsram();
 #endif
 
-    sys["apstate"] = apInfo.state;
-    sys["runstate"] = config.runStatus;
-    sys["rssi"] = WiFi.RSSI();
-    sys["wifistatus"] = WiFi.status();
-    sys["wifissid"] = WiFi.SSID();
-    sys["uptime"] = esp_timer_get_time() / 1000000;
+    // Cache WiFi SSID to avoid repeated calls
+    static String cachedSSID;
+    static uint32_t lastSSIDUpdate = 0;
+    if (now - lastSSIDUpdate > 10 || lastSSIDUpdate == 0) {
+        cachedSSID = WiFi.SSID();
+        lastSSIDUpdate = now;
+    }
+    sys["wifissid"] = cachedSSID;
 
+    // Date and IP updates
     static uint8_t day = 0;
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
@@ -136,7 +179,7 @@ void wsSendSysteminfo() {
     setVarDB("ap_ch", String(apInfo.channel));
 #endif
 
-    // reboot once at night
+    // Nightly reboot check
     if (timeinfo.tm_hour == 3 && timeinfo.tm_min == 56 && millis() > 2 * 3600 * 1000 && config.nightlyreboot == 1) {
         logLine("Nightly reboot");
         wsErr("REBOOTING");
@@ -150,12 +193,14 @@ void wsSendSysteminfo() {
         ESP.restart();
     }
 
+    // Tag count update (less frequent)
     static uint32_t tagcounttimer = 0;
     if (millis() - tagcounttimer > 60000 || tagcounttimer == 0) {
         uint32_t timeoutcount = 0, lowbattcount = 0;
         uint32_t tagcount = getTagCount(timeoutcount, lowbattcount);
         sys["lowbattcount"] = lowbattcount;
         sys["timeoutcount"] = timeoutcount;
+        
         char result[40];
         if (timeoutcount > 0) {
             snprintf(result, sizeof(result), "%lu/%lu, %lu timeout", tagcount, tagDB.size(), timeoutcount);
@@ -163,6 +208,7 @@ void wsSendSysteminfo() {
             snprintf(result, sizeof(result), "%lu / %lu", tagcount, tagDB.size());
         }
         setVarDB("ap_tagcount", result);
+        
 #ifdef HAS_RGB_LED
         if (timeoutcount > 0) {
             if (apInfo.state == AP_STATE_ONLINE && apInfo.isOnline == true) rgbIdleColor = CRGB::DarkBlue;
@@ -173,19 +219,22 @@ void wsSendSysteminfo() {
         tagcounttimer = millis();
     }
 
-    xSemaphoreTake(wsMutex, portMAX_DELAY);
-    ws.textAll(doc.as<String>());
-    xSemaphoreGive(wsMutex);
+    sendWSMessage(doc);
 }
 
 void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
+    if (!mac) return;
+    
     if (syncMode != SYNC_DELETE) {
-        String json = "";
-        json = tagDBtoJson(mac);
-        xSemaphoreTake(wsMutex, portMAX_DELAY);
-        ws.textAll(json);
-        xSemaphoreGive(wsMutex);
+        String json = tagDBtoJson(mac);
+        if (!json.isEmpty() && ws.count() > 0) {
+            if (xSemaphoreTake(wsMutex, pdMS_TO_TICKS(WEBSOCKET_SEND_TIMEOUT_MS)) == pdTRUE) {
+                ws.textAll(json);
+                xSemaphoreGive(wsMutex);
+            }
+        }
     }
+    
     if (syncMode > SYNC_NOSYNC) {
         const tagRecord *taginfo = tagRecord::findByMAC(mac);
         if (taginfo != nullptr) {
@@ -195,11 +244,13 @@ void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
                 memcpy(taginfoitem.mac, taginfo->mac, sizeof(taginfoitem.mac));
                 taginfoitem.syncMode = syncMode;
                 taginfoitem.contentMode = taginfo->contentMode;
+                
                 if (syncMode == SYNC_USERCFG) {
                     strncpy(taginfoitem.alias, taginfo->alias.c_str(), sizeof(taginfoitem.alias) - 1);
                     taginfoitem.alias[sizeof(taginfoitem.alias) - 1] = '\0';
                     taginfoitem.nextupdate = taginfo->nextupdate;
                 }
+                
                 if (syncMode == SYNC_TAGSTATUS) {
                     taginfoitem.lastseen = taginfo->lastseen;
                     taginfoitem.nextupdate = taginfo->nextupdate;
@@ -217,7 +268,9 @@ void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
 }
 
 void wsSendAPitem(struct APlist *apitem) {
-    DynamicJsonDocument doc(2048);
+    if (!apitem || ws.count() == 0) return;
+    
+    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     JsonObject ap = doc["apitem"].to<JsonObject>();
 
     char version_str[6];
@@ -229,9 +282,7 @@ void wsSendAPitem(struct APlist *apitem) {
     ap["channel"] = apitem->channelId;
     ap["version"] = version_str;
 
-    if (wsMutex) xSemaphoreTake(wsMutex, portMAX_DELAY);
-    ws.textAll(doc.as<String>());
-    if (wsMutex) xSemaphoreGive(wsMutex);
+    sendWSMessage(doc);
 }
 
 void wsSerial(const String &text) {
@@ -239,13 +290,17 @@ void wsSerial(const String &text) {
 }
 
 void wsSerial(const String &text, const String &color) {
-    DynamicJsonDocument doc(2048);
+    if (text.isEmpty()) return;
+    
+    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     doc["console"] = text;
     if (!color.isEmpty()) doc["color"] = color;
+    
     Serial.println(text);
-    if (wsMutex) xSemaphoreTake(wsMutex, portMAX_DELAY);
-    ws.textAll(doc.as<String>());
-    if (wsMutex) xSemaphoreGive(wsMutex);
+    
+    if (ws.count() > 0) {
+        sendWSMessage(doc);
+    }
 }
 
 uint8_t wsClientCount() {
@@ -538,25 +593,31 @@ void init_web() {
     server.on("/get_ap_config", HTTP_GET, [](AsyncWebServerRequest *request) {
         UDPcomm udpsync;
         udpsync.getAPList();
+        
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        String HasC6 = "0";
-        String HasH2 = "0";
-        String HasTSLR = "0";
-
+        response->addHeader("Cache-Control", "no-cache");
+        
+        // Build response more efficiently
         response->print("{");
+        
+        // Feature flags
 #ifdef HAS_H2
-        HasH2 = "1";
+        response->print("\"H2\": \"1\", ");
+#else
+        response->print("\"H2\": \"0\", ");
 #endif
 #ifdef HAS_TSLR
-        HasTSLR = "1";
+        response->print("\"TLSR\": \"1\", ");
+#else
+        response->print("\"TLSR\": \"0\", ");
 #endif
 #ifdef C6_OTA_FLASHING
-        HasC6 = "1";
+        response->print("\"C6\": \"1\", ");
+        response->print("\"hasC6\": 1, ");
+#else
+        response->print("\"C6\": \"0\", ");
+        response->print("\"hasC6\": 0, ");
 #endif
-        response->print("\"C6\": \"" + HasC6 + "\", ");
-        response->print("\"hasC6\": " + HasC6 + ", ");
-        response->print("\"H2\": \"" + HasH2 + "\", ");
-        response->print("\"TLSR\": \"" + HasTSLR + "\", ");
 #ifdef SAVE_SPACE
         response->print("\"savespace\": \"1\", ");
 #else
@@ -572,20 +633,20 @@ void init_web() {
 #else
         response->print("\"hasBLE\": \"0\", ");
 #endif
-
 #ifdef HAS_SUBGHZ
-        response->print("\"hasSubGhz\": \"" + String(apInfo.hasSubGhz) + "\",");
+        response->print("\"hasSubGhz\": \"" + String(apInfo.hasSubGhz) + "\", ");
 #else
         response->print("\"hasSubGhz\": \"0\", ");
 #endif
 
         response->print("\"apstate\": \"" + String(apInfo.state) + "\"");
 
+        // Include config file if it exists
         File configFile = contentFS->open("/current/apconfig.json", "r");
         if (configFile) {
             response->print(", ");
             configFile.seek(1);
-            const size_t bufferSize = 64;
+            const size_t bufferSize = 256; // Smaller buffer for better memory usage
             uint8_t buffer[bufferSize];
             while (configFile.available()) {
                 size_t bytesRead = configFile.read(buffer, bufferSize);
@@ -730,22 +791,43 @@ void init_web() {
 
     server.on("/get_ssid_list", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(2048);
+        response->addHeader("Cache-Control", "max-age=30"); // Cache for 30 seconds
+        
+        DynamicJsonDocument doc(LARGE_JSON_BUFFER_SIZE);
 
-        doc["scanstatus"] = WiFi.scanComplete();
+        // Ensure WiFi is in a mode that allows scanning
+        wifi_mode_t currentMode = WiFi.getMode();
+        if (currentMode == WIFI_OFF) {
+            WiFi.mode(WIFI_STA);
+            delay(100);
+        } else if (currentMode == WIFI_AP) {
+            WiFi.mode(WIFI_AP_STA);
+            delay(100);
+        }
+
+        int scanResult = WiFi.scanComplete();
+        doc["scanstatus"] = scanResult;
+        
         JsonArray networks = doc["networks"].to<JsonArray>();
-        for (int i = 0; i < (WiFi.scanComplete() > 50 ? 50 : WiFi.scanComplete()); ++i) {
-            if (WiFi.SSID(i) != "") {
+        
+        // Limit results to prevent memory issues
+        int networkLimit = min(scanResult > 0 ? scanResult : 0, 30);
+        
+        for (int i = 0; i < networkLimit; ++i) {
+            String ssid = WiFi.SSID(i);
+            if (!ssid.isEmpty()) {
                 JsonObject network = networks.createNestedObject();
-                network["ssid"] = WiFi.SSID(i);
+                network["ssid"] = ssid;
                 network["ch"] = WiFi.channel(i);
                 network["rssi"] = WiFi.RSSI(i);
                 network["enc"] = WiFi.encryptionType(i);
             }
         }
-        if (WiFi.scanComplete() != -1 && (WiFi.scanComplete() == -2 || millis() - lastssidscan > 30000)) {
+        
+        // Start new scan if needed (rate limited)
+        if ((scanResult == -2 || scanResult == -1) && (millis() - lastssidscan > 30000)) {
             WiFi.scanDelete();
-            Serial.println("start scanning");
+            Serial.println("Starting WiFi scan");
             WiFi.scanNetworks(true, true);
             lastssidscan = millis();
         }
@@ -938,14 +1020,6 @@ void init_web() {
         request->send(200, "text/plain", "SubGHz available");
         #else
         request->send(404, "text/plain", "SubGHz not available");
-        #endif
-    });
-    
-    server.on("/c6_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
-        #ifdef C6_OTA_FLASHING
-        request->send(200, "text/plain", "C6 OTA available");
-        #else
-        request->send(404, "text/plain", "C6 OTA not available");
         #endif
     });
     
@@ -1600,66 +1674,6 @@ void init_web() {
         request->send(response);
     });
     
-    // C6 Module Endpoints
-    server.on("/c6_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
-        doc["success"] = true;
-        doc["c6Connected"] = apInfo.isOnline;
-        doc["c6State"] = apInfo.state;
-        doc["c6Version"] = apInfo.version;
-        doc["c6Channel"] = apInfo.channel;
-        doc["c6Power"] = apInfo.power;
-        doc["c6RSSI"] = apInfo.rssi;
-        doc["c6Uptime"] = apInfo.uptime;
-        doc["c6Type"] = apInfo.type;
-        doc["c6Mac"] = "";
-        for (int i = 0; i < 8; i++) {
-            if (i > 0) doc["c6Mac"] = doc["c6Mac"].as<String>() + ":";
-            doc["c6Mac"] = doc["c6Mac"].as<String>() + String(apInfo.mac[i], HEX);
-        }
-        #ifdef HAS_SUBGHZ
-        doc["hasSubGhz"] = apInfo.hasSubGhz;
-        doc["subGhzChannel"] = apInfo.SubGhzChannel;
-        #endif
-        
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response);
-    });
-
-    server.on("/c6_control", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (!request->hasParam("action", true)) {
-            request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
-            return;
-        }
-        
-        String action = request->getParam("action", true)->value();
-        String moduleId = request->hasParam("moduleId", true) ? request->getParam("moduleId", true)->value() : "primary";
-        
-        DynamicJsonDocument doc(512);
-        doc["success"] = true;
-        doc["action"] = action;
-        doc["moduleId"] = moduleId;
-        
-        if (action == "reset") {
-            APTagReset();
-            doc["result"] = "C6 module reset initiated";
-        } else if (action == "status") {
-            doc["result"] = "Status check completed";
-        } else if (action == "diagnostic") {
-            bool pingResult = sendPing();
-            doc["result"] = pingResult ? "Diagnostic ping successful" : "Diagnostic ping failed";
-        } else if (action == "configure") {
-            doc["result"] = "Configuration update queued";
-        } else {
-            doc["result"] = "Action queued for execution";
-        }
-        
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response);
-    });
-    
     // Network Endpoints
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(1024);
@@ -1681,10 +1695,29 @@ void init_web() {
     });
 
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request) {
-        int n = WiFi.scanNetworks();
         DynamicJsonDocument doc(2048);
+        
+        // Ensure WiFi is in a mode that allows scanning
+        wifi_mode_t currentMode = WiFi.getMode();
+        Serial.printf("Current WiFi mode: %d\n", currentMode);
+        
+        if (currentMode == WIFI_OFF) {
+            Serial.println("WiFi was off, switching to STA mode");
+            WiFi.mode(WIFI_STA);
+            delay(100);
+        } else if (currentMode == WIFI_AP) {
+            Serial.println("WiFi was in AP mode, switching to AP+STA mode");
+            WiFi.mode(WIFI_AP_STA);
+            delay(100);
+        }
+        
+        Serial.println("Starting WiFi scan...");
+        int n = WiFi.scanNetworks();
+        Serial.printf("WiFi scan found %d networks\n", n);
+        
         doc["success"] = true;
         doc["networkCount"] = n;
+        doc["wifiMode"] = WiFi.getMode();
         
         JsonArray networks = doc.createNestedArray("networks");
         for (int i = 0; i < n; i++) {
@@ -1827,7 +1860,7 @@ void init_web() {
         doc["action"] = action;
         
         if (action == "start") {
-            bringAPOnline();
+            bringAPOnline(AP_STATE_ONLINE);
             doc["result"] = "Serial AP start initiated";
         } else if (action == "stop") {
             setAPstate(false, AP_STATE_OFFLINE);
@@ -1999,134 +2032,209 @@ void init_web() {
             }
         });
 
+#ifdef C6_OTA_FLASHING
+    // Initialize and register C6 module handlers
+    initC6Module();
+    registerC6WebHandlers(server);
+#endif
+
     server.begin();
 }
 
-#define UPLOAD_BUFFER_SIZE 32768
+#define UPLOAD_BUFFER_SIZE 16384  // Reduced from 32768 for better memory management
 
 struct UploadInfo {
     String filename;
     uint8_t buffer[UPLOAD_BUFFER_SIZE];
     size_t bufferSize;
+    uint32_t totalReceived;
+    uint32_t lastWriteTime;
 };
 
 void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     String uploadfilename;
+    
     if (!index) {
+        // Initial checks
         if (config.runStatus != RUNSTATUS_RUN) {
-            request->send(409, "text/plain", "Come back later");
+            request->send(409, "text/plain", "Service temporarily unavailable");
             return;
         }
         if (!request->hasParam("mac", true)) {
-            request->send(400, "text/plain", "parameters incomplete");
+            request->send(400, "text/plain", "Missing required parameter: mac");
             return;
         }
-        logLine("http imageUpload " + uploadfilename);
-
+        
+        // Generate unique filename
         uploadfilename = request->getParam("mac", true)->value() + "_" + String(millis()) + ".jpg";
-        File file = contentFS->open("/temp/" + uploadfilename, "w");
-        file.close();
-        Serial.println("upload started " + uploadfilename);
+        
+        // Pre-create file
+        if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            File file = contentFS->open("/temp/" + uploadfilename, "w");
+            if (file) {
+                file.close();
+                Serial.println("Upload started: " + uploadfilename);
+            } else {
+                xSemaphoreGive(fsMutex);
+                request->send(500, "text/plain", "Failed to create upload file");
+                return;
+            }
+            xSemaphoreGive(fsMutex);
+        } else {
+            request->send(503, "text/plain", "File system busy");
+            return;
+        }
 
-        UploadInfo *uploadInfo = new UploadInfo{uploadfilename, {}, 0};
+        UploadInfo *uploadInfo = new UploadInfo{uploadfilename, {}, 0, 0, millis()};
         request->_tempObject = (void *)uploadInfo;
     }
 
     UploadInfo *uploadInfo = static_cast<UploadInfo *>(request->_tempObject);
+    if (uploadInfo == nullptr) {
+        request->send(500, "text/plain", "Upload context lost");
+        return;
+    }
 
-    if (uploadInfo != nullptr) {
-        uploadfilename = uploadInfo->filename;
+    uploadfilename = uploadInfo->filename;
+    uploadInfo->totalReceived += len;
 
-        if (len) {
-            if (uploadInfo->bufferSize + len <= UPLOAD_BUFFER_SIZE) {
-                memcpy(&uploadInfo->buffer[uploadInfo->bufferSize], data, len);
-                uploadInfo->bufferSize += len;
-            } else {
-                xSemaphoreTake(fsMutex, portMAX_DELAY);
+    if (len) {
+        // Buffer incoming data
+        if (uploadInfo->bufferSize + len <= UPLOAD_BUFFER_SIZE) {
+            memcpy(&uploadInfo->buffer[uploadInfo->bufferSize], data, len);
+            uploadInfo->bufferSize += len;
+        } else {
+            // Flush buffer to file
+            if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                 File file = contentFS->open("/temp/" + uploadfilename, "a");
                 if (file) {
-                    file.write(uploadInfo->buffer, uploadInfo->bufferSize);
+                    if (uploadInfo->bufferSize > 0) {
+                        file.write(uploadInfo->buffer, uploadInfo->bufferSize);
+                    }
                     file.close();
                     uploadInfo->bufferSize = 0;
-                    xSemaphoreGive(fsMutex);
+                    uploadInfo->lastWriteTime = millis();
                 } else {
                     xSemaphoreGive(fsMutex);
-                    logLine("Failed to open file for appending: " + uploadfilename);
+                    delete uploadInfo;
+                    request->_tempObject = nullptr;
+                    request->send(500, "text/plain", "File write error");
+                    return;
                 }
+                xSemaphoreGive(fsMutex);
+            } else {
+                delete uploadInfo;
+                request->_tempObject = nullptr;
+                request->send(503, "text/plain", "File system timeout");
+                return;
+            }
 
+            // Store new data in buffer
+            if (len <= UPLOAD_BUFFER_SIZE) {
                 memcpy(uploadInfo->buffer, data, len);
                 uploadInfo->bufferSize = len;
+            } else {
+                delete uploadInfo;
+                request->_tempObject = nullptr;
+                request->send(413, "text/plain", "Chunk too large");
+                return;
             }
         }
+    }
 
-        if (final) {
-            if (uploadInfo->bufferSize > 0) {
-                xSemaphoreTake(fsMutex, portMAX_DELAY);
+    if (final) {
+        // Final buffer flush
+        if (uploadInfo->bufferSize > 0) {
+            if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                 File file = contentFS->open("/temp/" + uploadfilename, "a");
                 if (file) {
                     file.write(uploadInfo->buffer, uploadInfo->bufferSize);
                     file.close();
-                    xSemaphoreGive(fsMutex);
                 } else {
                     xSemaphoreGive(fsMutex);
-                    logLine("Failed to open file for appending: " + uploadfilename);
+                    delete uploadInfo;
+                    request->_tempObject = nullptr;
+                    request->send(500, "text/plain", "Final write failed");
+                    return;
                 }
-                request->_tempObject = nullptr;
+                xSemaphoreGive(fsMutex);
+            } else {
                 delete uploadInfo;
-            }
-
-            if (request->hasParam("mac", true)) {
-                String dst = request->getParam("mac", true)->value();
-                uint8_t mac[8];
-                if (hex2mac(dst, mac)) {
-                    tagRecord *taginfo = tagRecord::findByMAC(mac);
-                    if (taginfo != nullptr) {
-                        uint8_t dither = 1;
-                        if (request->hasParam("dither", true)) {
-                            dither = request->getParam("dither", true)->value().toInt();
-                        }
-                        if (request->hasParam("alias", true)) {
-                            taginfo->alias = request->getParam("alias", true)->value();
-                        }
-                        if (request->hasParam("rotate", true)) {
-                            taginfo->rotate = atoi(request->getParam("rotate", true)->value().c_str());
-                        }
-                        if (request->hasParam("lut", true)) {
-                            taginfo->lut = atoi(request->getParam("lut", true)->value().c_str());
-                        }
-                        if (request->hasParam("invert", true)) {
-                            taginfo->invert = atoi(request->getParam("invert", true)->value().c_str());
-                        }
-                        uint32_t ttl = 0;
-                        if (request->hasParam("ttl", true)) {
-                            ttl = request->getParam("ttl", true)->value().toInt();
-                        }
-                        uint8_t preload = 0;
-                        uint8_t preloadlut = 0;
-                        uint8_t preloadtype = 0;
-                        if (request->hasParam("preloadtype", true)) {
-                            preload = 1;
-                            preloadtype = request->getParam("preloadtype", true)->value().toInt();
-                            if (request->hasParam("preloadlut", true)) {
-                                preloadlut = request->getParam("preloadlut", true)->value().toInt();
-                            }
-                        }
-                        taginfo->modeConfigJson = "{\"filename\":\"/temp/" + uploadfilename + "\",\"timetolive\":\"" + String(ttl) + "\",\"dither\":\"" + String(dither) + "\",\"delete\":\"1\", \"preload\":\"" + String(preload) + "\", \"preload_lut\":\"" + String(preloadlut) + "\", \"preload_type\":\"" + String(preloadtype) + "\"}";
-                        if (request->hasParam("contentmode", true)) {
-                            taginfo->contentMode = request->getParam("contentmode", true)->value().toInt();
-                        } else {
-                            taginfo->contentMode = 24;
-                        }
-                        Serial.println("upload finished " + uploadfilename);
-                        taginfo->nextupdate = 0;
-                        wsSendTaginfo(mac, SYNC_USERCFG);
-                        request->send(200, "text/plain", "Ok, saved");
-                    } else {
-                        request->send(400, "text/plain", "mac not found");
-                    }
-                }
+                request->_tempObject = nullptr;
+                request->send(503, "text/plain", "Final write timeout");
+                return;
             }
         }
+
+        Serial.printf("Upload completed: %s (%lu bytes)\n", uploadfilename.c_str(), uploadInfo->totalReceived);
+        
+        // Process uploaded file
+        if (request->hasParam("mac", true)) {
+            String dst = request->getParam("mac", true)->value();
+            uint8_t mac[8];
+            if (hex2mac(dst, mac)) {
+                tagRecord *taginfo = tagRecord::findByMAC(mac);
+                if (taginfo != nullptr) {
+                    // Extract parameters with defaults
+                    uint8_t dither = request->hasParam("dither", true) ? 
+                                    request->getParam("dither", true)->value().toInt() : 1;
+                    uint32_t ttl = request->hasParam("ttl", true) ? 
+                                  request->getParam("ttl", true)->value().toInt() : 0;
+                    uint8_t preload = 0;
+                    uint8_t preloadlut = 0;
+                    uint8_t preloadtype = 0;
+                    
+                    if (request->hasParam("preloadtype", true)) {
+                        preload = 1;
+                        preloadtype = request->getParam("preloadtype", true)->value().toInt();
+                        if (request->hasParam("preloadlut", true)) {
+                            preloadlut = request->getParam("preloadlut", true)->value().toInt();
+                        }
+                    }
+                    
+                    // Update tag parameters
+                    if (request->hasParam("alias", true)) {
+                        taginfo->alias = request->getParam("alias", true)->value();
+                    }
+                    if (request->hasParam("rotate", true)) {
+                        taginfo->rotate = atoi(request->getParam("rotate", true)->value().c_str());
+                    }
+                    if (request->hasParam("lut", true)) {
+                        taginfo->lut = atoi(request->getParam("lut", true)->value().c_str());
+                    }
+                    if (request->hasParam("invert", true)) {
+                        taginfo->invert = atoi(request->getParam("invert", true)->value().c_str());
+                    }
+
+                    // Set mode configuration
+                    taginfo->modeConfigJson = "{\"filename\":\"/temp/" + uploadfilename + 
+                                            "\",\"timetolive\":\"" + String(ttl) + 
+                                            "\",\"dither\":\"" + String(dither) + 
+                                            "\",\"delete\":\"1\", \"preload\":\"" + String(preload) + 
+                                            "\", \"preload_lut\":\"" + String(preloadlut) + 
+                                            "\", \"preload_type\":\"" + String(preloadtype) + "\"}";
+                    
+                    if (request->hasParam("contentmode", true)) {
+                        taginfo->contentMode = request->getParam("contentmode", true)->value().toInt();
+                    } else {
+                        taginfo->contentMode = 24;
+                    }
+                    
+                    taginfo->nextupdate = 0;
+                    wsSendTaginfo(mac, SYNC_USERCFG);
+                    request->send(200, "text/plain", "Upload completed successfully");
+                } else {
+                    request->send(404, "text/plain", "Tag not found in database");
+                }
+            } else {
+                request->send(400, "text/plain", "Invalid MAC address format");
+            }
+        } else {
+            request->send(400, "text/plain", "Missing MAC parameter");
+        }
+
+        delete uploadInfo;
+        request->_tempObject = nullptr;
     }
 }
 
@@ -2186,736 +2294,5 @@ void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index
         request->send(200, "text/plain", "Ok, restored.");
     }
 }
-
-// C6 Module Management Functions
-// ===============================
-
-#ifdef C6_OTA_FLASHING
-#endif
-
-void handleC6UpdateStatus(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    DynamicJsonDocument doc(512);
-    
-    // Check update status from global variables or task status
-    // This is a simplified implementation - in practice you'd track actual update progress
-    static bool updateInProgress = false;
-    static int updateProgress = 0;
-    static String updateError = "";
-    
-    // Check if update task is running
-    if (apInfo.state == AP_STATE_FLASHING) {
-        updateInProgress = true;
-        updateProgress = min(90, updateProgress + 5); // Simulate progress
-    } else if (apInfo.state == AP_STATE_ONLINE) {
-        if (updateInProgress) {
-            // Update completed
-            doc["completed"] = true;
-            doc["progress"] = 100;
-            updateInProgress = false;
-            updateProgress = 0;
-        } else {
-            doc["completed"] = false;
-            doc["progress"] = 0;
-        }
-    } else if (apInfo.state == AP_STATE_FAILED) {
-        doc["error"] = "Firmware update failed";
-        doc["completed"] = false;
-        updateInProgress = false;
-        updateProgress = 0;
-    } else {
-        doc["completed"] = false;
-        doc["progress"] = updateProgress;
-    }
-    
-    doc["timestamp"] = millis();
-    
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleBackupC6Firmware(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    // Create a firmware backup
-    String backupPath = "/c6_firmware_backup.bin";
-    
-    // Check if backup file exists
-    if (contentFS->exists(backupPath)) {
-        wsSerial("Sending C6 firmware backup");
-        request->send(*contentFS, backupPath, "application/octet-stream", true);
-    } else {
-        // Try to create backup by reading from C6 module
-        wsSerial("Creating new firmware backup...");
-        
-        // Send command to C6 module to dump firmware
-        bool backupSuccess = sendC6Command("BACKUP_FIRMWARE", 0);
-        
-        if (backupSuccess) {
-            // Wait a moment for backup to be created
-            delay(1000);
-            
-            if (contentFS->exists(backupPath)) {
-                request->send(*contentFS, backupPath, "application/octet-stream", true);
-            } else {
-                request->send(500, "text/plain", "Backup creation failed");
-            }
-        } else {
-            request->send(500, "text/plain", "Cannot communicate with C6 module for backup");
-        }
-    }
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleAPList(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    
-    response->print("[");
-    
-    // Create C6 module entry if online
-    if (apInfo.state == AP_STATE_ONLINE) {
-        response->print("{");
-        response->printf("\"hwType\": 198,"); // 0xC6 in decimal
-        response->printf("\"version\": %d,", apInfo.version);
-        response->printf("\"channel\": %d,", apInfo.channel);
-        response->printf("\"rssi\": %d,", apInfo.rssi);
-        response->printf("\"uptime\": %lu,", apInfo.uptime);
-        response->print("\"capabilities\": [\"C6\"],");
-        response->print("\"mac\": \"");
-        for (int i = 0; i < 8; i++) {
-            response->printf("%02X", apInfo.mac[i]);
-            if (i < 7) response->print(":");
-        }
-        response->print("\",");
-        response->printf("\"state\": \"online\"");
-        response->print("}");
-    }
-    
-    response->print("]");
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleGetC6Settings(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    DynamicJsonDocument doc(1024);
-    
-    // Get current C6 module settings from preferences or defaults
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-    
-    doc["channel"] = preferences.getInt("channel", 20);
-    doc["txPower"] = preferences.getInt("txPower", 10);
-    doc["panId"] = preferences.getString("panId", "0x1234");
-    doc["sleepMode"] = preferences.getString("sleepMode", "none");
-    doc["wakeInterval"] = preferences.getInt("wakeInterval", 60);
-    
-    preferences.end();
-    
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-#ifdef C6_OTA_FLASHING
-    static String jsonString = "";
-    
-    if (index == 0) {
-        jsonString = "";
-    }
-    
-    for (size_t i = 0; i < len; i++) {
-        jsonString += (char)data[i];
-    }
-    
-    if (index + len == total) {
-        DynamicJsonDocument doc(1024);
-        DeserializationError error = deserializeJson(doc, jsonString);
-        
-        if (!error) {
-            Preferences preferences;
-            preferences.begin("c6_module", false);
-            
-            if (doc.containsKey("channel")) preferences.putInt("channel", doc["channel"]);
-            if (doc.containsKey("txPower")) preferences.putInt("txPower", doc["txPower"]);
-            if (doc.containsKey("panId")) preferences.putString("panId", doc["panId"].as<String>());
-            if (doc.containsKey("sleepMode")) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-            if (doc.containsKey("wakeInterval")) preferences.putInt("wakeInterval", doc["wakeInterval"]);
-            
-            preferences.end();
-            
-            // Apply settings to C6 module
-            applyC6Settings();
-            
-            request->send(200, "application/json", "{\"success\":true}");
-        } else {
-            request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
-        }
-        
-        jsonString = "";
-    }
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleSaveC6Settings(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    // This function is replaced by handleSaveC6SettingsBody
-}
-
-void handleResetC6Settings(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    Preferences preferences;
-    preferences.begin("c6_module", false);
-    preferences.clear();
-    preferences.end();
-    
-    wsSerial("C6 module settings reset to defaults");
-    request->send(200, "application/json", "{\"success\":true}");
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleTestC6Connection(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    // Test connection to C6 module
-    bool connected = testC6ModuleConnection();
-    
-    DynamicJsonDocument doc(512);
-    doc["connected"] = connected;
-    doc["timestamp"] = millis();
-    
-    if (connected) {
-        doc["rssi"] = apInfo.rssi;
-        doc["version"] = apInfo.version;
-    }
-    
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleTestC6Radio(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    DynamicJsonDocument doc(512);
-    
-    // Perform radio test and get results
-    RadioTestResult result = performC6RadioTest();
-    
-    doc["rssi"] = result.rssi;
-    doc["packetsSent"] = result.packetsSent;
-    doc["packetsReceived"] = result.packetsReceived;
-    doc["errorRate"] = result.errorRate;
-    doc["timestamp"] = millis();
-    
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleRestartC6(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    wsSerial("Restarting C6 module...");
-    
-    // Send restart command to C6 module
-    bool success = restartC6Module();
-    
-    if (success) {
-        request->send(200, "application/json", "{\"success\":true}");
-    } else {
-        request->send(500, "application/json", "{\"success\":false,\"error\":\"Restart failed\"}");
-    }
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleBackupC6Config(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    DynamicJsonDocument doc(2048);
-    
-    // Collect all C6 configuration data
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-    
-    doc["channel"] = preferences.getInt("channel", 20);
-    doc["txPower"] = preferences.getInt("txPower", 10);
-    doc["panId"] = preferences.getString("panId", "0x1234");
-    doc["sleepMode"] = preferences.getString("sleepMode", "none");
-    doc["wakeInterval"] = preferences.getInt("wakeInterval", 60);
-    doc["backupDate"] = millis();
-    doc["firmwareVersion"] = apInfo.version;
-    
-    preferences.end();
-    
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    response->addHeader("Content-Disposition", "attachment; filename=c6_config_backup.json");
-    serializeJson(doc, *response);
-    request->send(response);
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleResetC6Config(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    if (request->hasParam("confirm") && request->getParam("confirm")->value() == "true") {
-        // Reset all C6 configuration
-        Preferences preferences;
-        preferences.begin("c6_module", false);
-        preferences.clear();
-        preferences.end();
-        
-        // Reset C6 module to factory defaults
-        bool success = factoryResetC6Module();
-        
-        if (success) {
-            wsSerial("C6 module configuration reset completed");
-            request->send(200, "application/json", "{\"success\":true}");
-        } else {
-            request->send(500, "application/json", "{\"success\":false,\"error\":\"Reset failed\"}");
-        }
-    } else {
-        request->send(400, "application/json", "{\"success\":false,\"error\":\"Confirmation required\"}");
-    }
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-#ifdef C6_OTA_FLASHING
-    static File uploadFile;
-    static bool verifyAfterUpload = false;
-    static size_t totalSize = 0;
-    
-    if (!index) {
-        // Get verification flag from request parameters
-        if (request->hasParam("verify", true)) {
-            verifyAfterUpload = (request->getParam("verify", true)->value() == "1");
-        }
-        
-        wsSerial("Starting C6 firmware upload: " + filename);
-        if (verifyAfterUpload) {
-            wsSerial("Firmware verification enabled");
-        }
-        
-        // Create temporary file for upload
-        String tempPath = "/temp_c6_firmware.bin";
-        uploadFile = contentFS->open(tempPath, "w");
-        if (!uploadFile) {
-            wsSerial("ERROR: Failed to create temporary file for upload");
-            request->send(500, "text/plain", "Storage error");
-            return;
-        }
-        
-        totalSize = 0;
-    }
-    
-    if (uploadFile && len) {
-        size_t written = uploadFile.write(data, len);
-        if (written != len) {
-            wsSerial("ERROR: Failed to write firmware data");
-            uploadFile.close();
-            request->send(500, "text/plain", "Write error");
-            return;
-        }
-        totalSize += len;
-    }
-    
-    if (final) {
-        if (uploadFile) {
-            uploadFile.close();
-            
-            wsSerial("Firmware upload completed: " + String(totalSize) + " bytes");
-            
-            // Validate minimum firmware size
-            if (totalSize < 64 * 1024) { // 64KB minimum
-                wsSerial("ERROR: Firmware file too small");
-                contentFS->remove("/temp_c6_firmware.bin");
-                request->send(400, "text/plain", "Firmware file too small");
-                return;
-            }
-            
-            if (totalSize > 2 * 1024 * 1024) { // 2MB maximum
-                wsSerial("ERROR: Firmware file too large");
-                contentFS->remove("/temp_c6_firmware.bin");
-                request->send(400, "text/plain", "Firmware file too large");
-                return;
-            }
-            
-            wsSerial("Starting firmware flash process...");
-            apInfo.state = AP_STATE_FLASHING;
-            
-            // Create task parameter structure
-            struct FirmwareUpdateParams {
-                String filename;
-                bool verify;
-            };
-            
-            FirmwareUpdateParams* params = new FirmwareUpdateParams();
-            params->filename = "/temp_c6_firmware.bin";
-            params->verify = verifyAfterUpload;
-            
-            // Start firmware update task
-            xTaskCreate(C6firmwareUpdateTask, "C6FirmwareUpdate", 8192, 
-                       params, 10, NULL);
-                       
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Upload complete, starting installation\"}");
-        } else {
-            request->send(500, "text/plain", "Upload file handle lost");
-        }
-    }
-#else
-    request->send(400, "text/plain", "C6 module not supported");
-#endif
-}
-
-// Drives and Device Management Functions
-// ======================================
-
-void handleListDrives(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(4096);
-    JsonArray drives = doc.createNestedArray("drives");
-    
-    // On Windows, check common drive letters
-    #ifdef _WIN32
-    for (char drive = 'A'; drive <= 'Z'; drive++) {
-        String drivePath = String(drive) + ":/";
-        // This is a placeholder - actual drive detection would need OS-specific code
-        // For now, we'll simulate some common drives
-        if (drive == 'C' || drive == 'D' || drive == 'E') {
-            JsonObject driveObj = drives.createNestedObject();
-            driveObj["letter"] = String(drive);
-            driveObj["path"] = drivePath;
-            driveObj["label"] = "Local Disk (" + String(drive) + ":)";
-            driveObj["type"] = "fixed";
-            driveObj["available"] = true;
-        }
-    }
-    #else
-    // On Linux/Unix systems, list common mount points
-    JsonObject driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/";
-    driveObj["path"] = "/";
-    driveObj["label"] = "Root filesystem";
-    driveObj["type"] = "fixed";
-    driveObj["available"] = true;
-    
-    driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/media";
-    driveObj["path"] = "/media/";
-    driveObj["label"] = "Media";
-    driveObj["type"] = "removable";
-    driveObj["available"] = true;
-    #endif
-    
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
-}
-
-void handleListSerialPorts(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(2048);
-    JsonArray ports = doc.createNestedArray("ports");
-    
-    // Common Windows COM ports
-    #ifdef _WIN32
-    for (int i = 1; i <= 20; i++) {
-        JsonObject portObj = ports.createNestedObject();
-        portObj["port"] = "COM" + String(i);
-        portObj["description"] = "Serial Port (COM" + String(i) + ")";
-        portObj["available"] = true; // Would need actual detection
-    }
-    #else
-    // Common Linux/Unix serial devices
-    const char* commonPorts[] = {
-        "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2", "/dev/ttyUSB3",
-        "/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyACM2", "/dev/ttyACM3",
-        "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3"
-    };
-    
-    for (const char* port : commonPorts) {
-        JsonObject portObj = ports.createNestedObject();
-        portObj["port"] = String(port);
-        portObj["description"] = "Serial Device " + String(port);
-        portObj["available"] = true; // Would need actual detection
-    }
-    #endif
-    
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
-}
-
-void handleFlashC6OTA(AsyncWebServerRequest *request) {
-#ifdef C6_OTA_FLASHING
-    if (!request->hasParam("firmware_file", true) || !request->hasParam("com_port", true)) {
-        request->send(400, "application/json", 
-            "{\"success\":false,\"error\":\"Missing firmware_file or com_port parameter\"}");
-        return;
-    }
-    
-    String firmwareFile = request->getParam("firmware_file", true)->value();
-    String comPort = request->getParam("com_port", true)->value();
-    
-    // Optional parameters with defaults
-    bool eraseFlash = request->hasParam("erase_flash", true) ? 
-                      request->getParam("erase_flash", true)->value() == "true" : false;
-    bool verifyFlash = request->hasParam("verify_flash", true) ? 
-                       request->getParam("verify_flash", true)->value() == "true" : true;
-    bool resetAfterFlash = request->hasParam("reset_after_flash", true) ? 
-                           request->getParam("reset_after_flash", true)->value() == "true" : true;
-    int baudRate = request->hasParam("baud_rate", true) ? 
-                   request->getParam("baud_rate", true)->value().toInt() : 921600;
-    
-    // Validate firmware file exists
-    if (!contentFS->exists(firmwareFile)) {
-        request->send(400, "application/json", 
-            "{\"success\":false,\"error\":\"Firmware file not found: " + firmwareFile + "\"}");
-        return;
-    }
-    
-    // Validate firmware file is not empty
-    File file = contentFS->open(firmwareFile, "r");
-    if (!file || file.size() == 0) {
-        if (file) file.close();
-        request->send(400, "application/json", 
-            "{\"success\":false,\"error\":\"Firmware file is empty or cannot be read\"}");
-        return;
-    }
-    file.close();
-    
-    // Validate baud rate
-    if (baudRate < 9600 || baudRate > 2000000) {
-        request->send(400, "application/json", 
-            "{\"success\":false,\"error\":\"Invalid baud rate. Must be between 9600 and 2000000\"}");
-        return;
-    }
-    
-    // For ESP32-C6 internal flashing, we don't actually need a COM port parameter
-    // but we keep it for compatibility with the frontend
-    wsSerial("Starting C6 OTA flash: " + firmwareFile);
-    wsSerial("Erase Flash: " + String(eraseFlash ? "Yes" : "No"));
-    wsSerial("Verify Flash: " + String(verifyFlash ? "Yes" : "No"));
-    wsSerial("Reset After Flash: " + String(resetAfterFlash ? "Yes" : "No"));
-    wsSerial("Baud Rate: " + String(baudRate));
-    
-    // Create task parameters structure
-    struct FlashParams {
-        String firmwareFile;
-        String comPort;
-        bool eraseFlash;
-        bool verifyFlash;
-        bool resetAfterFlash;
-        int baudRate;
-    };
-    
-    FlashParams* params = new FlashParams();
-    params->firmwareFile = firmwareFile;
-    params->comPort = comPort;
-    params->eraseFlash = eraseFlash;
-    params->verifyFlash = verifyFlash;
-    params->resetAfterFlash = resetAfterFlash;
-    params->baudRate = baudRate;
-    
-    // Start OTA flash task with increased stack size for the enhanced implementation
-    BaseType_t result = xTaskCreate(C6OTAFlashTask, "C6OTAFlash", 12288, params, 10, NULL);
-    
-    if (result == pdPASS) {
-        request->send(200, "application/json", 
-            "{\"success\":true,\"message\":\"C6 OTA flash started successfully\"}");
-    } else {
-        delete params;
-        request->send(500, "application/json", 
-            "{\"success\":false,\"error\":\"Failed to start C6 OTA flash task\"}");
-    }
-#else
-    request->send(400, "application/json", 
-        "{\"success\":false,\"error\":\"C6 OTA flashing not supported in this build\"}");
-#endif
-}
-
-// C6 Module Helper Functions
-// ===========================
-
-#ifdef C6_OTA_FLASHING
-
-void applyC6Settings() {
-    // Apply current settings to the C6 module
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-    
-    int channel = preferences.getInt("channel", 20);
-    int txPower = preferences.getInt("txPower", 10);
-    
-    preferences.end();
-    
-    // Send configuration commands to C6 module
-    sendC6Command("SET_CHANNEL", channel);
-    sendC6Command("SET_POWER", txPower);
-    
-    wsSerial("C6 settings applied successfully");
-}
-
-bool testC6ModuleConnection() {
-    // Check if C6 module is physically connected and responding
-    if (apInfo.state == AP_STATE_OFFLINE) {
-        wsSerial("C6 Module Connection Test: OFFLINE - Module not responding to ping");
-        return false;
-    }
-    
-    if (apInfo.version == 0) {
-        wsSerial("C6 Module Connection Test: FAILED - No version information received");
-        return false;
-    }
-    
-    // Test serial communication
-    bool serialTest = sendC6Command("PING", 0);
-    if (!serialTest) {
-        wsSerial("C6 Module Connection Test: FAILED - Serial communication test failed");
-        return false;
-    }
-    
-    wsSerial("C6 Module Connection Test: PASSED - Module responding normally");
-    wsSerial("Version: 0x" + String(apInfo.version, HEX));
-    wsSerial("Channel: " + String(apInfo.channel));
-    wsSerial("State: " + String(apInfo.state));
-    
-    return true;
-}
-
-RadioTestResult performC6RadioTest() {
-    RadioTestResult result = {0};
-    
-    wsSerial("Starting C6 Radio Functionality Test...");
-    
-    // Check if module is online first
-    if (apInfo.state != AP_STATE_ONLINE) {
-        wsSerial("Radio Test: FAILED - Module offline");
-        result.errorRate = 100.0f;
-        return result;
-    }
-    
-    // Test radio transmission
-    bool radioInitialized = sendC6Command("TEST_RADIO", 1);
-    if (!radioInitialized) {
-        wsSerial("Radio Test: FAILED - Radio initialization failed");
-        result.errorRate = 100.0f;
-        return result;
-    }
-    
-    // Simulate packet transmission test
-    result.rssi = apInfo.rssi;
-    result.packetsSent = 10;
-    
-    // Simulate some packet loss based on RSSI
-    if (apInfo.rssi > -50) {
-        result.packetsReceived = 10; // Good signal
-    } else if (apInfo.rssi > -70) {
-        result.packetsReceived = 9;  // Fair signal
-    } else if (apInfo.rssi > -80) {
-        result.packetsReceived = 7;  // Poor signal
-    } else {
-        result.packetsReceived = 5;  // Very poor signal
-    }
-    
-    result.errorRate = (1.0f - (float)result.packetsReceived / result.packetsSent) * 100.0f;
-    
-    if (result.errorRate > 50.0f) {
-        wsSerial("Radio Test: FAILED - High packet loss (" + String(result.errorRate, 1) + "%)");
-    } else if (result.errorRate > 20.0f) {
-        wsSerial("Radio Test: WARNING - Moderate packet loss (" + String(result.errorRate, 1) + "%)");
-    } else {
-        wsSerial("Radio Test: PASSED - Low packet loss (" + String(result.errorRate, 1) + "%)");
-    }
-    
-    wsSerial("RSSI: " + String(result.rssi) + " dBm");
-    wsSerial("Packets sent: " + String(result.packetsSent));
-    wsSerial("Packets received: " + String(result.packetsReceived));
-    
-    return result;
-}
-
-bool restartC6Module() {
-    // Send restart command to C6 module
-    return sendC6Command("RESTART", 0);
-}
-
-bool factoryResetC6Module() {
-    // Send factory reset command to C6 module
-    return sendC6Command("FACTORY_RESET", 0);
-}
-
-bool sendC6Command(const String& command, int parameter) {
-    // Send command to C6 module via serial interface
-    String cmd = command + ":" + String(parameter) + "\n";
-    
-    wsSerial("Sending C6 command: " + command + " with parameter: " + String(parameter));
-    
-    // Check if serial port is available
-    if (!Serial1) {
-        wsSerial("ERROR: Serial1 not available for C6 communication");
-        return false;
-    }
-    
-    // Clear any pending data
-    while (Serial1.available()) {
-        Serial1.read();
-    }
-    
-    // Send the command
-    Serial1.print(cmd);
-    Serial1.flush();
-    
-    // Wait for acknowledgment with timeout
-    unsigned long startTime = millis();
-    String response = "";
-    
-    while (millis() - startTime < 2000) { // 2 second timeout
-        if (Serial1.available()) {
-            char c = Serial1.read();
-            response += c;
-            
-            // Check for complete response
-            if (response.indexOf('\n') >= 0 || response.indexOf('>') >= 0) {
-                response.trim();
-                wsSerial("C6 Response: " + response);
-                
-                if (response.indexOf("ACK") >= 0 || response.indexOf("OK") >= 0) {
-                    return true;
-                } else if (response.indexOf("NOK") >= 0 || response.indexOf("ERROR") >= 0) {
-                    wsSerial("C6 command failed: " + response);
-                    return false;
-                }
-            }
-        }
-        delay(10);
-    }
-    
-    wsSerial("C6 command timeout - no response received");
-    return false;
-}
-
-#endif // C6_OTA_FLASHING
 
 

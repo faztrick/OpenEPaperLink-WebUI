@@ -1,5 +1,38 @@
 {
+    // ESP32 Development and Emulation Configuration
     "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Google, IndentWidth: 4, ColumnLimit: 0}",
+    
+    // ESP32 Emulation settings
+    "platformio-ide.useBuiltinPIOCore": false,
+    "platformio-ide.useDevelopmentPIOCore": false,
+    "platformio-ide.autoRebuildAutocompleteIndex": true,
+    "platformio-ide.enableTelemetry": false,
+    
+    // Debugging configuration for emulation
+    "debug.allowBreakpointsEverywhere": true,
+    "debug.openDebug": "openOnDebugBreak",
+    "debug.showInStatusBar": "onFirstSessionStart",
+    "debug.terminal.clearBeforeReusing": true,
+    
+    // ESP32 toolchain paths
+    "cortex-debug.gdbPath": "C:/Users/faztrick/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-gdb.exe",
+    "cortex-debug.armToolchainPath": "C:/Users/faztrick/.platformio/packages/toolchain-xtensa-esp32s3/bin/",
+    
+    // Wokwi ESP32 emulator configuration
+    "wokwi.projects.directory": "${workspaceFolder}/wokwi",
+    "wokwi.gdb.enabled": true,
+    "wokwi.gdb.port": 3334,
+    
+    // Terminal environment for ESP32 tools
+    "terminal.integrated.env.windows": {
+        "PLATFORMIO_CORE_DIR": "C:/Users/faztrick/.platformio",
+        "PLATFORMIO_PACKAGES_DIR": "C:/Users/faztrick/.platformio/packages",
+        "ESP_IDF_PATH": "C:/Users/faztrick/.platformio/packages/framework-espidf",
+        "IDF_PATH": "C:/Users/faztrick/.platformio/packages/framework-espidf",
+        "IDF_TARGET": "esp32s3"
+    },
+    
+    // File associations
     "files.associations": {
         "array": "cpp",
         "atomic": "cpp",
@@ -52,8 +85,38 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "chrono": "cpp",
-        "ratio": "cpp"
+        "ratio": "cpp",
+        "*.ino": "cpp",
+        "*.h": "c", 
+        "*.c": "c",
+        "*.cpp": "cpp",
+        "*.hpp": "cpp",
+        "platformio.ini": "ini",
+        "*.gdb": "gdb",
+        "gdbinit": "gdb"
     },
+    
+    // IntelliSense configuration for ESP32
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.default.configurationProvider": "platformio-ide.platformio-ide",
+    "C_Cpp.default.compilerPath": "C:/Users/faztrick/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-gcc.exe",
+    "C_Cpp.default.cStandard": "c17",
+    "C_Cpp.default.cppStandard": "c++17",
+    
+    // Search and indexing optimization
+    "search.exclude": {
+        "**/build": true,
+        "**/.pio": true,
+        "**/node_modules": true,
+        "**/esp-idf": true
+    },
+    
+    "files.exclude": {
+        "**/.pio/build": true,
+        "**/.pio/libdeps": true
+    },
+    
+    // ESP-IDF settings (preserved from original)
     "idf.currentSetup": "C:\\Users\\faztrick\\esp\\v5.3.1\\esp-idf",
     "idf.portWin": "COM11",
     "idf.openOcdConfigs": [
@@ -62,5 +125,16 @@
     "idf.customExtraVars": {
         "IDF_TARGET": "esp32s3"
     },
-    "idf.flashType": "UART"
+    "idf.flashType": "UART",
+    
+    // Code formatting
+    "editor.formatOnSave": true,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4,
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"  
+    }
 }

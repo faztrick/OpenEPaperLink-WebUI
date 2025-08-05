@@ -1,6 +1,22 @@
-// OpenAI Agent API Module for ESP32 AP-Flasher
-// ================================================
-
+// OpenAI GPT-4.1 Agent API Module for ESP32 AP-Flasher
+// ====================================================
+// 
+// OPTIMIZATION FEATURES:
+// - Centralized HTTP request handling with makeApiRequest()
+// - Standardized file operations with performFileOperation()
+// - Reusable OpenAI API calls with makeOpenAIRequest()
+// - Optimized conversation history management
+// - Consistent error handling patterns
+// - Reduced code duplication across functions
+// - Enhanced logging with level-based console output
+//
+// GPT-4.1 NEW FEATURES:
+// - Responses API endpoint support (/v1/responses)
+// - Structured Outputs with JSON schema validation
+// - Advanced reasoning capabilities
+// - Enhanced tool calling with better error handling
+// - Multi-step reasoning for complex tasks
+ 
 class OpenAIAgent {
     constructor() {
         this.config = null;
@@ -9,11 +25,8 @@ class OpenAIAgent {
         this.model = null;
         this.maxTokens = 4096;
         this.temperature = 0.7;
-        this.isProcessing = false;
+        this.isProcessing = false; 
         this.conversationHistory = [];
-        
-        // Load configuration
-        this.loadConfiguration();
         
         // Load configuration
         this.loadConfiguration();
@@ -32,70 +45,359 @@ class OpenAIAgent {
             scanNetworks: this.scanNetworks.bind(this)
         };
         
-        this.systemPrompt = `You are an AI assistant for an ESP32 AP-Flasher system managing OpenEPaperLink devices. You can:
+        this.systemPrompt = `You are an advanced AI assistant powered by GPT-4.1 for an ESP32 AP-Flasher system managing OpenEPaperLink devices. You have enhanced reasoning capabilities and can use structured outputs.
 
-1. **File Management**: Create, read, update, delete files in the system
-2. **System Control**: Execute commands, get system information
-3. **C6 Module Management**: Control ESP32-C6 wireless modules
-4. **Firmware Operations**: Flash firmware, manage updates
-5. **Network Operations**: Scan networks, manage connections
+**Your Advanced Capabilities:**
 
-Available functions:
-- createFile(path, content) - Create new files
-- readFile(path) - Read file contents
-- updateFile(path, content) - Update existing files
-- deleteFile(path) - Delete files
-- listFiles(directory) - List directory contents
-- executeSystemCommand(command) - Execute system commands
-- getSystemInfo() - Get system information
-- manageC6Module(action, params) - Control C6 modules
-- flashFirmware(type, file) - Flash firmware
-- scanNetworks() - Scan available networks
+1. **Complex Reasoning**: Use multi-step reasoning to analyze problems, break them down systematically, and provide comprehensive solutions
+2. **Structured Outputs**: Generate JSON-compliant responses when requested, with guaranteed schema adherence
+3. **Tool Integration**: Execute system functions with enhanced error handling and intelligent retry logic
+4. **System Analysis**: Perform comprehensive diagnostics, pattern recognition, and optimization recommendations
 
-Always provide clear, helpful responses and explain what actions you're taking.`;
+**Available Functions:**
+- File Management: Create, read, update, delete files with smart validation
+- System Control: Execute commands, monitor performance, get detailed diagnostics
+- C6 Module Management: Advanced wireless module control and optimization
+- Firmware Operations: Intelligent firmware flashing, verification, and rollback
+- Network Operations: Smart network analysis, optimization, and troubleshooting
+- BLE/ZBS Management: Advanced wireless protocol handling
+- Power Management: Intelligent power optimization and monitoring
+
+**Response Guidelines:**
+- Always explain your reasoning process for complex tasks
+- Use structured outputs when dealing with configuration data
+- Provide actionable recommendations based on analysis
+- Handle errors gracefully with fallback strategies
+- Maintain conversation context for follow-up questions
+
+Remember: You're not just executing commands, you're providing intelligent analysis and recommendations using GPT-4.1's advanced reasoning capabilities.`;
 
         this.initializeUI();
     }
 
+    // =====================================================
+    // OPTIMIZED UTILITY FUNCTIONS FOR REUSE
+    // =====================================================
+
+    /**
+     * Generic API request handler with standardized error handling
+     * @param {string} endpoint - API endpoint
+     * @param {Object} options - Fetch options
+     * @param {string} operation - Operation name for logging
+     * @returns {Promise<Object>} Standardized response object
+     */
+    async makeApiRequest(endpoint, options = {}, operation = 'API request') {
+        try {
+            this.logToConsole('debug', `Making ${operation} to ${endpoint}`);
+            
+            const response = await fetch(endpoint, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            });
+
+            if (!response.ok) {
+                let errorMessage = `${operation} failed: ${response.status} ${response.statusText}`;
+                
+                // Handle specific error codes
+                switch (response.status) {
+                    case 400:
+                        errorMessage = `Bad Request (400): Invalid data format or missing required fields for ${operation}`;
+                        break;
+                    case 401:
+                        errorMessage = `Unauthorized (401): Authentication failed for ${operation}`;
+                        break;
+                    case 403:
+                        errorMessage = `Forbidden (403): Access denied for ${operation}`;
+                        break;
+                    case 404:
+                        errorMessage = `Not Found (404): Endpoint not available for ${operation}`;
+                        break;
+                    case 500:
+                        errorMessage = `Server Error (500): Internal server error during ${operation}`;
+                        break;
+                }
+                
+                // Try to get detailed error message from response
+                try {
+                    const errorText = await response.text();
+                    if (errorText) {
+                        errorMessage += ` - Details: ${errorText}`;
+                    }
+                } catch (e) {
+                    // Ignore if can't read error text
+                }
+                
+                throw new Error(errorMessage);
+            }
+
+            // Handle different response types
+            const contentType = response.headers.get('content-type');
+            let data;
+            
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                data = await response.text();
+            }
+
+            this.logToConsole('debug', `${operation} completed successfully`);
+            return { success: true, data, response };
+
+        } catch (error) {
+            this.logToConsole('error', `${operation} failed: ${error.message}`);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Standardized file operation with consistent response format
+     * @param {string} endpoint - File operation endpoint
+     * @param {Object} options - Request options
+     * @param {string} operation - Operation description
+     * @param {Object} extraData - Additional data to include in response
+     * @returns {Promise<Object>} Standardized file operation response
+     */
+    async performFileOperation(endpoint, options, operation, extraData = {}) {
+        const result = await this.makeApiRequest(endpoint, options, operation);
+        
+        if (result.success) {
+            return {
+                success: true,
+                message: `${operation} completed successfully`,
+                ...extraData,
+                data: result.data
+            };
+        } else {
+            return {
+                success: false,
+                error: result.error
+            };
+        }
+    }
+
+    /**
+     * Create standardized OpenAI API request with GPT-4.1 features
+     * @param {Array} messages - Chat messages
+     * @param {Array} functions - Available functions (optional)
+     * @param {Object} options - Additional options for GPT-4.1
+     * @returns {Promise<Object>} API response
+     */
+    async makeOpenAIRequest(messages, functions = null, options = {}) {
+        const config = this.config?.openai || {};
+        const isResponsesAPI = this.apiUrl?.includes('/responses');
+        
+        const requestBody = {
+            model: this.model,
+            messages: messages,
+            max_tokens: this.maxTokens,
+            temperature: this.temperature,
+            ...options
+        };
+
+        // Add GPT-4.1 specific features
+        if (this.model.startsWith('gpt-4.1')) {
+            // Enable structured outputs if configured
+            if (config.parameters?.structured_outputs && options.response_format) {
+                requestBody.response_format = {
+                    type: "json_schema",
+                    json_schema: options.response_format
+                };
+            }
+            
+            // Enable reasoning mode if configured
+            if (config.parameters?.reasoning_mode) {
+                requestBody.reasoning = true;
+            }
+        }
+
+        if (functions) {
+            if (isResponsesAPI) {
+                // Use tools format for Responses API
+                requestBody.tools = functions.map(func => ({
+                    type: "function",
+                    function: func
+                }));
+                requestBody.tool_choice = "auto";
+            } else {
+                // Use legacy format for Chat Completions
+                requestBody.functions = functions;
+                requestBody.function_call = 'auto';
+            }
+        }
+
+        const endpoint = isResponsesAPI ? '/api/openai/responses' : '/api/openai/chat';
+        
+        return await this.makeApiRequest(endpoint, {
+            method: 'POST',
+            body: JSON.stringify(requestBody)
+        }, 'OpenAI API request');
+    }
+
+    /**
+     * Validate and encode URL parameters
+     * @param {Object} params - Parameters to encode
+     * @returns {string} Encoded query string
+     */
+    encodeUrlParams(params) {
+        return Object.entries(params)
+            .filter(([key, value]) => value !== null && value !== undefined)
+            .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+            .join('&');
+    }
+
+    /**
+     * Add conversation message with history management
+     * @param {string} role - Message role (user, assistant, function)
+     * @param {string} content - Message content
+     * @param {Object} extra - Extra properties (like function_call)
+     */
+    addToConversationHistory(role, content, extra = {}) {
+        const message = { role, content, ...extra };
+        this.conversationHistory.push(message);
+        
+        // Keep conversation history within limits
+        const maxHistory = this.config?.esp32?.ai_agent?.conversation_history_limit || 10;
+        if (this.conversationHistory.length > maxHistory) {
+            this.conversationHistory = this.conversationHistory.slice(-maxHistory);
+        }
+    }
+
+    /**
+     * Execute action-based operation with predefined endpoint mapping
+     * @param {Object} actionMap - Map of actions to endpoint configurations
+     * @param {string} action - Action to perform
+     * @param {Object} params - Action parameters
+     * @param {string} operationName - Name for logging purposes
+     * @returns {Promise<Object>} Operation result
+     */
+    async executeActionBasedOperation(actionMap, action, params = {}, operationName) {
+        const actionConfig = actionMap[action];
+        if (!actionConfig) {
+            return { success: false, error: `Unknown ${operationName} action: ${action}` };
+        }
+        
+        const options = { method: actionConfig.method };
+        if (actionConfig.body) {
+            options.body = JSON.stringify(actionConfig.body);
+        }
+        
+        const result = await this.performFileOperation(
+            actionConfig.endpoint, 
+            options, 
+            `${operationName} ${action}`, 
+            { action }
+        );
+        
+        if (result.success) {
+            result.result = result.data;
+            delete result.data; // Clean up for consistency
+        }
+        
+        return result;
+    }
+
+    // =====================================================
+    // END UTILITY FUNCTIONS
+    // =====================================================
+
     async loadConfiguration() {
         try {
             // Try to load from server first
-            const response = await fetch('/openai_config.json');
-            if (response.ok) {
-                this.config = await response.json();
+            const result = await this.makeApiRequest('/openai_config.json', { method: 'GET' }, 'Configuration loading');
+            
+            if (result.success && result.data) {
+                this.config = result.data;
                 this.logToConsole('info', 'Configuration loaded from server');
             } else {
-                throw new Error('Failed to load config from server');
+                throw new Error('Server configuration not available');
             }
         } catch (error) {
-            // Fallback to default configuration
-            this.logToConsole('warn', 'Using fallback configuration: ' + error.message);
-            this.config = this.getDefaultConfig();
+            this.logToConsole('warn', 'Server config failed, trying localStorage: ' + error.message);
+            
+            // Try localStorage fallback
+            try {
+                const localConfig = localStorage.getItem('openai_agent_config');
+                if (localConfig) {
+                    this.config = JSON.parse(localConfig);
+                    this.logToConsole('info', 'Configuration loaded from localStorage');
+                } else {
+                    throw new Error('No local configuration found');
+                }
+            } catch (localError) {
+                this.logToConsole('warn', 'Using fallback configuration: ' + localError.message);
+                this.config = this.getDefaultConfig();
+            }
         }
 
-        // Apply configuration
+        // Validate and apply configuration
+        this.validateConfiguration();
         this.applyConfiguration();
+    }
+
+    validateConfiguration() {
+        if (!this.config) {
+            this.config = this.getDefaultConfig();
+            return;
+        }
+
+        // Ensure required structure exists
+        if (!this.config.openai) {
+            this.config.openai = this.getDefaultConfig().openai;
+        }
+
+        if (!this.config.esp32) {
+            this.config.esp32 = this.getDefaultConfig().esp32;
+        }
+
+        // Validate API key
+        if (!this.config.openai.api_key || typeof this.config.openai.api_key !== 'string') {
+            this.logToConsole('warn', 'Invalid or missing API key in configuration');
+        }
+
+        // Validate model
+        if (!this.config.openai.models || !this.config.openai.models.default) {
+            this.config.openai.models = this.getDefaultConfig().openai.models;
+        }
+
+        // Validate parameters
+        if (!this.config.openai.parameters) {
+            this.config.openai.parameters = this.getDefaultConfig().openai.parameters;
+        }
+
+        this.logToConsole('info', 'Configuration validation completed');
     }
 
     getDefaultConfig() {
         return {
             openai: {
                 api_key: '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',
-                api_url: 'https://api.openai.com/v1/chat/completions',
+                api_url: 'https://api.openai.com/v1/responses',
                 models: {
-                    default: 'gpt-4o-mini',
-                    alternatives: ['gpt-3.5-turbo', 'gpt-4', 'gpt-4o']
+                    default: 'gpt-4.1',
+                    alternatives: ['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-3.5-turbo']
                 },
                 parameters: {
                     max_tokens: 4096,
                     temperature: 0.7,
-                    top_p: 1.0
+                    top_p: 1.0,
+                    structured_outputs: true,
+                    tool_calling: true,
+                    reasoning_mode: false
+                },
+                endpoints: {
+                    chat_completions: 'https://api.openai.com/v1/chat/completions',
+                    responses: 'https://api.openai.com/v1/responses'
                 }
             },
             esp32: {
                 ai_agent: {
                     enabled: true,
-                    conversation_history_limit: 10
+                    conversation_history_limit: 10,
+                    response_timeout: 30,
+                    structured_output_schema: true
                 }
             }
         };
@@ -116,21 +418,36 @@ Always provide clear, helpful responses and explain what actions you're taking.`
 
     async saveConfiguration() {
         try {
-            const response = await fetch('/save_config', {
+            // First try to save to server using proper endpoint
+            const result = await this.makeApiRequest('/littlefs_put', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(this.config)
-            });
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    path: '/openai_config.json',
+                    file: new Blob([JSON.stringify(this.config, null, 2)], { type: 'application/json' })
+                })
+            }, 'Configuration saving');
 
-            if (response.ok) {
-                this.logToConsole('info', 'Configuration saved successfully');
+            if (result.success) {
+                this.logToConsole('info', 'Configuration saved successfully to server');
                 return { success: true };
             } else {
-                throw new Error(`Failed to save config: ${response.statusText}`);
+                throw new Error(result.error);
             }
         } catch (error) {
-            this.logToConsole('error', 'Failed to save configuration: ' + error.message);
-            return { success: false, error: error.message };
+            this.logToConsole('warn', 'Server save failed, using fallback: ' + error.message);
+            
+            // Fallback: Save to localStorage for client-side persistence
+            try {
+                localStorage.setItem('openai_agent_config', JSON.stringify(this.config));
+                this.logToConsole('info', 'Configuration saved to local storage as fallback');
+                return { success: true, fallback: true };
+            } catch (localError) {
+                this.logToConsole('error', 'Failed to save configuration: ' + localError.message);
+                return { success: false, error: localError.message };
+            }
         }
     }
 
@@ -151,9 +468,9 @@ Always provide clear, helpful responses and explain what actions you're taking.`
                 <div class="agent-content">
                     <div class="agent-chat" id="agent-chat">
                         <div class="agent-message system">
-                            <strong>AI Assistant:</strong> Hello! I'm your AI assistant for managing the ESP32 AP-Flasher system. 
-                            I can help you with file management, system control, C6 modules, and firmware operations. 
-                            What would you like me to help you with?
+                            <strong>GPT-4.1 AI Assistant:</strong> Hello! I'm your advanced AI assistant powered by GPT-4.1 for managing the ESP32 AP-Flasher system. 
+                            I can help you with intelligent system analysis, structured data processing, advanced reasoning tasks, 
+                            and comprehensive device management. What would you like me to help you with?
                         </div>
                     </div>
                     
@@ -185,7 +502,7 @@ Always provide clear, helpful responses and explain what actions you're taking.`
             </div>
             
             <button id="agent-toggle-btn" onclick="openAIAgent.togglePanel()" class="floating-agent-btn">
-                🤖 AI Assistant
+                🤖 GPT-4.1 Assistant
             </button>
         `;
 
@@ -197,203 +514,15 @@ Always provide clear, helpful responses and explain what actions you're taking.`
     }
 
     addAgentStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .agent-panel {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                width: 400px;
-                max-height: 600px;
-                background: white;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-                z-index: 10000;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .agent-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 15px;
-                border-radius: 8px 8px 0 0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            
-            .agent-header h3 {
-                margin: 0;
-                font-size: 16px;
-            }
-            
-            .agent-content {
-                display: flex;
-                flex-direction: column;
-                height: 500px;
-            }
-            
-            .agent-chat {
-                flex: 1;
-                padding: 15px;
-                overflow-y: auto;
-                background: #f8f9fa;
-            }
-            
-            .agent-message {
-                margin-bottom: 15px;
-                padding: 10px;
-                border-radius: 6px;
-                font-size: 14px;
-                line-height: 1.4;
-            }
-            
-            .agent-message.user {
-                background: #007bff;
-                color: white;
-                margin-left: 20px;
-                border: 1px solid #0056b3;
-            }
-            
-            .agent-message.assistant {
-                background: #ffffff;
-                color: #333333;
-                border: 1px solid #ddd;
-                margin-right: 20px;
-            }
-            
-            .agent-message.system {
-                background: #e9ecef;
-                color: #495057;
-                border: 1px solid #ced4da;
-                font-style: italic;
-            }
-            
-            .agent-message.error {
-                background: #f8d7da;
-                border: 1px solid #f5c6cb;
-                color: #721c24;
-                font-weight: bold;
-            }
-            
-            .agent-message.function {
-                background: #d4edda;
-                border: 1px solid #c3e6cb;
-                color: #155724;
-                font-family: monospace;
-                font-size: 12px;
-            }
-            
-            .agent-input-area {
-                border-top: 1px solid #ddd;
-                padding: 15px;
-                background: white;
-            }
-            
-            .agent-suggestions {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 5px;
-                margin-bottom: 10px;
-            }
-            
-            .suggestion-btn {
-                background: #f8f9fa;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 5px 10px;
-                font-size: 12px;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            }
-            
-            .suggestion-btn:hover {
-                background: #e9ecef;
-            }
-            
-            .agent-input-container {
-                display: flex;
-                gap: 10px;
-                align-items: flex-end;
-            }
-            
-            #agent-input {
-                flex: 1;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 14px;
-                resize: vertical;
-                min-height: 40px;
-            }
-            
-            #agent-send-btn {
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            
-            .floating-agent-btn {
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                border-radius: 25px;
-                padding: 12px 20px;
-                font-size: 14px;
-                cursor: pointer;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-                z-index: 9999;
-                transition: transform 0.2s;
-            }
-            
-            .floating-agent-btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-            }
-            
-            .typing-indicator {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                color: #666;
-                font-style: italic;
-            }
-            
-            .typing-dots {
-                display: flex;
-                gap: 2px;
-            }
-            
-            .typing-dot {
-                width: 4px;
-                height: 4px;
-                background: #666;
-                border-radius: 50%;
-                animation: typing 1.4s infinite;
-            }
-            
-            .typing-dot:nth-child(2) {
-                animation-delay: 0.2s;
-            }
-            
-            .typing-dot:nth-child(3) {
-                animation-delay: 0.4s;
-            }
-            
-            @keyframes typing {
-                0%, 60%, 100% {
-                    transform: translateY(0);
-                }
-                30% {
-                    transform: translateY(-10px);
-                }
-            }
-        `;
-        document.head.appendChild(style);
+        // Dynamically load the CSS file
+        if (!document.getElementById('openai-agent-css')) {
+            const link = document.createElement('link');
+            link.id = 'openai-agent-css';
+            link.rel = 'stylesheet';
+            link.type = 'text/css';
+            link.href = 'openai-agent.css';
+            document.head.appendChild(link);
+        }
     }
 
     setupEventListeners() {
@@ -461,10 +590,7 @@ Always provide clear, helpful responses and explain what actions you're taking.`
 
     async processMessage(userMessage) {
         // Add to conversation history
-        this.conversationHistory.push({
-            role: 'user',
-            content: userMessage
-        });
+        this.addToConversationHistory('user', userMessage);
 
         // Prepare messages for API
         const messages = [
@@ -472,9 +598,9 @@ Always provide clear, helpful responses and explain what actions you're taking.`
             ...this.conversationHistory.slice(-10) // Keep last 10 messages for context
         ];
 
-        // Add function definitions
+        // Define functions for the AI agent
         const functions = [
-            // === FILE MANAGEMENT FUNCTIONS ===
+            // === BASIC SYSTEM FUNCTIONS ===
             {
                 name: 'createFile',
                 description: 'Create a new file in the system',
@@ -527,151 +653,49 @@ Always provide clear, helpful responses and explain what actions you're taking.`
                 parameters: {
                     type: 'object',
                     properties: {
-                        directory: { type: 'string', description: 'Directory path to list (default: /)', default: '/' }
+                        directory: { type: 'string', description: 'Directory path', default: '/' }
                     }
                 }
             },
-            
-            // === SYSTEM CONTROL FUNCTIONS ===
             {
                 name: 'getSystemInfo',
-                description: 'Get comprehensive system information including hardware, software, and status',
+                description: 'Get system information',
                 parameters: { type: 'object', properties: {} }
             },
             {
-                name: 'getNetworkInfo',
-                description: 'Get detailed network information including WiFi status and connections',
-                parameters: { type: 'object', properties: {} }
-            },
-            {
-                name: 'restartSystem',
-                description: 'Safely restart the ESP32 system',
-                parameters: { 
-                    type: 'object', 
-                    properties: {
-                        delay: { type: 'number', description: 'Delay in seconds before restart (default: 3)', default: 3 }
-                    }
-                }
-            },
-            {
-                name: 'scanWiFi',
-                description: 'Scan for available WiFi networks and return signal strengths',
-                parameters: { type: 'object', properties: {} }
-            },
-            
-            // === TAG CONTROL & E-PAPER FUNCTIONS ===
-            {
-                name: 'getTagStatus',
-                description: 'Get status of all connected e-paper tags',
-                parameters: { type: 'object', properties: {} }
-            },
-            {
-                name: 'controlTag',
-                description: 'Control specific e-paper tag operations',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        tagId: { type: 'string', description: 'Tag MAC address or ID' },
-                        action: { 
-                            type: 'string', 
-                            description: 'Action to perform', 
-                            enum: ['update', 'reset', 'sleep', 'wake', 'ping', 'config'] 
-                        },
-                        data: { type: 'string', description: 'Optional data for the action' }
-                    },
-                    required: ['tagId', 'action']
-                }
-            },
-            {
-                name: 'updateTagImage',
-                description: 'Update image on specific e-paper tag',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        tagId: { type: 'string', description: 'Tag MAC address or ID' },
-                        imageData: { type: 'string', description: 'Base64 encoded image data or image path' },
-                        imageType: { type: 'string', description: 'Image type', enum: ['bmp', 'png', 'jpg'] }
-                    },
-                    required: ['tagId', 'imageData']
-                }
-            },
-            
-            // === LED CONTROL FUNCTIONS ===
-            {
-                name: 'controlLEDs',
-                description: 'Control RGB LEDs and status indicators',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        action: { 
-                            type: 'string', 
-                            description: 'LED action', 
-                            enum: ['setBrightness', 'setColor', 'blink', 'pattern', 'off', 'rainbow'] 
-                        },
-                        brightness: { type: 'number', description: 'Brightness level (0-255)', minimum: 0, maximum: 255 },
-                        color: { type: 'string', description: 'Color in hex format (#FF0000) or name (red, blue, etc.)' },
-                        pattern: { type: 'string', description: 'Pattern name for LED sequences' },
-                        duration: { type: 'number', description: 'Duration in milliseconds for temporary effects' }
-                    },
-                    required: ['action']
-                }
-            },
-            
-            // === C6 MODULE MANAGEMENT ===
-            {
-                name: 'getC6Status',
-                description: 'Get detailed status of ESP32-C6 modules',
-                parameters: { type: 'object', properties: {} }
-            },
-            {
-                name: 'controlC6Module',
+                name: 'manageC6Module',
                 description: 'Control ESP32-C6 module operations',
                 parameters: {
                     type: 'object',
                     properties: {
-                        moduleId: { type: 'string', description: 'C6 module identifier (default: primary)', default: 'primary' },
                         action: { 
                             type: 'string', 
-                            description: 'Action to perform', 
-                            enum: ['reset', 'flash', 'configure', 'status', 'update', 'diagnostic'] 
+                            description: 'C6 module action', 
+                            enum: ['status', 'restart', 'update', 'settings'] 
                         },
-                        parameters: { type: 'object', description: 'Action-specific parameters' }
+                        params: { type: 'object', description: 'Action parameters' }
                     },
                     required: ['action']
                 }
             },
-            
-            // === OTA & FIRMWARE FUNCTIONS ===
             {
-                name: 'checkOTAUpdate',
-                description: 'Check for available OTA firmware updates',
+                name: 'flashFirmware',
+                description: 'Flash firmware to devices',
                 parameters: {
                     type: 'object',
                     properties: {
-                        target: { 
-                            type: 'string', 
-                            description: 'Update target', 
-                            enum: ['esp32', 'c6', 'all'],
-                            default: 'all'
-                        }
-                    }
-                }
-            },
-            {
-                name: 'performOTAUpdate',
-                description: 'Perform OTA firmware update',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        target: { type: 'string', description: 'Update target', enum: ['esp32', 'c6'] },
-                        firmwareUrl: { type: 'string', description: 'Firmware download URL' },
-                        version: { type: 'string', description: 'Firmware version' },
-                        force: { type: 'boolean', description: 'Force update even if same version', default: false }
+                        type: { type: 'string', description: 'Firmware type' },
+                        file: { type: 'string', description: 'Firmware file path' }
                     },
-                    required: ['target']
+                    required: ['type', 'file']
                 }
             },
-            
+            {
+                name: 'scanNetworks',
+                description: 'Scan for available WiFi networks',
+                parameters: { type: 'object', properties: {} }
+            },
+
             // === SERIAL AP FUNCTIONS ===
             {
                 name: 'getSerialAPStatus',
@@ -879,60 +903,52 @@ Always provide clear, helpful responses and explain what actions you're taking.`
         ];
 
         // Call OpenAI API via ESP32 proxy
-        const response = await fetch('/api/openai/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: this.model,
-                messages: messages,
-                functions: functions,
-                function_call: 'auto',
-                max_tokens: this.maxTokens,
-                temperature: this.temperature
-            })
-        });
+        const result = await this.makeOpenAIRequest(messages, functions);
 
-        if (!response.ok) {
-            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        if (!result.success) {
+            throw new Error(result.error);
         }
 
-        const data = await response.json();
-        const assistantMessage = data.choices[0].message;
+        const assistantMessage = result.data.choices[0].message;
 
-        // Check if AI wants to call a function
-        if (assistantMessage.function_call) {
-            const functionName = assistantMessage.function_call.name;
-            const functionArgs = JSON.parse(assistantMessage.function_call.arguments);
+        // Check if AI wants to call a function/tool
+        if (assistantMessage.function_call || assistantMessage.tool_calls) {
+            let functionName, functionArgs;
+            
+            // Handle both legacy function_call and new tool_calls formats
+            if (assistantMessage.tool_calls) {
+                // New Responses API format
+                const toolCall = assistantMessage.tool_calls[0];
+                functionName = toolCall.function.name;
+                functionArgs = JSON.parse(toolCall.function.arguments);
+            } else {
+                // Legacy format
+                functionName = assistantMessage.function_call.name;
+                functionArgs = JSON.parse(assistantMessage.function_call.arguments);
+            }
             
             this.addMessageToChat('function', `Executing: ${functionName}(${JSON.stringify(functionArgs)})`);
             
             // Execute the function
             const functionResult = await this.executeFunction(functionName, functionArgs);
             
-            // Add function result to conversation
-            this.conversationHistory.push({
-                role: 'assistant',
-                content: null,
-                function_call: assistantMessage.function_call
-            });
-            
-            this.conversationHistory.push({
-                role: 'function',
-                name: functionName,
-                content: JSON.stringify(functionResult)
-            });
+            // Add function result to conversation with proper format
+            if (assistantMessage.tool_calls) {
+                this.addToConversationHistory('assistant', null, { tool_calls: assistantMessage.tool_calls });
+                this.addToConversationHistory('tool', JSON.stringify(functionResult), { 
+                    tool_call_id: assistantMessage.tool_calls[0].id 
+                });
+            } else {
+                this.addToConversationHistory('assistant', null, { function_call: assistantMessage.function_call });
+                this.addToConversationHistory('function', JSON.stringify(functionResult), { name: functionName });
+            }
 
             // Get AI's response to the function result
             const followUpResponse = await this.getFollowUpResponse();
             return followUpResponse;
         } else {
             // Regular text response
-            this.conversationHistory.push({
-                role: 'assistant',
-                content: assistantMessage.content
-            });
+            this.addToConversationHistory('assistant', assistantMessage.content);
             return assistantMessage.content;
         }
     }
@@ -943,26 +959,14 @@ Always provide clear, helpful responses and explain what actions you're taking.`
             ...this.conversationHistory.slice(-10)
         ];
 
-        const response = await fetch('/api/openai/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: this.model,
-                messages: messages,
-                max_tokens: this.maxTokens,
-                temperature: this.temperature
-            })
-        });
-
-        const data = await response.json();
-        const content = data.choices[0].message.content;
+        const result = await this.makeOpenAIRequest(messages);
         
-        this.conversationHistory.push({
-            role: 'assistant',
-            content: content
-        });
+        if (!result.success) {
+            throw new Error(result.error);
+        }
+
+        const content = result.data.choices[0].message.content;
+        this.addToConversationHistory('assistant', content);
         
         return content;
     }
@@ -982,169 +986,121 @@ Always provide clear, helpful responses and explain what actions you're taking.`
     // Function implementations
     async createFile(args) {
         const { path, content } = args;
-        
-        try {
-            const response = await fetch('/create_file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, content })
-            });
-            
-            if (response.ok) {
-                return { success: true, message: `File created: ${path}` };
-            } else {
-                throw new Error(`Failed to create file: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        return await this.performFileOperation('/create_file', {
+            method: 'POST',
+            body: JSON.stringify({ path, content })
+        }, `File creation: ${path}`, { path });
     }
 
     async readFile(args) {
         const { path } = args;
+        const result = await this.performFileOperation(
+            `/read_file?path=${encodeURIComponent(path)}`, 
+            { method: 'GET' }, 
+            `File reading: ${path}`, 
+            { path }
+        );
         
-        try {
-            const response = await fetch(`/read_file?path=${encodeURIComponent(path)}`);
-            
-            if (response.ok) {
-                const content = await response.text();
-                return { success: true, content, path };
-            } else {
-                throw new Error(`Failed to read file: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
+        if (result.success) {
+            result.content = result.data;
+            delete result.data; // Clean up for consistency
         }
+        
+        return result;
     }
 
     async updateFile(args) {
         const { path, content } = args;
-        
-        try {
-            const response = await fetch('/update_file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, content })
-            });
-            
-            if (response.ok) {
-                return { success: true, message: `File updated: ${path}` };
-            } else {
-                throw new Error(`Failed to update file: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        return await this.performFileOperation('/update_file', {
+            method: 'POST',
+            body: JSON.stringify({ path, content })
+        }, `File update: ${path}`, { path });
     }
 
     async deleteFile(args) {
         const { path } = args;
-        
-        try {
-            const response = await fetch(`/delete_file?path=${encodeURIComponent(path)}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                return { success: true, message: `File deleted: ${path}` };
-            } else {
-                throw new Error(`Failed to delete file: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        return await this.performFileOperation(
+            `/delete_file?path=${encodeURIComponent(path)}`, 
+            { method: 'DELETE' }, 
+            `File deletion: ${path}`, 
+            { path }
+        );
     }
 
     async listFiles(args) {
         const { directory = '/' } = args;
+        const result = await this.performFileOperation(
+            `/list_files?dir=${encodeURIComponent(directory)}`, 
+            { method: 'GET' }, 
+            `Directory listing: ${directory}`, 
+            { directory }
+        );
         
-        try {
-            const response = await fetch(`/list_files?dir=${encodeURIComponent(directory)}`);
-            
-            if (response.ok) {
-                const files = await response.json();
-                return { success: true, files, directory };
-            } else {
-                throw new Error(`Failed to list files: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
+        if (result.success) {
+            result.files = result.data;
+            delete result.data; // Clean up for consistency
         }
+        
+        return result;
     }
 
     async getSystemInfo() {
-        try {
-            const response = await fetch('/sysinfo');
-            
-            if (response.ok) {
-                const info = await response.json();
-                return { success: true, systemInfo: info };
-            } else {
-                throw new Error(`Failed to get system info: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
+        const result = await this.performFileOperation('/sysinfo', { method: 'GET' }, 'System info retrieval');
+        
+        if (result.success) {
+            result.systemInfo = result.data;
+            delete result.data; // Clean up for consistency
         }
+        
+        return result;
     }
 
     async manageC6Module(args) {
         const { action, params = {} } = args;
         
-        try {
-            let endpoint = '';
-            let method = 'GET';
-            let body = null;
-            
-            switch (action) {
-                case 'status':
-                    endpoint = '/ap_list';
-                    break;
-                case 'restart':
-                    endpoint = '/restart_c6';
-                    method = 'POST';
-                    break;
-                case 'update':
-                    endpoint = '/update_c6';
-                    method = 'POST';
-                    body = JSON.stringify(params);
-                    break;
-                case 'settings':
-                    endpoint = '/get_c6_settings';
-                    break;
-                default:
-                    throw new Error(`Unknown C6 action: ${action}`);
-            }
-            
-            const response = await fetch(endpoint, {
-                method,
-                headers: body ? { 'Content-Type': 'application/json' } : {},
-                body
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                return { success: true, action, result };
-            } else {
-                throw new Error(`C6 ${action} failed: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
+        // Define endpoint mapping for C6 actions
+        const actionMap = {
+            'status': { endpoint: '/ap_list', method: 'GET' },
+            'restart': { endpoint: '/restart_c6', method: 'POST' },
+            'update': { endpoint: '/update_c6', method: 'POST', body: params },
+            'settings': { endpoint: '/get_c6_settings', method: 'GET' }
+        };
+        
+        return await this.executeActionBasedOperation(actionMap, action, params, 'C6');
+    }
+
+    async executeSystemCommand(args) {
+        const { command } = args;
+        return await this.performFileOperation('/execute_command', {
+            method: 'POST',
+            body: JSON.stringify({ command })
+        }, `System command: ${command}`, { command });
+    }
+
+    async flashFirmware(args) {
+        const { type, file } = args;
+        const result = await this.performFileOperation('/flash_firmware', {
+            method: 'POST',
+            body: JSON.stringify({ type, file })
+        }, `Firmware flash: ${type}`, { type, file });
+        
+        if (result.success) {
+            result.result = result.data;
+            delete result.data; // Clean up for consistency
         }
+        
+        return result;
     }
 
     async scanNetworks() {
-        try {
-            const response = await fetch('/get_ssid_list');
-            
-            if (response.ok) {
-                const networks = await response.json();
-                return { success: true, networks };
-            } else {
-                throw new Error(`Failed to scan networks: ${response.statusText}`);
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
+        const result = await this.performFileOperation('/get_ssid_list', { method: 'GET' }, 'Network scan');
+        
+        if (result.success) {
+            result.networks = result.data;
+            delete result.data; // Clean up for consistency
         }
+        
+        return result;
     }
 
     // UI Helper methods
@@ -1203,7 +1159,22 @@ Always provide clear, helpful responses and explain what actions you're taking.`
 
     logToConsole(level, message) {
         const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] [OpenAI Agent] [${level.toUpperCase()}] ${message}`);
+        const logMessage = `[${timestamp}] [OpenAI Agent] [${level.toUpperCase()}] ${message}`;
+        
+        // Console logging based on level
+        switch (level.toLowerCase()) {
+            case 'error':
+                console.error(logMessage);
+                break;
+            case 'warn':
+                console.warn(logMessage);
+                break;
+            case 'debug':
+                console.debug(logMessage);
+                break;
+            default:
+                console.log(logMessage);
+        }
         
         // Also log to diagnostics console if available
         if (typeof logToConsole === 'function') {

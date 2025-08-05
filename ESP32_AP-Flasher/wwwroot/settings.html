@@ -14,7 +14,6 @@
 	<script src="main.js?3.2" defer></script>
 	<!-- Feature-specific modules -->
 	<script src="compact-ui.js?2.75" defer></script>
-	<script src="setup.js?2.75" defer></script>
 	<script src="universal-menu.js" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 	<link rel="stylesheet"
@@ -410,6 +409,42 @@
 				<p>
 					<input type="button" value="Save" id="apcfgsave"><span id="apcfgmsg"></span>
 				</p>
+				
+				<h3>WiFi Configuration</h3>
+				<p>
+					<label for="wifi_current_ssid">Current WiFi SSID</label>
+					<input id="wifi_current_ssid" type="text" readonly style="background: rgba(255,255,255,0.05);">
+				</p>
+				<p>
+					<label for="wifi_new_ssid">New WiFi SSID</label>
+					<input id="wifi_new_ssid" type="text" placeholder="Enter SSID or scan">
+					<button id="wifi_scan_btn" class="wifibutton">Scan Networks</button>
+				</p>
+				<p>
+					<label for="wifi_password">WiFi Password</label>
+					<input id="wifi_password" type="password" placeholder="Enter WiFi password">
+				</p>
+				<p>
+					<label for="wifi_static_ip">Static IP (optional)</label>
+					<input id="wifi_static_ip" type="text" placeholder="192.168.1.100">
+				</p>
+				<p>
+					<label for="wifi_subnet">Subnet Mask (optional)</label>
+					<input id="wifi_subnet" type="text" placeholder="255.255.255.0">
+				</p>
+				<p>
+					<label for="wifi_gateway">Gateway (optional)</label>
+					<input id="wifi_gateway" type="text" placeholder="192.168.1.1">
+				</p>
+				<p>
+					<label for="wifi_dns">DNS Server (optional)</label>
+					<input id="wifi_dns" type="text" placeholder="8.8.8.8">
+				</p>
+				<p>
+					<button id="wifi_save_btn" class="wifibutton">Save WiFi Settings</button>
+					<span id="wifi_status_msg" style="margin-left: 15px; color: #6bcf7f;"></span>
+				</p>
+				
 				<h3>Manage</h3>
 				<p>
 					<button type="button" id="rebootbutton">Reboot AP</button> Saves the tagDB and instantly reboots the Access Point
@@ -563,8 +598,204 @@
 				setInterval(updateCompactHeaderStatus, 5000);
 				setInterval(updateFooterStatus, 10000);
 				setInterval(updateHeaderUptime, 60000);
+				
+				// Initialize WiFi management
+				initWifiManagement();
 			}, 1000);
 		});
+
+		// WiFi Management Functions
+		function initWifiManagement() {
+			// Load current WiFi configuration
+			loadCurrentWifiConfig();
+			
+			// Set up event listeners
+			const scanBtn = document.getElementById('wifi_scan_btn');
+			const saveBtn = document.getElementById('wifi_save_btn');
+			
+			if (scanBtn) {
+				scanBtn.addEventListener('click', scanWifiNetworks);
+			}
+			
+			if (saveBtn) {
+				saveBtn.addEventListener('click', saveWifiConfig);
+			}
+		}
+
+		function loadCurrentWifiConfig() {
+			fetch('get_wifi_config')
+				.then(response => response.json())
+				.then(data => {
+					const elements = {
+						'wifi_current_ssid': data.ssid || 'Not connected',
+						'wifi_static_ip': data.ip || '',
+						'wifi_subnet': data.mask || '',
+						'wifi_gateway': data.gw || '',
+						'wifi_dns': data.dns || ''
+					};
+					
+					Object.entries(elements).forEach(([id, value]) => {
+						const element = document.getElementById(id);
+						if (element) element.value = value;
+					});
+				})
+				.catch(error => {
+					console.error('Failed to load WiFi config:', error);
+					document.getElementById('wifi_status_msg').textContent = 'Failed to load current WiFi config';
+				});
+		}
+
+		function scanWifiNetworks() {
+			const scanBtn = document.getElementById('wifi_scan_btn');
+			const ssidInput = document.getElementById('wifi_new_ssid');
+			const statusMsg = document.getElementById('wifi_status_msg');
+			
+			if (!scanBtn || !ssidInput) return;
+			
+			// Update UI
+			scanBtn.disabled = true;
+			scanBtn.textContent = 'Scanning...';
+			statusMsg.textContent = 'Scanning for WiFi networks...';
+			statusMsg.style.color = '#4facfe';
+			
+			fetch('wifi_scan')
+				.then(response => {
+					if (!response.ok) {
+						throw new Error(`HTTP error! status: ${response.status}`);
+					}
+					return response.json();
+				})
+				.then(data => {
+					console.log('WiFi scan response:', data);
+					
+					if (!data.success) {
+						throw new Error('WiFi scan failed');
+					}
+
+					if (data.networkCount === 0) {
+						statusMsg.textContent = 'No WiFi networks found';
+						statusMsg.style.color = '#ff6b6b';
+						return;
+					}
+
+					// Create dropdown with found networks
+					const select = document.createElement('select');
+					select.id = 'wifi_new_ssid';
+					select.style = ssidInput.style;
+					
+					// Add manual entry option
+					const manualOption = document.createElement('option');
+					manualOption.value = '';
+					manualOption.text = '-- Enter manually --';
+					select.appendChild(manualOption);
+
+					// Sort networks by signal strength
+					const sortedNetworks = data.networks.sort((a, b) => b.rssi - a.rssi);
+
+					sortedNetworks.forEach(network => {
+						if (network.ssid && network.ssid.trim() !== '') {
+							const option = document.createElement('option');
+							option.value = network.ssid;
+							
+							// Format: SSID (Signal dBm) [Security]
+							const securityText = network.encryption === 0 ? 'Open' : 'Secured';
+							option.text = `${network.ssid} (${network.rssi}dBm) [${securityText}]`;
+							select.appendChild(option);
+						}
+					});
+
+					// Replace input with select
+					const currentValue = ssidInput.value;
+					ssidInput.replaceWith(select);
+					
+					// Add change handler to switch back to input if manual entry is selected
+					select.addEventListener('change', function() {
+						if (this.value === '') {
+							const input = document.createElement('input');
+							input.id = 'wifi_new_ssid';
+							input.type = 'text';
+							input.placeholder = 'Enter SSID manually';
+							input.style = this.style;
+							input.value = currentValue;
+							this.replaceWith(input);
+						}
+					});
+
+					statusMsg.textContent = `Found ${data.networkCount} networks`;
+					statusMsg.style.color = '#6bcf7f';
+				})
+				.catch(error => {
+					console.error('WiFi scan error:', error);
+					statusMsg.textContent = 'WiFi scan failed. Try again.';
+					statusMsg.style.color = '#ff6b6b';
+				})
+				.finally(() => {
+					scanBtn.disabled = false;
+					scanBtn.textContent = 'Scan Networks';
+				});
+		}
+
+		function saveWifiConfig() {
+			const saveBtn = document.getElementById('wifi_save_btn');
+			const statusMsg = document.getElementById('wifi_status_msg');
+			
+			const ssidElement = document.getElementById('wifi_new_ssid');
+			const ssid = ssidElement.value.trim();
+			
+			if (!ssid) {
+				statusMsg.textContent = 'Please enter or select an SSID';
+				statusMsg.style.color = '#ff6b6b';
+				return;
+			}
+			
+			const data = {
+				ssid: ssid,
+				pw: document.getElementById('wifi_password').value,
+				ip: document.getElementById('wifi_static_ip').value,
+				mask: document.getElementById('wifi_subnet').value,
+				gw: document.getElementById('wifi_gateway').value,
+				dns: document.getElementById('wifi_dns').value
+			};
+
+			// Update UI
+			saveBtn.disabled = true;
+			saveBtn.textContent = 'Saving...';
+			statusMsg.textContent = 'Saving WiFi configuration...';
+			statusMsg.style.color = '#4facfe';
+
+			fetch('save_wifi_config', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(data)
+			})
+			.then(response => {
+				if (response.ok) {
+					statusMsg.textContent = 'WiFi settings saved! Access Point will reboot...';
+					statusMsg.style.color = '#6bcf7f';
+					
+					// Clear password field for security
+					document.getElementById('wifi_password').value = '';
+					
+					// Show reboot message
+					setTimeout(() => {
+						statusMsg.textContent = 'Rebooting... Please wait and reconnect.';
+					}, 2000);
+				} else {
+					throw new Error('Failed to save WiFi settings');
+				}
+			})
+			.catch(error => {
+				console.error('Error saving WiFi settings:', error);
+				statusMsg.textContent = 'Failed to save WiFi settings';
+				statusMsg.style.color = '#ff6b6b';
+			})
+			.finally(() => {
+				saveBtn.disabled = false;
+				saveBtn.textContent = 'Save WiFi Settings';
+			});
+		}
 	</script>
 
 </body>

@@ -24,6 +24,35 @@
         option, select {
             font-family: monospace, 'lucida console', 'Courier New', Courier;
         }
+        .status-message {
+            margin-left: 10px;
+            padding: 5px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .status-success {
+            color: #4CAF50;
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        .status-error {
+            color: #f44336;
+            background-color: rgba(244, 67, 54, 0.1);
+        }
+        .status-info {
+            color: #2196F3;
+            background-color: rgba(33, 150, 243, 0.1);
+        }
+        #listssid:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .wifi-info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            border-left: 3px solid #4facfe;
+        }
     </style>
 </head>
 
@@ -36,10 +65,14 @@
         <div class="window">
             <h1>WiFi config</h1>
             <p>WiFi mac address: <span id="mac">-</span></p>
+            <div id="wifi_status" class="wifi-info" style="display: none;">
+                <strong>WiFi Status:</strong> <span id="wifi_status_text">Checking...</span>
+            </div>
             <pre>
 SSID            <input type="text" id="ssid"> <button id="listssid">find SSID</button>
 Password        <input type="password" id="pw">
             </pre>
+            <div id="scan_status"></div>
             <p>Fill in fields below for static IP. Otherwise, leave empty.<br></p>
             <pre>
 Static IP       <input type="text" id="ip">
@@ -48,10 +81,12 @@ Gateway         <input type="text" id="gw">
 DNS             <input type="text" id="dns">
             </pre>
             <button id="connect">Save WiFi settings and reboot</button><br>
+            <div id="save_status"></div>
 
         </div>
     </div>
-    <script src="setup.js"></script>
+    <script src="constants.js"></script>
+    <script src="main.js"></script>
 
 </body>
 

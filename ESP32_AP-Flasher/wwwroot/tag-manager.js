@@ -3,7 +3,7 @@
 
 /**
  * Tag Management Class
- */
+ */ 
 class TagManager {
     constructor() {
         this.tagDB = {};

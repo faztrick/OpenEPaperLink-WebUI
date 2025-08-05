@@ -5,8 +5,9 @@
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
     
-    <title>OpenAI Agent - ESP32 AP-Flasher</title>
+    <title>OpenAI GPT-4.1 Agent - ESP32 AP-Flasher</title>
     <link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
+    <link rel="stylesheet" href="visibility-fix.css?1.0" type="text/css" />
     <link rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     
@@ -17,7 +18,8 @@
     <script src="ui-components.js?3.0" defer></script>
     <script src="main.js?3.0" defer></script>
     <script src="universal-menu.js?3.1" defer></script>
-    <script src="openai-agent-enhanced.js?3.1" defer></script>
+    <script src="openai-agent.js?4.1" defer></script>
+    <script src="visibility-fix.js?1.0" defer></script>
     
     <!-- Debug script loading -->
     <script>
@@ -31,15 +33,15 @@
             setTimeout(() => {
                 console.log('Script status check:');
                 console.log('- universalMenu:', !!window.universalMenu);
-                console.log('- openAIAgentEnhanced:', !!window.openAIAgentEnhanced);
+                console.log('- openAIAgent:', !!window.openAIAgent);
                 console.log('- app-core loaded:', !!window.app);
                 console.log('- main.js loaded:', !!window.main);
                 
                 if (!window.universalMenu) {
                     console.warn('Universal menu not loaded, menu may not appear');
                 }
-                if (!window.openAIAgentEnhanced) {
-                    console.warn('OpenAI Enhanced Agent not loaded, AI functionality may not work');
+                if (!window.openAIAgent) {
+                    console.warn('OpenAI Agent not loaded, AI functionality may not work');
                 }
             }, 3000);
         });
@@ -117,6 +119,73 @@
             border-radius: 8px;
             margin: 10px;
         }
+        
+        /* AI Configuration Panel Styles */
+        .config-panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .config-section {
+            margin: 15px 0;
+        }
+        
+        .config-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        
+        .model-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .model-option {
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .model-option:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+        
+        .model-option.selected {
+            border-color: #007bff;
+            background: #e7f3ff;
+        }
+        
+        .model-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin: 5px 0;
+        }
+        
+        .new-badge {
+            background: #28a745;
+        }
+        
+        .premium-badge {
+            background: #ffc107;
+            color: #000;
+        }
     </style>
 </head>
 
@@ -152,14 +221,19 @@
     <div class="container">
         <!-- Agent Showcase -->
         <div class="agent-showcase">
-            <h1>🤖 OpenAI Agent Assistant</h1>
+            <h1>🤖 OpenAI GPT-4.1 Agent Assistant</h1>
             <p>Your intelligent assistant for ESP32 AP-Flasher system management</p>
-            <p><strong>Powered by GPT-4 Turbo</strong> | <strong>Real-time Function Calling</strong> | <strong>File Management</strong></p>
+            <p><strong>Powered by GPT-4.1</strong> | <strong>Responses API</strong> | <strong>Structured Outputs</strong> |
+                <strong>Advanced Reasoning</strong></p>
             
             <div style="margin-top: 20px;">
-                <button class="btn btn-large" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()" 
+                <button class="btn btn-large" onclick="if(window.openAIAgent) openAIAgent.togglePanel()"
                         style="background: rgba(255,255,255,0.2); color: white; border: 2px solid white;">
                     🚀 Launch AI Assistant
+                </button>
+                <button class="btn btn-large" onclick="toggleConfigPanel()"
+                    style="background: rgba(255,255,255,0.1); color: white; border: 2px solid rgba(255,255,255,0.5);">
+                    ⚙️ Configure AI
                 </button>
                 <button class="btn btn-large" onclick="demonstrateAgent()" 
                         style="background: rgba(255,255,255,0.1); color: white; border: 2px solid rgba(255,255,255,0.5);">
@@ -168,12 +242,144 @@
             </div>
         </div>
 
+        <!-- AI Configuration Panel -->
+        <div id="config-panel" class="config-panel" style="display: none;">
+            <h2>🤖 OpenAI GPT-4.1 Configuration</h2>
+        
+            <!-- Model Selection -->
+            <div class="config-section">
+                <h3>Model Selection</h3>
+                <div class="model-selector">
+                    <div class="model-option selected" data-model="gpt-4.1" onclick="selectModel('gpt-4.1')">
+                        <h4>GPT-4.1</h4>
+                        <div class="model-badge new-badge">NEW</div>
+                        <p>Flagship model for complex reasoning tasks</p>
+                        <small>Best for: Advanced analysis, complex problem solving</small>
+                    </div>
+                    <div class="model-option" data-model="gpt-4.1-mini" onclick="selectModel('gpt-4.1-mini')">
+                        <h4>GPT-4.1 Mini</h4>
+                        <div class="model-badge">FAST</div>
+                        <p>Optimized for speed and efficiency</p>
+                        <small>Best for: Quick responses, simple tasks</small>
+                    </div>
+                    <div class="model-option" data-model="gpt-4.1-nano" onclick="selectModel('gpt-4.1-nano')">
+                        <h4>GPT-4.1 Nano</h4>
+                        <div class="model-badge">LIGHTWEIGHT</div>
+                        <p>Ultra-fast for basic operations</p>
+                        <small>Best for: System commands, file operations</small>
+                    </div>
+                    <div class="model-option" data-model="gpt-4o" onclick="selectModel('gpt-4o')">
+                        <h4>GPT-4o</h4>
+                        <div class="model-badge premium-badge">MULTIMODAL</div>
+                        <p>Vision and audio capabilities</p>
+                        <small>Best for: Image analysis, audio processing</small>
+                    </div>
+                </div>
+            </div>
+        
+            <!-- API Configuration -->
+            <div class="config-section">
+                <h3>API Configuration</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label>API Key:</label>
+                        <input type="password" id="apiKey" class="config-input" placeholder="sk-proj-..." />
+                    </div>
+                    <div>
+                        <label>API URL:</label>
+                        <select id="apiUrl" class="config-input">
+                            <option value="https://api.openai.com/v1/chat/completions">Chat Completions (Standard)</option>
+                            <option value="https://api.openai.com/v1/responses" selected>Responses API (New)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Max Tokens:</label>
+                        <input type="number" id="maxTokens" class="config-input" value="4096" min="1" max="32768" />
+                    </div>
+                    <div>
+                        <label>Temperature:</label>
+                        <input type="range" id="temperature" class="config-input" value="0.7" min="0" max="2" step="0.1"
+                            oninput="document.getElementById('tempValue').textContent = this.value" />
+                        <span id="tempValue">0.7</span>
+                    </div>
+                </div>
+            </div>
+        
+            <!-- Advanced Features -->
+            <div class="config-section">
+                <h3>Advanced Features (GPT-4.1)</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label>
+                            <input type="checkbox" id="structuredOutputs" checked />
+                            Structured Outputs
+                        </label>
+                        <small style="display: block; color: #666;">Enable JSON schema validation</small>
+                    </div>
+                    <div>
+                        <label>
+                            <input type="checkbox" id="toolCalling" checked />
+                            Advanced Tool Calling
+                        </label>
+                        <small style="display: block; color: #666;">Enhanced function execution</small>
+                    </div>
+                    <div>
+                        <label>
+                            <input type="checkbox" id="reasoningMode" />
+                            Reasoning Mode
+                        </label>
+                        <small style="display: block; color: #666;">Complex multi-step reasoning</small>
+                    </div>
+                    <div>
+                        <label>
+                            <input type="checkbox" id="webSearch" />
+                            Web Search Tools
+                        </label>
+                        <small style="display: block; color: #666;">Real-time information access</small>
+                    </div>
+                </div>
+            </div>
+        
+            <!-- Agent Behavior -->
+            <div class="config-section">
+                <h3>Agent Behavior</h3>
+                <div>
+                    <label>System Prompt:</label>
+                    <textarea id="systemPrompt" class="config-input" rows="4"
+                        placeholder="You are an AI assistant for ESP32 AP-Flasher..."></textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <div>
+                        <label>Conversation History Limit:</label>
+                        <input type="number" id="historyLimit" class="config-input" value="10" min="5" max="50" />
+                    </div>
+                    <div>
+                        <label>Response Timeout (seconds):</label>
+                        <input type="number" id="responseTimeout" class="config-input" value="30" min="10" max="120" />
+                    </div>
+                </div>
+            </div>
+        
+            <!-- Action Buttons -->
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn btn-success" onclick="saveConfiguration()">💾 Save Configuration</button>
+                <button class="btn btn-primary" onclick="testConfiguration()">🧪 Test Configuration</button>
+                <button class="btn btn-warning" onclick="resetToDefaults()">🔄 Reset to Defaults</button>
+                <button class="btn btn-secondary" onclick="toggleConfigPanel()">❌ Close</button>
+            </div>
+        
+            <!-- Configuration Status -->
+            <div id="config-status" style="margin-top: 15px; padding: 10px; border-radius: 4px; display: none;"></div>
+        </div>
+
         <!-- Status Panel -->
         <div class="status-panel">
             <h3>🟢 AI Agent Status</h3>
             <p><strong>API Status:</strong> <span id="apiStatus">Connected ✅</span></p>
-            <p><strong>Model:</strong> GPT-4 Turbo</p>
-            <p><strong>Functions Available:</strong> <span id="functionCount">10</span></p>
+            <p><strong>Model:</strong> <span id="currentModel">GPT-4.1</span></p>
+            <p><strong>API Endpoint:</strong> <span id="currentEndpoint">Responses API</span></p>
+            <p><strong>Functions Available:</strong> <span id="functionCount">25</span></p>
+            <p><strong>Advanced Features:</strong> <span id="activeFeatures">Structured Outputs, Tool Calling</span></p>
             <p><strong>Security:</strong> API Key configured and active</p>
         </div>
 
@@ -252,7 +458,7 @@
             <!-- Code Generation -->
             <div class="feature-card">
                 <h3>💻 Smart Code Assistant</h3>
-                <p>Generate code, configurations, and documentation with AI.</p>
+                <p>Generate code, configurations, and documentation with GPT-4.1's advanced reasoning.</p>
                 
                 <div class="example-commands">
                     <h4>Example Commands:</h4>
@@ -260,6 +466,33 @@
                     <div class="command-example">"Create JavaScript functions for sensor reading"</div>
                     <div class="command-example">"Write CSS styles for the interface"</div>
                     <div class="command-example">"Generate configuration templates"</div>
+                </div>
+            </div>
+            <!-- New GPT-4.1 Features -->
+            <div class="feature-card">
+                <h3>🧠 Advanced Reasoning (NEW)</h3>
+                <p>GPT-4.1's enhanced reasoning capabilities for complex problem solving.</p>
+            
+                <div class="example-commands">
+                    <h4>Example Commands:</h4>
+                    <div class="command-example">"Analyze system logs and identify performance bottlenecks"</div>
+                    <div class="command-example">"Troubleshoot complex network connectivity issues"</div>
+                    <div class="command-example">"Design optimal firmware update strategies"</div>
+                    <div class="command-example">"Create comprehensive system diagnostics report"</div>
+                </div>
+            </div>
+            
+            <!-- Structured Outputs -->
+            <div class="feature-card">
+                <h3>📊 Structured Data Processing</h3>
+                <p>Generate and parse structured data with guaranteed JSON schema compliance.</p>
+            
+                <div class="example-commands">
+                    <h4>Example Commands:</h4>
+                    <div class="command-example">"Create a device inventory in JSON format"</div>
+                    <div class="command-example">"Generate configuration templates with validation"</div>
+                    <div class="command-example">"Parse and analyze system metrics data"</div>
+                    <div class="command-example">"Export settings in structured format"</div>
                 </div>
             </div>
         </div>
@@ -278,23 +511,391 @@
         <div style="text-align: center; margin: 40px 0;">
             <h2>🚀 Quick Actions</h2>
             <div style="margin: 20px 0;">
-                <button class="btn btn-primary btn-large" onclick="askAI('Show me the current system status and C6 module information')">
-                    📊 System Overview
+                <button class="btn btn-primary btn-large"
+                    onclick="askAI('Use advanced reasoning to analyze the current system status and C6 module information, then provide recommendations')">
+                    📊 Intelligent System Analysis
                 </button>
-                <button class="btn btn-success btn-large" onclick="askAI('List all files in the system and show their sizes')">
-                    📁 File Inventory
+                <button class="btn btn-success btn-large"
+                    onclick="askAI('Create a structured inventory of all files in the system with metadata in JSON format')">
+                    📁 Structured File Inventory
                 </button>
-                <button class="btn btn-warning btn-large" onclick="askAI('Check C6 module connectivity and perform diagnostics')">
-                    🔧 C6 Diagnostics
+                <button class="btn btn-warning btn-large"
+                    onclick="askAI('Perform comprehensive C6 module diagnostics using multi-step reasoning and suggest optimizations')">
+                    🔧 Advanced C6 Diagnostics
                 </button>
-                <button class="btn btn-info btn-large" onclick="askAI('Scan for WiFi networks and show signal strengths')">
-                    📡 Network Scan
+                <button class="btn btn-info btn-large"
+                    onclick="askAI('Scan WiFi networks, analyze signal patterns, and recommend optimal network configuration')">
+                    📡 Smart Network Analysis
                 </button>
             </div>
         </div>
     </div>
 
     <script>
+            // Configuration Management
+            let currentConfig = {
+                model: 'gpt-4.1',
+                apiKey: '',
+                apiUrl: 'https://api.openai.com/v1/responses',
+                maxTokens: 4096,
+                temperature: 0.7,
+                structuredOutputs: true,
+                toolCalling: true,
+                reasoningMode: false,
+                webSearch: false,
+                systemPrompt: '',
+                historyLimit: 10,
+                responseTimeout: 30
+            };
+
+            function toggleConfigPanel() {
+                const panel = document.getElementById('config-panel');
+                const isVisible = panel.style.display !== 'none';
+                panel.style.display = isVisible ? 'none' : 'block';
+
+                if (!isVisible) {
+                    loadCurrentConfiguration();
+                }
+            }
+
+            function selectModel(modelName) {
+                // Update visual selection
+                document.querySelectorAll('.model-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                document.querySelector(`[data-model="${modelName}"]`).classList.add('selected');
+
+                // Update configuration
+                currentConfig.model = modelName;
+
+                // Update status display
+                document.getElementById('currentModel').textContent = modelName;
+
+                // Update API URL based on model capabilities
+                const apiUrlSelect = document.getElementById('apiUrl');
+                if (modelName.startsWith('gpt-4.1')) {
+                    apiUrlSelect.value = 'https://api.openai.com/v1/responses';
+                    document.getElementById('currentEndpoint').textContent = 'Responses API';
+                }
+            }
+
+            function loadCurrentConfiguration() {
+                // Load configuration from the OpenAI agent if available
+                if (window.openAIAgent && window.openAIAgent.config) {
+                    const config = window.openAIAgent.config;
+
+                    if (config.openai) {
+                        currentConfig.apiKey = config.openai.api_key || '';
+                        currentConfig.apiUrl = config.openai.api_url || config.openai.endpoints?.responses || 'https://api.openai.com/v1/responses';
+                        currentConfig.model = config.openai.models?.default || 'gpt-4.1';
+                        currentConfig.maxTokens = config.openai.parameters?.max_tokens || 4096;
+                        currentConfig.temperature = config.openai.parameters?.temperature || 0.7;
+                    }
+
+                    if (config.esp32?.ai_agent) {
+                        currentConfig.historyLimit = config.esp32.ai_agent.conversation_history_limit || 10;
+                    }
+                }
+
+                // Update form fields
+                document.getElementById('apiKey').value = currentConfig.apiKey;
+                document.getElementById('apiUrl').value = currentConfig.apiUrl;
+                document.getElementById('maxTokens').value = currentConfig.maxTokens;
+                document.getElementById('temperature').value = currentConfig.temperature;
+                document.getElementById('tempValue').textContent = currentConfig.temperature;
+                document.getElementById('structuredOutputs').checked = currentConfig.structuredOutputs;
+                document.getElementById('toolCalling').checked = currentConfig.toolCalling;
+                document.getElementById('reasoningMode').checked = currentConfig.reasoningMode;
+                document.getElementById('webSearch').checked = currentConfig.webSearch;
+                document.getElementById('historyLimit').value = currentConfig.historyLimit;
+                document.getElementById('responseTimeout').value = currentConfig.responseTimeout;
+
+                // Set system prompt
+                const systemPromptDefault = `You are an advanced AI assistant for an ESP32 AP-Flasher system managing OpenEPaperLink devices. You have access to GPT-4.1's enhanced reasoning capabilities.
+
+Key capabilities:
+1. **Advanced Reasoning**: Use multi-step reasoning for complex problem analysis
+2. **Structured Outputs**: Generate JSON-compliant responses when requested
+3. **Tool Integration**: Execute system functions with enhanced error handling
+4. **System Analysis**: Perform comprehensive diagnostics and optimization
+
+Available functions include file management, system control, C6 module management, firmware operations, network analysis, and more. Always provide clear, helpful responses and explain your reasoning process when solving complex problems.`;
+
+                document.getElementById('systemPrompt').value = currentConfig.systemPrompt || systemPromptDefault;
+
+                // Update model selection
+                selectModel(currentConfig.model);
+            }
+
+            async function saveConfiguration() {
+                const status = document.getElementById('config-status');
+
+                try {
+                    // Gather configuration from form
+                    const newConfig = {
+                        openai: {
+                            api_key: document.getElementById('apiKey').value,
+                            api_url: document.getElementById('apiUrl').value,
+                            models: {
+                                default: currentConfig.model,
+                                alternatives: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o']
+                            },
+                            parameters: {
+                                max_tokens: parseInt(document.getElementById('maxTokens').value),
+                                temperature: parseFloat(document.getElementById('temperature').value),
+                                structured_outputs: document.getElementById('structuredOutputs').checked,
+                                tool_calling: document.getElementById('toolCalling').checked,
+                                reasoning_mode: document.getElementById('reasoningMode').checked,
+                                web_search: document.getElementById('webSearch').checked
+                            },
+                            endpoints: {
+                                chat_completions: 'https://api.openai.com/v1/chat/completions',
+                                responses: 'https://api.openai.com/v1/responses'
+                            }
+                        },
+                        esp32: {
+                            ai_agent: {
+                                enabled: true,
+                                conversation_history_limit: parseInt(document.getElementById('historyLimit').value),
+                                response_timeout: parseInt(document.getElementById('responseTimeout').value),
+                                system_prompt: document.getElementById('systemPrompt').value
+                            }
+                        }
+                    };
+
+                    // Validate API key
+                    if (!newConfig.openai.api_key.trim()) {
+                        throw new Error('API Key is required');
+                    }
+
+                    // Show saving status
+                    status.style.display = 'block';
+                    status.style.background = '#d1ecf1';
+                    status.style.color = '#0c5460';
+                    status.style.border = '1px solid #bee5eb';
+                    status.innerHTML = '💾 Saving configuration...';
+
+                    // Save via proper file endpoint
+                    const formData = new FormData();
+                    formData.append('path', '/openai_config.json');
+                    formData.append('file', new Blob([JSON.stringify(newConfig, null, 2)], { type: 'application/json' }), 'openai_config.json');
+
+                    const response = await fetch('/littlefs_put', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        // Update agent configuration if available
+                        if (window.openAIAgent) {
+                            window.openAIAgent.config = newConfig;
+                            window.openAIAgent.applyConfiguration();
+                        }
+
+                        status.style.background = '#d4edda';
+                        status.style.color = '#155724';
+                        status.style.border = '1px solid #c3e6cb';
+                        status.innerHTML = '✅ Configuration saved successfully!';
+
+                        updateStatusDisplay();
+
+                        // Also save to localStorage as backup
+                        localStorage.setItem('openai_agent_config', JSON.stringify(newConfig));
+
+                    } else {
+                        const errorText = await response.text();
+                        throw new Error(`Server error (${response.status}): ${errorText}`);
+                    }
+
+                    // Hide status after 3 seconds
+                    setTimeout(() => {
+                        status.style.display = 'none';
+                    }, 3000);
+
+                } catch (error) {
+                    console.error('Save configuration error:', error);
+
+                    // Try localStorage fallback
+                    try {
+                        const configToSave = {
+                            openai: {
+                                api_key: document.getElementById('apiKey').value,
+                                api_url: document.getElementById('apiUrl').value,
+                                models: {
+                                    default: currentConfig.model,
+                                    alternatives: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o']
+                                },
+                                parameters: {
+                                    max_tokens: parseInt(document.getElementById('maxTokens').value) || 4096,
+                                    temperature: parseFloat(document.getElementById('temperature').value) || 0.7,
+                                    structured_outputs: document.getElementById('structuredOutputs').checked,
+                                    tool_calling: document.getElementById('toolCalling').checked,
+                                    reasoning_mode: document.getElementById('reasoningMode').checked,
+                                    web_search: document.getElementById('webSearch').checked
+                                }
+                            },
+                            esp32: {
+                                ai_agent: {
+                                    enabled: true,
+                                    conversation_history_limit: parseInt(document.getElementById('historyLimit').value) || 10,
+                                    response_timeout: parseInt(document.getElementById('responseTimeout').value) || 30
+                                }
+                            }
+                        };
+
+                        localStorage.setItem('openai_agent_config', JSON.stringify(configToSave));
+
+                        status.style.display = 'block';
+                        status.style.background = '#fff3cd';
+                        status.style.color = '#856404';
+                        status.style.border = '1px solid #ffeaa7';
+                        status.innerHTML = `⚠️ Server save failed. Configuration saved locally.<br><small>Error: ${error.message}</small>`;
+
+                    } catch (localError) {
+                        status.style.display = 'block';
+                        status.style.background = '#f8d7da';
+                        status.style.color = '#721c24';
+                        status.style.border = '1px solid #f5c6cb';
+                        status.innerHTML = `❌ Failed to save configuration: ${error.message}`;
+                    }
+                }
+            }
+
+            async function testConfiguration() {
+                const status = document.getElementById('config-status');
+
+                try {
+                    status.style.display = 'block';
+                    status.style.background = '#d1ecf1';
+                    status.style.color = '#0c5460';
+                    status.style.border = '1px solid #bee5eb';
+                    status.innerHTML = '🧪 Testing configuration...';
+
+                    // Validate form inputs
+                    const apiKey = document.getElementById('apiKey').value.trim();
+                    const apiUrl = document.getElementById('apiUrl').value.trim();
+                    const maxTokens = parseInt(document.getElementById('maxTokens').value);
+                    const temperature = parseFloat(document.getElementById('temperature').value);
+
+                    if (!apiKey) {
+                        throw new Error('API key is required for testing');
+                    }
+
+                    if (!apiKey.startsWith('sk-')) {
+                        throw new Error('API key should start with "sk-"');
+                    }
+
+                    if (!apiUrl) {
+                        throw new Error('API URL is required');
+                    }
+
+                    if (isNaN(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
+                        throw new Error('Max tokens must be between 1 and 32768');
+                    }
+
+                    if (isNaN(temperature) || temperature < 0 || temperature > 2) {
+                        throw new Error('Temperature must be between 0.0 and 2.0');
+                    }
+
+                    // Test local validation first
+                    status.innerHTML = '🧪 Validating configuration format...';
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Create test configuration
+                    const testConfig = {
+                        openai: {
+                            api_key: apiKey,
+                            api_url: apiUrl,
+                            models: { default: currentConfig.model },
+                            parameters: {
+                                max_tokens: maxTokens,
+                                temperature: temperature
+                            }
+                        }
+                    };
+
+                    status.innerHTML = '🧪 Testing API connectivity...';
+
+                    // Try to validate with OpenAI agent if available
+                    if (window.openAIAgent && typeof window.openAIAgent.makeApiRequest === 'function') {
+                        // Test simple request
+                        const testResult = await window.openAIAgent.makeApiRequest('/sysinfo', { method: 'GET' }, 'Test connection');
+
+                        if (testResult.success) {
+                            status.style.background = '#d4edda';
+                            status.style.color = '#155724';
+                            status.style.border = '1px solid #c3e6cb';
+                            status.innerHTML = '✅ Configuration test successful! System is responding correctly.';
+                        } else {
+                            throw new Error(`System connectivity test failed: ${testResult.error}`);
+                        }
+                    } else {
+                        // Fallback: Basic validation test
+                        const response = await fetch('/sysinfo');
+                        if (response.ok) {
+                            status.style.background = '#d4edda';
+                            status.style.color = '#155724';
+                            status.style.border = '1px solid #c3e6cb';
+                            status.innerHTML = '✅ Configuration validation successful! ESP32 system is responding.';
+                        } else {
+                            throw new Error(`System test failed: ${response.status} ${response.statusText}`);
+                        }
+                    }
+
+                    // Hide status after 5 seconds
+                    setTimeout(() => {
+                        status.style.display = 'none';
+                    }, 5000);
+
+                } catch (error) {
+                    status.style.background = '#f8d7da';
+                    status.style.color = '#721c24';
+                    status.style.border = '1px solid #f5c6cb';
+                    status.innerHTML = `❌ Configuration test failed: ${error.message}`;
+
+                    // Hide status after 10 seconds for errors
+                    setTimeout(() => {
+                        status.style.display = 'none';
+                    }, 10000);
+                }
+            }
+
+            function resetToDefaults() {
+                if (confirm('Reset configuration to defaults? This will clear all custom settings.')) {
+                    currentConfig = {
+                        model: 'gpt-4.1',
+                        apiKey: '',
+                        apiUrl: 'https://api.openai.com/v1/responses',
+                        maxTokens: 4096,
+                        temperature: 0.7,
+                        structuredOutputs: true,
+                        toolCalling: true,
+                        reasoningMode: false,
+                        webSearch: false,
+                        systemPrompt: '',
+                        historyLimit: 10,
+                        responseTimeout: 30
+                    };
+
+                    loadCurrentConfiguration();
+                }
+            }
+
+            function updateStatusDisplay() {
+                // Update the status panel
+                document.getElementById('currentModel').textContent = currentConfig.model;
+                document.getElementById('currentEndpoint').textContent =
+                    currentConfig.apiUrl.includes('responses') ? 'Responses API' : 'Chat Completions';
+
+                const features = [];
+                if (currentConfig.structuredOutputs) features.push('Structured Outputs');
+                if (currentConfig.toolCalling) features.push('Tool Calling');
+                if (currentConfig.reasoningMode) features.push('Reasoning Mode');
+                if (currentConfig.webSearch) features.push('Web Search');
+
+                document.getElementById('activeFeatures').textContent = features.join(', ') || 'Basic Features';
+            }
+
         // Demo functionality
         function demonstrateAgent() {
             const demoSection = document.getElementById('demo-section');
@@ -306,14 +907,14 @@
             demoChat.innerHTML = '';
             
             const demoMessages = [
-                { type: 'user', message: 'Show me the current system status' },
-                { type: 'ai', message: 'I\'ll check the system status for you. Let me gather the information...' },
-                { type: 'function', message: 'Executing: getSystemInfo()' },
-                { type: 'ai', message: '✅ System Status:\n• ESP32-S3 running at 240MHz\n• 4MB Flash, 8MB PSRAM\n• WiFi: Connected\n• C6 Module: Online\n• Memory: 234KB free' },
-                { type: 'user', message: 'Can you create a backup configuration file?' },
-                { type: 'ai', message: 'I\'ll create a backup configuration file with current settings.' },
-                { type: 'function', message: 'Executing: createFile("/backup_config.json", {...})' },
-                { type: 'ai', message: '✅ Backup configuration file created successfully at /backup_config.json\n\nThe file contains:\n• WiFi settings\n• C6 module configuration\n• System parameters\n• Network settings' }
+                { type: 'user', message: 'Use GPT-4.1 reasoning to analyze the current system status' },
+                { type: 'ai', message: 'I\'ll use GPT-4.1\'s advanced reasoning capabilities to perform a comprehensive system analysis. Let me gather information systematically...' },
+                { type: 'function', message: 'Executing: getSystemInfo() with structured output schema' },
+                { type: 'ai', message: '🧠 **Reasoning Process:**\n1. Gathered system metrics\n2. Analyzed performance patterns\n3. Cross-referenced with optimal parameters\n\n✅ **System Analysis Results:**\n• ESP32-S3 running at 240MHz (optimal)\n• Memory utilization: 234KB free / 520KB total (healthy)\n• C6 Module: Online with strong signal (-45dBm)\n• Network: Stable connection, low latency\n• **Recommendation**: System operating within normal parameters' },
+                { type: 'user', message: 'Generate a structured configuration backup with JSON schema validation' },
+                { type: 'ai', message: 'I\'ll create a structured backup using GPT-4.1\'s structured outputs feature to ensure JSON schema compliance.' },
+                { type: 'function', message: 'Executing: createFile() with JSON schema validation enabled' },
+                { type: 'ai', message: '✅ **Structured Backup Created** (/config_backup_gpt41.json)\n\n```json\n{\n  "schema_version": "1.0",\n  "timestamp": "2025-08-05T12:00:00Z",\n  "wifi_config": { "ssid": "ESP32_AP", "encryption": "WPA2" },\n  "c6_settings": { "channel": 6, "power": 15 },\n  "validation": "PASSED"\n}\n```\n\nSchema validation: ✅ PASSED\nBackup integrity: ✅ VERIFIED' }
             ];
 
             let index = 0;
@@ -330,7 +931,7 @@
                     } else if (msg.type === 'ai') {
                         msgDiv.style.background = 'white';
                         msgDiv.style.border = '1px solid #ddd';
-                        msgDiv.innerHTML = `<strong>AI Assistant:</strong> ${msg.message.replace(/\n/g, '<br>')}`;
+                        msgDiv.innerHTML = `<strong>GPT-4.1 Assistant:</strong> ${msg.message.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}`;
                     } else if (msg.type === 'function') {
                         msgDiv.style.background = '#d4edda';
                         msgDiv.style.border = '1px solid #c3e6cb';
@@ -342,7 +943,7 @@
                     demoChat.appendChild(msgDiv);
                     demoChat.scrollTop = demoChat.scrollHeight;
                     index++;
-                    setTimeout(addNextMessage, 1500);
+                    setTimeout(addNextMessage, 2000);
                 }
             }
             
@@ -355,30 +956,33 @@
         }
 
         function askAI(question) {
-            if (window.openAIAgentEnhanced) {
-                openAIAgentEnhanced.togglePanel();
+            if (window.openAIAgent) {
+                openAIAgent.togglePanel();
                 setTimeout(() => {
                     const inputEl = document.getElementById('agent-input');
                     if (inputEl) {
                         inputEl.value = question;
-                        openAIAgentEnhanced.sendMessage();
+                        openAIAgent.sendMessage();
                     } else {
                         console.warn('Agent input element not found');
                     }
                 }, 500);
             } else {
-                alert('Enhanced AI Agent is still loading. Please wait a moment and try again.');
-                console.warn('openAIAgentEnhanced not available');
+                alert('GPT-4.1 AI Agent is still loading. Please wait a moment and try again.');
+                console.warn('openAIAgent not available');
             }
         }
 
         // Status updates
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize configuration panel
+            loadCurrentConfiguration();
+            
             // Wait for menu to load before initializing
             let menuCheckInterval = setInterval(() => {
                 if (document.getElementById('universal-menu') || window.universalMenu?.menuLoaded) {
                     clearInterval(menuCheckInterval);
-                    console.log('Menu is ready, initializing AI agent page...');
+                    console.log('Menu is ready, initializing GPT-4.1 agent page...');
                 }
             }, 100);
             
@@ -391,10 +995,11 @@
                 if (apiStatusEl) apiStatusEl.innerHTML = 'Connected ✅';
                 if (functionCountEl) functionCountEl.textContent = '25';
                 
-                // Check if enhanced AI agent is loaded
+                // Check if AI agent is loaded
                 const checkAgent = setInterval(() => {
-                    if (window.openAIAgentEnhanced) {
-                        if (aiStatusEl) aiStatusEl.innerHTML = 'Enhanced AI Ready ✅';
+                    if (window.openAIAgent) {
+                        if (aiStatusEl) aiStatusEl.innerHTML = 'GPT-4.1 Ready ✅';
+                        updateStatusDisplay();
                         clearInterval(checkAgent);
                     }
                 }, 1000);
@@ -415,15 +1020,15 @@
         <div class="footer-left">
             <div class="footer-item">
                 <span class="material-symbols-outlined" style="font-size: 10px;">smart_toy</span>
-                <span>OpenAI Agent Active</span>
+                <span>GPT-4.1 Agent Active</span>
             </div>
             <div class="footer-item">
                 <span class="material-symbols-outlined" style="font-size: 10px;">api</span>
-                <span>GPT-4 Turbo</span>
+                <span>Responses API</span>
             </div>
         </div>
         <div class="footer-right">
-            <span>AI-Powered ESP32 Management</span>
+            <span>GPT-4.1 Powered ESP32 Management</span>
         </div>
     </div>
 

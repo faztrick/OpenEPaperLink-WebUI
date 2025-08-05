@@ -1,0 +1,140 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build for Emulation",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$platformio"
+        },
+        {
+            "label": "PlatformIO: Build for Emulation",
+            "type": "PlatformIO",
+            "task": "Build",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Start Wokwi Simulator",
+            "type": "shell",
+            "command": "wokwi-cli",
+            "args": [
+                "--diagram", "${workspaceFolder}/wokwi/diagram.json",
+                "--elf", "${workspaceFolder}/.pio/build/OutdoorAP/firmware.elf"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": [
+                    {
+                        "regexp": ".*",
+                        "file": 1,
+                        "location": 2,
+                        "message": 3
+                    }
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*Starting.*",
+                    "endsPattern": ".*Ready.*"
+                }
+            },
+            "dependsOn": "PlatformIO: Build for Emulation"
+        },
+        {
+            "label": "ESP32 GDB Debug Server",
+            "type": "shell",
+            "command": "xtensa-esp32s3-elf-gdb",
+            "args": [
+                "-x", "${workspaceFolder}/.vscode/gdbinit",
+                "${workspaceFolder}/.pio/build/OutdoorAP/firmware.elf"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": [
+                    {
+                        "regexp": ".*",
+                        "file": 1,
+                        "location": 2,
+                        "message": 3
+                    }
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*Starting.*",
+                    "endsPattern": ".*listening.*"
+                }
+            }
+        },
+        {
+            "label": "QEMU ESP32 Emulation",
+            "type": "shell",
+            "command": "qemu-system-xtensa",
+            "args": [
+                "-M", "esp32",
+                "-m", "4M",
+                "-kernel", "${workspaceFolder}/.pio/build/OutdoorAP/firmware.elf",
+                "-serial", "stdio",
+                "-gdb", "tcp::3333",
+                "-S"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": [
+                    {
+                        "regexp": ".*",
+                        "file": 1,
+                        "location": 2,
+                        "message": 3
+                    }
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*QEMU.*",
+                    "endsPattern": ".*waiting.*"
+                }
+            },
+            "dependsOn": "PlatformIO: Build for Emulation"
+        }
+    ]
+}

@@ -85,8 +85,45 @@ window.addEventListener("load", function () {
         document.head.appendChild(faviconLink);
         
         checkC6ModuleSupport();
+        
+        // Initialize AI settings with error handling
+        initializeAISettings();
     });
 });
+
+// AI Settings Initialization
+function initializeAISettings() {
+    try {
+        // Check if AI agent is available
+        if (window.openAIAgent) {
+            console.log('OpenAI Agent detected, initializing settings...');
+            
+            // Load configuration with fallback
+            if (typeof window.openAIAgent.loadConfiguration === 'function') {
+                window.openAIAgent.loadConfiguration().catch(error => {
+                    console.warn('AI configuration load failed:', error);
+                    showNotification('AI settings loaded from local storage', 'warning');
+                });
+            }
+            
+            showNotification('AI Assistant ready', 'success', 2000);
+        } else {
+            console.log('OpenAI Agent not available, checking later...');
+            
+            // Try again after a delay
+            setTimeout(() => {
+                if (window.openAIAgent) {
+                    initializeAISettings();
+                } else {
+                    console.warn('OpenAI Agent not loaded after timeout');
+                }
+            }, 3000);
+        }
+    } catch (error) {
+        console.error('Error initializing AI settings:', error);
+        showNotification('AI settings initialization failed', 'error');
+    }
+}
 
 /* tabs */
 let activeTab = '', previousTab = '';
@@ -3092,6 +3129,35 @@ function showMessage(message) {
 
 // Enhanced notification system
 function showNotification(message, type = 'info', duration = 3000, action = null) {
+	// Add CSS animations if not already present
+	if (!document.getElementById('notification-animations')) {
+		const style = document.createElement('style');
+		style.id = 'notification-animations';
+		style.textContent = `
+			@keyframes slideInRight {
+				from {
+					transform: translateX(100%);
+					opacity: 0;
+				}
+				to {
+					transform: translateX(0);
+					opacity: 1;
+				}
+			}
+			@keyframes slideOutRight {
+				from {
+					transform: translateX(0);
+					opacity: 1;
+				}
+				to {
+					transform: translateX(100%);
+					opacity: 0;
+				}
+			}
+		`;
+		document.head.appendChild(style);
+	}
+	
 	// Create notification element
 	const notification = document.createElement('div');
 	const notificationId = 'notification-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -3212,3 +3278,378 @@ window.closeNotification = function(notificationId) {
 		}, 300);
 	}
 }
+
+// AI Settings Debug Helper
+function debugAISettings() {
+	console.log('=== AI Settings Debug ===');
+	console.log('OpenAI Agent available:', !!window.openAIAgent);
+	
+	if (window.openAIAgent) {
+		console.log('Agent config:', window.openAIAgent.config);
+		console.log('API Key configured:', !!window.openAIAgent.apiKey);
+		console.log('API URL:', window.openAIAgent.apiUrl);
+		console.log('Model:', window.openAIAgent.model);
+	}
+	
+	// Check localStorage
+	const localConfig = localStorage.getItem('openai_agent_config');
+	if (localConfig) {
+		try {
+			const parsed = JSON.parse(localConfig);
+			console.log('Local storage config available:', !!parsed);
+			console.log('Local API Key:', !!parsed.openai?.api_key);
+		} catch (e) {
+			console.log('Local storage config invalid JSON');
+		}
+	} else {
+		console.log('No local storage config');
+	}
+	
+	console.log('=== End Debug ===');
+}
+
+// Make debug function globally available
+window.debugAISettings = debugAISettings;
+
+// ==========================================
+// SETUP FUNCTIONALITY (merged from setup.js)
+// ==========================================
+
+// WiFi Setup Module
+const WiFiSetup = {
+    initialized: false,
+    
+    init() {
+        if (this.initialized) return;
+        
+        // Ensure DOM is fully loaded and all required elements exist
+        const requiredElements = ['ssid', 'pw', 'ip', 'mask', 'gw', 'dns', 'mac', 'listssid', 'connect'];
+        const missingElements = [];
+        
+        requiredElements.forEach(elementId => {
+            const element = document.getElementById(elementId);
+            if (!element) {
+                missingElements.push(elementId);
+            }
+        });
+        
+        if (missingElements.length > 0) {
+            console.error('Missing DOM elements:', missingElements);
+            this.showStatus('scan_status', `Missing form elements: ${missingElements.join(', ')}. Page may not have loaded correctly.`, 'error');
+            return;
+        }
+        
+        // Initialize setup functionality when page loads
+        this.loadWiFiConfig();
+        this.setupEventListeners();
+        this.initialized = true;
+    },
+    
+    loadWiFiConfig() {
+        fetch("get_wifi_config")
+            .then(response => response.json())
+            .then(data => {
+                // Set form values with null checks
+                const ssidElement = $('#ssid');
+                const pwElement = $('#pw');
+                const ipElement = $('#ip');
+                const maskElement = $('#mask');
+                const gwElement = $('#gw');
+                const dnsElement = $('#dns');
+                const macElement = $('#mac');
+                
+                if (ssidElement) ssidElement.value = data.ssid || "";
+                if (pwElement) pwElement.value = data.pw || "";
+                if (ipElement) ipElement.value = data.ip || "";
+                if (maskElement) maskElement.value = data.mask || "";
+                if (gwElement) gwElement.value = data.gw || "";
+                if (dnsElement) dnsElement.value = data.dns || "";
+                if (macElement) macElement.innerHTML = data.mac || "";
+                
+                // Show WiFi status
+                const wifiStatus = document.getElementById('wifi_status');
+                const wifiStatusText = document.getElementById('wifi_status_text');
+                if (wifiStatus && wifiStatusText) {
+                    wifiStatus.style.display = 'block';
+                    if (data.ssid) {
+                        wifiStatusText.textContent = `Currently configured for: ${data.ssid}`;
+                        wifiStatusText.style.color = '#4CAF50';
+                    } else {
+                        wifiStatusText.textContent = 'No WiFi network configured';
+                        wifiStatusText.style.color = '#ff9800';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load WiFi config:', error);
+                this.showStatus('scan_status', 'Failed to load current WiFi configuration', 'error');
+            });
+    },
+    
+    setupEventListeners() {
+        // SSID scan button
+        const listSSIDButton = $('#listssid');
+        if (listSSIDButton) {
+            listSSIDButton.addEventListener('click', () => {
+                const button = $('#listssid');
+                document.body.style.cursor = 'progress';
+                button.disabled = true;
+                button.innerHTML = '&#x231B; Scanning...';
+                
+                this.showStatus('scan_status', 'Scanning for WiFi networks...', 'info');
+                this.getSsidList();
+            });
+        }
+
+        // Connect button
+        const connectButton = $('#connect');
+        if (connectButton) {
+            connectButton.addEventListener('click', () => {
+                const ssidElement = $('#ssid');
+                const pwElement = $('#pw');
+                const ipElement = $('#ip');
+                const maskElement = $('#mask');
+                const gwElement = $('#gw');
+                const dnsElement = $('#dns');
+                
+                if (!ssidElement) {
+                    this.showStatus('save_status', 'SSID input field not found', 'error');
+                    return;
+                }
+                
+                const ssid = ssidElement.value.trim();
+                if (!ssid) {
+                    this.showStatus('save_status', 'Please enter or select an SSID', 'error');
+                    return;
+                }
+
+                const data = {
+                    ssid: ssid,
+                    pw: pwElement ? pwElement.value : '',
+                    ip: ipElement ? ipElement.value : '',
+                    mask: maskElement ? maskElement.value : '',
+                    gw: gwElement ? gwElement.value : '',
+                    dns: dnsElement ? dnsElement.value : ''
+                };
+
+                const button = $('#connect');
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Saving...';
+                }
+                this.showStatus('save_status', 'Saving WiFi configuration...', 'info');
+
+                fetch('save_wifi_config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            console.log('WiFi settings saved successfully');
+                            const ipValue = ipElement ? ipElement.value : '';
+                            let url = "/";
+                            if (ipValue) url = "http://" + ipValue + "/";
+                            this.showStatus('save_status', 'WiFi settings saved successfully!', 'success');
+                            const windowElement = $('.window');
+                            if (windowElement) {
+                                windowElement.innerHTML = "<h1>WiFi settings saved...</h1>Rebooting...<br>Wait a few seconds and then go to the <a href=\"" + url + "\">Access Point web page</a>.";
+                            }
+                        } else {
+                            throw new Error('Server error while saving WiFi settings');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error saving WiFi settings:', error);
+                        this.showStatus('save_status', 'Failed to save WiFi settings. Please try again.', 'error');
+                        if (button) {
+                            button.disabled = false;
+                            button.textContent = 'Save WiFi settings and reboot';
+                        }
+                    });
+            });
+        }
+    },
+    
+    showStatus(elementId, message, type = 'info') {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+            
+            // Auto-clear after 5 seconds for non-error messages
+            if (type !== 'error') {
+                setTimeout(() => {
+                    element.innerHTML = '';
+                }, 5000);
+            }
+        }
+    },
+    
+    pad(text, count) {
+        let t = text + "";
+        return t.padEnd(count, "\u00A0").slice(0, count);
+    },
+    
+    getSsidList() {
+        console.log('Starting WiFi scan...');
+        fetch("wifi_scan")  // Use the enhanced endpoint
+            .then(response => {
+                console.log('Received response:', response.status, response.statusText);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('WiFi scan response:', data);
+                
+                if (!data.success) {
+                    console.error('WiFi scan failed');
+                    this.showStatus('scan_status', 'WiFi scan failed. Please try again.', 'error');
+                    this.resetScanButton();
+                    return;
+                }
+
+                if (data.networkCount === 0) {
+                    console.log('No networks found, retrying in 3 seconds...');
+                    this.showStatus('scan_status', 'No networks found. Retrying in 3 seconds...', 'info');
+                    setTimeout(() => this.getSsidList(), 3000);
+                    return;
+                }
+
+                const select = document.createElement('select');
+                select.id = 'ssid';
+                console.log('Created select element with id:', select.id);
+
+                // Sort networks by signal strength
+                const sortedNetworks = data.networks.sort((a, b) => b.rssi - a.rssi);
+                console.log('Sorted networks:', sortedNetworks.length);
+
+                sortedNetworks.forEach(network => {
+                    if (network.ssid && network.ssid.trim() !== '') {
+                        const option = document.createElement('option');
+                        option.value = network.ssid;
+                        console.log('Adding network:', network);
+                        
+                        // Format: [Signal] SSID [Security]
+                        const rssiText = this.pad(network.rssi + 'dBm', 8);
+                        const ssidText = this.pad(network.ssid, 24);
+                        const securityText = network.encryption === 0 ? '[Open]' : '[Secured]';
+                        option.text = rssiText + ssidText + securityText;
+                        select.appendChild(option);
+                    }
+                });
+
+                if (select.options.length === 0) {
+                    console.log('No valid SSIDs found, retrying...');
+                    this.showStatus('scan_status', 'No valid networks found. Retrying...', 'info');
+                    setTimeout(() => this.getSsidList(), 3000);
+                    return;
+                }
+
+                let ssidval = $('#ssid') ? $('#ssid').value : '';
+                console.log('Current SSID value before replacement:', ssidval);
+                const currentSSIDInput = $('#ssid');
+                console.log('Current SSID element:', currentSSIDInput);
+                if (currentSSIDInput) {
+                    currentSSIDInput.replaceWith(select);
+                    // Set the selected value after a brief delay to ensure DOM is updated
+                    setTimeout(() => {
+                        const newSelect = $('#ssid');
+                        console.log('New select element after replacement:', newSelect);
+                        if (newSelect && ssidval) {
+                            newSelect.value = ssidval;
+                            console.log('Set select value to:', ssidval);
+                        }
+                    }, 10);
+                } else {
+                    console.error('SSID input element not found in DOM');
+                    this.showStatus('scan_status', 'SSID input field not found', 'error');
+                    this.resetScanButton();
+                    return;
+                }
+
+                this.showStatus('scan_status', `Found ${data.networkCount} WiFi networks. Select one from the dropdown.`, 'success');
+                this.resetScanButton();
+            })
+            .catch(error => {
+                console.error('WiFi scan error:', error);
+                this.showStatus('scan_status', 'WiFi scan failed. Trying fallback method...', 'error');
+                
+                // Try fallback to original endpoint
+                setTimeout(() => {
+                    fetch("get_ssid_list")
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.scanstatus < 0) {
+                                this.showStatus('scan_status', 'WiFi scan in progress. Please wait...', 'info');
+                                setTimeout(() => this.getSsidList(), 3000);
+                                return;
+                            } else {
+                                const select = document.createElement('select');
+                                select.id = 'ssid';
+
+                                data.networks.forEach(network => {
+                                    if (network.ssid) {
+                                        const option = document.createElement('option');
+                                        option.value = network.ssid;
+                                        console.log(network);
+                                        option.text = this.pad(network.rssi, 5) + this.pad(network.ssid, 24);
+                                        select.appendChild(option);
+                                    }
+                                });
+
+                                let ssidval = $('#ssid') ? $('#ssid').value : '';
+                                const currentSSIDInput = $('#ssid');
+                                if (currentSSIDInput) {
+                                    currentSSIDInput.replaceWith(select);
+                                    // Set the selected value after a brief delay to ensure DOM is updated
+                                    setTimeout(() => {
+                                        const newSelect = $('#ssid');
+                                        if (newSelect && ssidval) {
+                                            newSelect.value = ssidval;
+                                        }
+                                    }, 10);
+                                } else {
+                                    console.error('SSID input element not found during fallback');
+                                }
+                                this.showStatus('scan_status', `Found ${data.networks.length} networks using fallback method.`, 'success');
+                            }
+                            this.resetScanButton();
+                        })
+                        .catch(fallbackError => {
+                            console.error('Fallback scan also failed:', fallbackError);
+                            this.showStatus('scan_status', 'Both scan methods failed. Please enter SSID manually.', 'error');
+                            this.resetScanButton();
+                        });
+                }, 2000);
+            });
+    },
+    
+    resetScanButton() {
+        const button = $('#listssid');
+        if (button) {
+            document.body.style.cursor = 'default';
+            button.disabled = false;
+            button.innerHTML = 'find SSID';
+        }
+    }
+};
+
+// Initialize WiFi setup when document is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Only initialize if we're on a setup page (check for setup-specific elements)
+    if ($('#ssid') || $('#listssid') || $('#connect')) {
+        WiFiSetup.init();
+    }
+});
+
+// Also initialize on window load for compatibility
+window.addEventListener("load", function () {
+    // Only initialize if we're on a setup page
+    if ($('#ssid') || $('#listssid') || $('#connect')) {
+        WiFiSetup.init();
+    }
+});

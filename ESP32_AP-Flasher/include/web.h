@@ -5,50 +5,27 @@
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include "c6_module.h"
 
+// Forward declarations
+struct APlist;
+
+// Core web functions
 void init_web();
 void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 void doJsonUpload(AsyncWebServerRequest *request);
 void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 
-// C6 Module Management Functions
-void handleAPList(AsyncWebServerRequest *request);
-void handleGetC6Settings(AsyncWebServerRequest *request);
-void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
-void handleSaveC6Settings(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
-void handleResetC6Settings(AsyncWebServerRequest *request);
-void handleTestC6Connection(AsyncWebServerRequest *request);
-void handleTestC6Radio(AsyncWebServerRequest *request);
-void handleRestartC6(AsyncWebServerRequest *request);
-void handleBackupC6Config(AsyncWebServerRequest *request);
-void handleResetC6Config(AsyncWebServerRequest *request);
-void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
-void handleC6UpdateStatus(AsyncWebServerRequest *request);
-void handleBackupC6Firmware(AsyncWebServerRequest *request);
-void handleListDrives(AsyncWebServerRequest *request);
-void handleListSerialPorts(AsyncWebServerRequest *request);
-void handleFlashC6OTA(AsyncWebServerRequest *request);
+// Missing function declarations for OTA handlers
+void handleSysinfoRequest(AsyncWebServerRequest *request);
+void handleCheckFile(AsyncWebServerRequest *request);
+void handleRollback(AsyncWebServerRequest *request);
+void handleUpdateC6(AsyncWebServerRequest *request);
+void handleUpdateActions(AsyncWebServerRequest *request);
+void handleUpdateOTA(AsyncWebServerRequest *request);
+void handleLittleFSUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 
-#ifdef C6_OTA_FLASHING
-// C6 Module structures and types
-struct RadioTestResult {
-    bool success;
-    String error;
-    int rssi;
-    int channel;
-    int packetsSent;
-    int packetsReceived;
-    float errorRate;
-};
-
-void applyC6Settings();
-bool testC6ModuleConnection();
-RadioTestResult performC6RadioTest();
-bool restartC6Module();
-bool factoryResetC6Module();
-bool sendC6Command(const String& command, int parameter);
-#endif
-
+// WebSocket functions
 void wsLog(const String &text);
 void wsErr(const String &text);
 void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode);

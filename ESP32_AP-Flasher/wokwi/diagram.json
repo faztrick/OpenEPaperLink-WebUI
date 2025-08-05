@@ -1,0 +1,135 @@
+{
+    "version": 1,
+    "author": "ESP32 OpenEPaperLink Project",
+    "editor": "vscode",
+    "parts": [
+        {
+            "type": "wokwi-esp32-s3-devkit-c-1",
+            "id": "esp32s3",
+            "top": 0,
+            "left": 0,
+            "attrs": {
+                "psramSize": "8",
+                "flashSize": "32"
+            }
+        },
+        {
+            "type": "wokwi-st7789",
+            "id": "display1",
+            "top": -150,
+            "left": 200,
+            "attrs": {
+                "width": "240",
+                "height": "320"
+            }
+        },
+        {
+            "type": "wokwi-neopixel",
+            "id": "rgb_led1",
+            "top": -50,
+            "left": -100,
+            "attrs": {
+                "pin": "38"
+            }
+        },
+        {
+            "type": "wokwi-led",
+            "id": "status_led1",
+            "top": -80,
+            "left": -60,
+            "attrs": {
+                "color": "green"
+            }
+        },
+        {
+            "type": "wokwi-resistor",
+            "id": "r1",
+            "top": -70,
+            "left": -40,
+            "attrs": {
+                "value": "220"
+            }
+        }
+    ],
+    "connections": [
+        [
+            "esp32s3:GPIO13",
+            "display1:MOSI",
+            "blue",
+            []
+        ],
+        [
+            "esp32s3:GPIO12",
+            "display1:SCLK",
+            "yellow",
+            []
+        ],
+        [
+            "esp32s3:GPIO10",
+            "display1:CS",
+            "green",
+            []
+        ],
+        [
+            "esp32s3:GPIO11",
+            "display1:DC",
+            "purple",
+            []
+        ],
+        [
+            "esp32s3:GPIO1",
+            "display1:RST",
+            "orange",
+            []
+        ],
+        [
+            "esp32s3:3V3",
+            "display1:VCC",
+            "red",
+            []
+        ],
+        [
+            "esp32s3:GND.1",
+            "display1:GND",
+            "black",
+            []
+        ],
+        [
+            "esp32s3:GPIO38",
+            "rgb_led1:DIN",
+            "cyan",
+            []
+        ],
+        [
+            "esp32s3:3V3",
+            "rgb_led1:VDD",
+            "red",
+            []
+        ],
+        [
+            "esp32s3:GND.2",
+            "rgb_led1:GND",
+            "black",
+            []
+        ],
+        [
+            "esp32s3:GPIO21",
+            "r1:1",
+            "orange",
+            []
+        ],
+        [
+            "r1:2",
+            "status_led1:A",
+            "orange",
+            []
+        ],
+        [
+            "status_led1:C",
+            "esp32s3:GND.3",
+            "black",
+            []
+        ]
+    ],
+    "dependencies": {}
+}
