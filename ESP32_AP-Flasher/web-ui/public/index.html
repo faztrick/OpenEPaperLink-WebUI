@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 OutdoorAP Development UI</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-microchip"></i>
+                    <h1>ESP32 OutdoorAP Development UI</h1>
+                </div>
+                <div class="status-indicator">
+                    <span id="connection-status" class="status-dot connected"></span>
+                    <span id="status-text">Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="project-info">
+                    <h3><i class="fas fa-project-diagram"></i> Project Info</h3>
+                    <div class="info-item">
+                        <span class="label">Target:</span>
+                        <span class="value">ESP32-S3 DevKit C-1</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Environment:</span>
+                        <span class="value" id="current-env">OutdoorAP</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Last Build:</span>
+                        <span class="value" id="last-build">Never</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Firmware Size:</span>
+                        <span class="value" id="firmware-size">-</span>
+                    </div>
+                </div>
+
+                <!-- Configuration Panel -->
+                <div class="config-panel">
+                    <h3><i class="fas fa-cog"></i> Configuration</h3>
+
+                    <div class="form-group">
+                        <label for="environment">Environment</label>
+                        <select id="environment">
+                            <option value="OutdoorAP">OutdoorAP</option>
+                            <option value="IndoorAP">IndoorAP</option>
+                            <option value="Debug">Debug</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="com-port">COM Port</label>
+                        <select id="com-port">
+                            <option value="COM10">COM10</option>
+                        </select>
+                        <button id="refresh-ports" class="btn btn-small">
+                            <i class="fas fa-sync"></i>
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="baud-rate">Baud Rate</label>
+                        <select id="baud-rate">
+                            <option value="115200">115200</option>
+                            <option value="460800">460800</option>
+                            <option value="921600" selected>921600</option>
+                            <option value="1500000">1500000</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="jobs">Parallel Jobs</label>
+                        <select id="jobs">
+                            <option value="0" selected>Auto</option>
+                            <option value="4">4</option>
+                            <option value="8">8</option>
+                            <option value="12">12</option>
+                            <option value="16">16</option>
+                            <option value="24">24</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="fast-build" checked>
+                            <span class="checkmark"></span>
+                            Fast Build (Caching)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="clean-build">
+                            <span class="checkmark"></span>
+                            Clean Build
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="verbose">
+                            <span class="checkmark"></span>
+                            Verbose Output
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filesystem-only">
+                            <span class="checkmark"></span>
+                            Filesystem Only
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="skip-upload">
+                            <span class="checkmark"></span>
+                            Skip Upload
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="monitor">
+                            <span class="checkmark"></span>
+                            Auto Monitor
+                        </label>
+                    </div>
+
+                    <!-- Remote Server Section -->
+                    <div class="section-group">
+                        <h3><i class="fas fa-server"></i> Remote Server</h3>
+                        
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="use-remote">
+                                <span class="checkmark"></span>
+                                Use Remote Linux Server
+                            </label>
+                        </div>
+
+                        <div class="form-group" id="remote-options" style="display: none;">
+                            <label for="remote-host">Host:</label>
+                            <input type="text" id="remote-host" value="94.200.149.94" class="form-input">
+                            
+                            <label for="remote-port">Port:</label>
+                            <input type="number" id="remote-port" value="22" class="form-input">
+                            
+                            <label for="remote-user">User:</label>
+                            <input type="text" id="remote-user" value="root" class="form-input">
+                            
+                            <button class="btn btn-sm btn-info" id="test-connection">
+                                <i class="fas fa-plug"></i> Test Connection
+                            </button>
+                            
+                            <div id="remote-status" class="status-indicator">
+                                <span class="status-text">Not Connected</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="main-content">
+                <!-- Action Buttons -->
+                <div class="action-panel">
+                    <h2><i class="fas fa-tools"></i> Build & Flash Actions</h2>
+
+                    <div class="button-grid">
+                        <button class="btn btn-primary" data-action="build">
+                            <i class="fas fa-hammer"></i>
+                            Build Only
+                        </button>
+
+                        <button class="btn btn-secondary" data-action="upload">
+                            <i class="fas fa-upload"></i>
+                            Upload Only
+                        </button>
+
+                        <button class="btn btn-success" data-action="build-upload">
+                            <i class="fas fa-rocket"></i>
+                            Build + Upload
+                        </button>
+
+                        <button class="btn btn-warning" data-action="fast-build">
+                            <i class="fas fa-bolt"></i>
+                            Turbo Build
+                        </button>
+
+                        <button class="btn btn-info" data-action="monitor">
+                            <i class="fas fa-tv"></i>
+                            Serial Monitor
+                        </button>
+
+                        <button class="btn btn-danger" data-action="clean">
+                            <i class="fas fa-broom"></i>
+                            Clean Build
+                        </button>
+                    </div>
+
+                    <h3><i class="fas fa-cogs"></i> Project Tools</h3>
+
+                    <div class="button-grid">
+                        <button class="btn btn-outline" data-action="configure-wifi">
+                            <i class="fas fa-wifi"></i>
+                            Configure WiFi
+                        </button>
+
+                        <button class="btn btn-outline" data-action="configure-newton">
+                            <i class="fas fa-cog"></i>
+                            Configure Newton M3
+                        </button>
+
+                        <button class="btn btn-outline" data-action="validate-config">
+                            <i class="fas fa-check-circle"></i>
+                            Validate Config
+                        </button>
+
+                        <button class="btn btn-outline" data-action="test-endpoints">
+                            <i class="fas fa-flask"></i>
+                            Test API
+                        </button>
+
+                        <button class="btn btn-outline" onclick="window.open('http://192.168.4.1', '_blank')">
+                            <i class="fas fa-globe"></i>
+                            Open Web UI
+                        </button>
+
+                        <button class="btn btn-outline" onclick="openBuildFolder()">
+                            <i class="fas fa-folder-open"></i>
+                            Build Folder
+                        </button>
+                    </div>
+
+                    <h3><i class="fas fa-robot"></i> AI Assistant</h3>
+
+                    <div class="button-grid">
+                        <button class="btn btn-info" id="ai-analyze-project">
+                            <i class="fas fa-search"></i>
+                            Analyze Project
+                        </button>
+
+                        <button class="btn btn-info" id="ai-chat-toggle">
+                            <i class="fas fa-comments"></i>
+                            AI Chat
+                        </button>
+
+                        <button class="btn btn-outline" id="ai-suggestions">
+                            <i class="fas fa-lightbulb"></i>
+                            Get Suggestions
+                        </button>
+
+                        <button class="btn btn-outline" id="ai-config">
+                            <i class="fas fa-robot"></i>
+                            AI Config
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Console Output -->
+                <div class="console-panel">
+                    <div class="console-header">
+                        <h3><i class="fas fa-terminal"></i> Console Output</h3>
+                        <div class="console-controls">
+                            <button id="clear-console" class="btn btn-small">
+                                <i class="fas fa-eraser"></i> Clear
+                            </button>
+                            <button id="save-log" class="btn btn-small">
+                                <i class="fas fa-save"></i> Save Log
+                            </button>
+                            <button id="kill-process" class="btn btn-danger btn-small" disabled>
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="console" class="console">
+                        <div class="console-line info">ESP32 Development UI Ready...</div>
+                        <div class="console-line info">Select configuration and click an action to begin.</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Progress Modal -->
+        <div id="progress-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="progress-title">Processing...</h3>
+                </div>
+                <div class="modal-body">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div id="progress-text">Starting...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Chat Modal -->
+        <div id="ai-chat-modal" class="modal">
+            <div class="modal-content ai-modal">
+                <div class="modal-header">
+                    <h3><i class="fas fa-robot"></i> AI Assistant</h3>
+                    <button class="modal-close" onclick="closeAIChat()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="ai-chat-messages" class="ai-chat-messages"></div>
+                    <div class="ai-chat-input">
+                        <input type="text" id="ai-input"
+                            placeholder="Ask about ESP32 development, errors, optimization..." />
+                        <button id="ai-send" class="btn btn-primary btn-small">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Config Modal -->
+        <div id="ai-config-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-robot"></i> AI Configuration</h3>
+                    <button class="modal-close" onclick="closeAIConfig()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="ai-config-form">
+                        <h4>OpenAI Configuration</h4>
+                        <div class="form-group">
+                            <label for="openai-key">API Key</label>
+                            <input type="password" id="openai-key" placeholder="sk-..." />
+                        </div>
+                        <div class="form-group">
+                            <label for="openai-model">Model</label>
+                            <select id="openai-model">
+                                <option value="gpt-4o">GPT-4o</option>
+                                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="openai-enabled">
+                                <span class="checkmark"></span>
+                                Enable OpenAI
+                            </label>
+                        </div>
+
+                        <h4>Anthropic Configuration</h4>
+                        <div class="form-group">
+                            <label for="anthropic-key">API Key</label>
+                            <input type="password" id="anthropic-key" placeholder="sk-ant-..." />
+                        </div>
+                        <div class="form-group">
+                            <label for="anthropic-model">Model</label>
+                            <select id="anthropic-model">
+                                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                                <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+                                <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="anthropic-enabled">
+                                <span class="checkmark"></span>
+                                Enable Anthropic
+                            </label>
+                        </div>
+
+                        <h4>Features</h4>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="feature-error-diagnosis" checked>
+                                <span class="checkmark"></span>
+                                Auto Error Diagnosis
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="feature-code-analysis" checked>
+                                <span class="checkmark"></span>
+                                Code Analysis
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="feature-optimization" checked>
+                                <span class="checkmark"></span>
+                                Build Optimization
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="feature-suggestions" checked>
+                                <span class="checkmark"></span>
+                                Auto Suggestions
+                            </label>
+                        </div>
+
+                        <div class="ai-config-buttons">
+                            <button id="save-ai-config" class="btn btn-success">
+                                <i class="fas fa-save"></i> Save Configuration
+                            </button>
+                            <button id="test-ai-connection" class="btn btn-info">
+                                <i class="fas fa-plug"></i> Test Connection
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

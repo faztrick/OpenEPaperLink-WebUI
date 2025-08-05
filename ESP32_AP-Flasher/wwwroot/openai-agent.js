@@ -389,8 +389,8 @@ Remember: You're not just executing commands, you're providing intelligent analy
     getDefaultConfig() {
         return {
             openai: {
-                api_key: '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',
-                api_url: 'https://api.openai.com/v1/responses',
+                api_key: 'YOUR_OPENAI_API_KEY_HERE',
+                api_url: 'https://api.openai.com/v1/chat/completions',
                 models: {
                     default: 'gpt-4.1',
                     alternatives: ['gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-3.5-turbo']
