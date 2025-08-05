@@ -9,7 +9,21 @@ param(
     [switch]$Stop,
     [switch]$Status,
     [switch]$Clean,
-    [str        Write-ColorOutput "✓ Installation completed successfully!" Green
+    [string]$Port = "3000"
+)
+
+$ErrorActionPreference = "Stop"
+$webUIDir = Join-Path $PSScriptRoot "web-ui"
+$serverScript = Join-Path $webUIDir "server.js"
+$packageJson = Join-Path $webUIDir "package.json"
+
+function Write-ColorOutput {
+    param($Message, $Color = "White")
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Show-InstallComplete {
+        Write-ColorOutput "✓ Installation completed successfully!" Green
         Write-ColorOutput ""
         Write-ColorOutput "🤖 AI Features Available:" Cyan
         Write-ColorOutput "  • Error diagnosis and solutions" White
@@ -21,17 +35,7 @@ param(
         Write-ColorOutput "  1. Get API key from OpenAI or Anthropic" White
         Write-ColorOutput "  2. Start the server and configure in 'AI Config'" White
         Write-ColorOutput ""
-        Write-ColorOutput "Run '.\web_ui_launcher.ps1 -Start' to start the server" Cyang]$Port = "3000"
-)
-
-$ErrorActionPreference = "Stop"
-$webUIDir = Join-Path $PSScriptRoot "web-ui"
-$serverScript = Join-Path $webUIDir "server.js"
-$packageJson = Join-Path $webUIDir "package.json"
-
-function Write-ColorOutput {
-    param($Message, $Color = "White")
-    Write-Host $Message -ForegroundColor $Color
+        Write-ColorOutput "Run '.\web_ui_launcher.ps1 -Start' to start the server" Cyan
 }
 
 function Test-NodeInstalled {
