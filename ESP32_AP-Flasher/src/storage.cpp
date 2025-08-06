@@ -129,7 +129,8 @@ void copyBetweenFS(FS& sourceFS, const char* source_path, FS& targetFS) {
         File file = root.openNextFile();
         while (file) {
             if (file.isDirectory()) {
-                sprintf(next_path, "%s/%s\0", root.path(), file.path());
+                char next_path[256];  // Ensure adequate buffer size
+                snprintf(next_path, sizeof(next_path), "%s/%s", root.path(), file.path());
 
                 copyBetweenFS(sourceFS, file.path(), targetFS);
             } else {

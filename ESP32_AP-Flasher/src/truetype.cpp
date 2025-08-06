@@ -1,9 +1,32 @@
 #include "truetype.h"
 
-//Kerning is optional. Many fonts don't have kerning tables anyway.
-//#define ENABLEKERNING
+// Kerning is optional. Many fonts don't have kerning tables anyway.
+// #define ENABLEKERNING
 
-truetypeClass::truetypeClass() {}
+truetypeClass::truetypeClass() {
+    // Initialize all member variables to prevent undefined behavior
+    u32TTFSize = 0;
+    // u8FileBuf is an array, initialized by memset below
+    u32BufPosition = 0;
+    charCode = 0;
+    xMin = 0;
+    xMax = 0;
+    yMin = 0;
+    yMax = 0;
+    numTables = 0;
+    table = nullptr;
+    memset(&headTable, 0, sizeof(headTable));
+    memset(&glyphTransformation, 0, sizeof(glyphTransformation));
+    memset(&cmapIndex, 0, sizeof(cmapIndex));
+    cmapEncoding = 0;
+    memset(&cmapFormat4, 0, sizeof(cmapFormat4));
+    memset(&kernHeader, 0, sizeof(kernHeader));
+    memset(&kernSubtable, 0, sizeof(kernSubtable));
+    memset(&kernFormat0, 0, sizeof(kernFormat0));
+    memset(&glyph, 0, sizeof(glyph));
+    memset(u8FileBuf, 0, sizeof(u8FileBuf));
+    userFrameBuffer = nullptr;
+}
 
 void truetypeClass::end() {
     file.close();
@@ -70,12 +93,11 @@ uint8_t truetypeClass::setTtfPointer(uint8_t *p, uint32_t u32Size, uint8_t _chec
 #endif
     readHeadTable();
     return 1;
-
-} 
+}
 
 int truetypeClass::ttfRead(uint8_t *d, int iLen) {
     if (!pTTF) {
-        //return file.read(d, iLen);
+        // return file.read(d, iLen);
         int totalBytesRead = 0;
 
         while (iLen > 0) {
@@ -97,7 +119,6 @@ int truetypeClass::ttfRead(uint8_t *d, int iLen) {
         }
         return totalBytesRead;
     } else {
-
         if (u32TTFOffset + iLen > u32TTFSize) {
             iLen = u32TTFSize - u32TTFOffset;
         }
@@ -108,7 +129,6 @@ int truetypeClass::ttfRead(uint8_t *d, int iLen) {
         }
         u32TTFOffset += iLen;
         return iLen;
-
     }
     return 0;
 } /* ttfRead() */
@@ -124,8 +144,8 @@ void truetypeClass::ttfSeek(uint32_t u32Offset) {
             iBufferedBytes = file.position() - u32Offset;
         } else {
         */
-            file.seek(u32Offset);
-            iBufferedBytes = 0;
+        file.seek(u32Offset);
+        iBufferedBytes = 0;
         // }
     } else {
         if (u32Offset > u32TTFSize) {
@@ -730,14 +750,12 @@ void truetypeClass::generateOutline(int16_t _x, int16_t _y, uint16_t characterSi
         pointsOfCurve[0].y = glyph.points[j].y;
 
         while (j <= lastPointOfContour) {
-
             uint16_t searchPoint = (j == lastPointOfContour) ? (firstPointOfContour) : (j + 1);
-            
+
             pointsOfCurve[1].x = glyph.points[searchPoint].x;
             pointsOfCurve[1].y = glyph.points[searchPoint].y;
 
             if (glyph.points[searchPoint].flag & FLAG_ONCURVE) {
-
                 addLine(pointsOfCurve[0].x * characterSize / headTable.unitsPerEm + _x,
                         (ascender - pointsOfCurve[0].y) * characterSize / headTable.unitsPerEm + _y,
                         pointsOfCurve[1].x * characterSize / headTable.unitsPerEm + _x,
@@ -747,7 +765,6 @@ void truetypeClass::generateOutline(int16_t _x, int16_t _y, uint16_t characterSi
                 j += 1;
 
             } else {
-
                 searchPoint = (searchPoint == lastPointOfContour) ? (firstPointOfContour) : (searchPoint + 1);
 
                 if (glyph.points[searchPoint].flag & FLAG_ONCURVE) {
@@ -776,7 +793,6 @@ void truetypeClass::generateOutline(int16_t _x, int16_t _y, uint16_t characterSi
                 }
 
                 pointsOfCurve[0] = pointsOfCurve[2];
-
             }
         }
         addEndPoint(numPoints - 1);
@@ -786,7 +802,6 @@ void truetypeClass::generateOutline(int16_t _x, int16_t _y, uint16_t characterSi
 }
 
 void truetypeClass::addLine(float _x0, float _y0, float _x1, float _y1) {
-
     if (numPoints == 0) {
         addPoint(_x0, _y0);
         addBeginPoint(0);
@@ -847,7 +862,12 @@ void truetypeClass::fillGlyph(int16_t _x_min, int16_t _y_min, uint16_t character
                 if (point2.y > (float)y) {
                     // Have a valid up intersect
                     intersectPointsNum++;
-                    pointsToFill = (ttWindIntersect_t *)realloc(pointsToFill, sizeof(ttWindIntersect_t) * intersectPointsNum);
+                    ttWindIntersect_t *newPoints = (ttWindIntersect_t *)realloc(pointsToFill, sizeof(ttWindIntersect_t) * intersectPointsNum);
+                    if (newPoints == nullptr) {
+                        free(pointsToFill);
+                        return;
+                    }
+                    pointsToFill = newPoints;
                     pointsToFill[intersectPointsNum - 1].p1 = i;
                     pointsToFill[intersectPointsNum - 1].p2 = p2Num;
                     pointsToFill[intersectPointsNum - 1].up = 1;
@@ -857,7 +877,12 @@ void truetypeClass::fillGlyph(int16_t _x_min, int16_t _y_min, uint16_t character
                 if (point2.y <= (float)y) {
                     // Have a valid down intersect
                     intersectPointsNum++;
-                    pointsToFill = (ttWindIntersect_t *)realloc(pointsToFill, sizeof(ttWindIntersect_t) * intersectPointsNum);
+                    ttWindIntersect_t *newPoints = (ttWindIntersect_t *)realloc(pointsToFill, sizeof(ttWindIntersect_t) * intersectPointsNum);
+                    if (newPoints == nullptr) {
+                        free(pointsToFill);
+                        return;
+                    }
+                    pointsToFill = newPoints;
                     pointsToFill[intersectPointsNum - 1].p1 = i;
                     pointsToFill[intersectPointsNum - 1].p2 = p2Num;
                     pointsToFill[intersectPointsNum - 1].up = 0;
@@ -915,7 +940,7 @@ void truetypeClass::textDraw(int16_t _x, int16_t _y, const wchar_t _character[])
 
         charCode = codeToGlyphId(_character[c]);
 
-        //Serial.printf("code:%4d\n", charCode);
+        // Serial.printf("code:%4d\n", charCode);
         readGlyph(charCode);
 
         _x += characterSpace;
@@ -1118,20 +1143,41 @@ uint16_t truetypeClass::getStringWidth(const String _string) {
 /* Points*/
 void truetypeClass::addPoint(int16_t _x, int16_t _y) {
     numPoints++;
-    points = (ttCoordinate_t *)realloc(points, sizeof(ttCoordinate_t) * numPoints);
+    ttCoordinate_t *newPoints = (ttCoordinate_t *)realloc(points, sizeof(ttCoordinate_t) * numPoints);
+    if (newPoints == nullptr) {
+        free(points);
+        points = nullptr;
+        numPoints = 0;
+        return;
+    }
+    points = newPoints;
     points[(numPoints - 1)].x = _x;
     points[(numPoints - 1)].y = _y;
 }
 
 void truetypeClass::addBeginPoint(uint16_t _bp) {
     numBeginPoints++;
-    beginPoints = (uint16_t *)realloc(beginPoints, sizeof(uint16_t) * numBeginPoints);
+    uint16_t *newBeginPoints = (uint16_t *)realloc(beginPoints, sizeof(uint16_t) * numBeginPoints);
+    if (newBeginPoints == nullptr) {
+        free(beginPoints);
+        beginPoints = nullptr;
+        numBeginPoints = 0;
+        return;
+    }
+    beginPoints = newBeginPoints;
     beginPoints[(numBeginPoints - 1)] = _bp;
 }
 
 void truetypeClass::addEndPoint(uint16_t _ep) {
     numEndPoints++;
-    endPoints = (uint16_t *)realloc(endPoints, sizeof(uint16_t) * numEndPoints);
+    uint16_t *newEndPoints = (uint16_t *)realloc(endPoints, sizeof(uint16_t) * numEndPoints);
+    if (newEndPoints == nullptr) {
+        free(endPoints);
+        endPoints = nullptr;
+        numEndPoints = 0;
+        return;
+    }
+    endPoints = newEndPoints;
     endPoints[(numEndPoints - 1)] = _ep;
 }
 

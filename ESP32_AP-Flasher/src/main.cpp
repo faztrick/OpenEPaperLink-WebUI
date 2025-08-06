@@ -1,6 +1,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <nvs_flash.h>  // ESP32-S3 NVS initialization
 #include <time.h>
 #ifdef ETHERNET_CLK_MODE
 #include <ETH.h>
@@ -106,6 +107,19 @@ void setup() {
     };
     heap_caps_malloc_extmem_enable(64);
 #endif
+
+    // Initialize NVS for ESP32-S3 compatibility
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        Serial.println("NVS partition was truncated or found a newer version, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret == ESP_OK) {
+        Serial.println("✅ NVS Flash initialized successfully");
+    } else {
+        Serial.printf("❌ NVS Flash initialization failed: %s\n", esp_err_to_name(ret));
+    }
 
     Storage.begin();
 

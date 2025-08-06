@@ -149,15 +149,16 @@ void setAPstate(bool isOnline, uint8_t state) {
     apInfo.isOnline = isOnline;
     apInfo.state = state;
 #ifdef HAS_RGB_LED
-    CRGB colorMap[7] = {
+    CRGB colorMap[8] = {
         CRGB::Orange,
         CRGB::Green,
         CRGB::Blue,
         CRGB::Yellow,
         CRGB::Aqua,
         CRGB::Red,
-        CRGB::YellowGreen};
-    rgbIdleColor = colorMap[state];
+        CRGB::YellowGreen,
+        CRGB::Purple};                               // Added for state 7
+    rgbIdleColor = colorMap[state < 8 ? state : 0];  // Bounds check
 #ifdef BLE_ONLY
     rgbIdleColor = CRGB::Green;
 #endif
@@ -245,7 +246,7 @@ blksend:
     }
 
     // send an entire block of data
-    uint16_t c;
+    uint16_t c = 0;  // Initialize c to prevent undefined behavior
     dataBytes = reinterpret_cast<const uint8_t*>(data);
     uint8_t* modifiedBuffer = static_cast<uint8_t*>(malloc(len));
     if (modifiedBuffer != nullptr) {

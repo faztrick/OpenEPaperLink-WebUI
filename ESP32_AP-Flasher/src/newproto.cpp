@@ -45,14 +45,15 @@ bool checkCRC(void* p, uint8_t len) {
 uint8_t* getDataForFile(fs::File& file) {
     const size_t fileSize = file.size();
     uint8_t* ret = (uint8_t*)malloc(fileSize);
-    if (ret) {
-        file.seek(0);
-        file.readBytes((char*)ret, fileSize);
-    } else {
+    if (ret == nullptr) {
         Serial.printf("malloc failed for file with size %d\r\n", fileSize);
         wsErr("malloc failed while reading file");
         util::printHeap();
+        return nullptr;
     }
+
+    file.seek(0);
+    file.readBytes((char*)ret, fileSize);
     return ret;
 }
 
@@ -168,7 +169,7 @@ bool prepareDataAvail(String& filename, uint8_t dataType, uint8_t dataTypeArgume
 #ifdef HAS_TFT
     if (filename == "direct") {
         char dst_path[64];
-        sprintf(dst_path, "/current/%02X%02X%02X%02X%02X%02X%02X%02X.raw\0", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0]);
+        snprintf(dst_path, sizeof(dst_path), "/current/%02X%02X%02X%02X%02X%02X%02X%02X.raw", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0]);
         contentFS->remove(dst_path);
         return true;
     }
@@ -220,7 +221,7 @@ bool prepareDataAvail(String& filename, uint8_t dataType, uint8_t dataTypeArgume
 
     if (dataType != DATATYPE_FW_UPDATE) {
         char dst_path[64];
-        sprintf(dst_path, "/current/%02X%02X%02X%02X%02X%02X%02X%02X_%lu.pending", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0], millis() % 1000000);
+        snprintf(dst_path, sizeof(dst_path), "/current/%02X%02X%02X%02X%02X%02X%02X%02X_%lu.pending", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0], millis() % 1000000);
         if (contentFS->exists(dst_path)) {
             contentFS->remove(dst_path);
         }
@@ -416,7 +417,7 @@ void processBlockRequest(struct espBlockRequest* br) {
     if (len > BLOCK_DATA_SIZE) len = BLOCK_DATA_SIZE;
     uint16_t checksum = sendBlock(queueItem->data + (br->blockId * BLOCK_DATA_SIZE), len);
     char buffer[150];
-    sprintf(buffer, "%02X%02X%02X%02X%02X%02X%02X%02X block request %s block %d, len %d checksum %u\0", br->src[7], br->src[6], br->src[5], br->src[4], br->src[3], br->src[2], br->src[1], br->src[0], queueItem->filename, br->blockId, len, checksum);
+    snprintf(buffer, sizeof(buffer), "%02X%02X%02X%02X%02X%02X%02X%02X block request %s block %u, len %u checksum %u", br->src[7], br->src[6], br->src[5], br->src[4], br->src[3], br->src[2], br->src[1], br->src[0], queueItem->filename, br->blockId, len, checksum);
     wsLog((String)buffer);
     Serial.printf("<RQB file %s block %d, len %d checksum %u\r\n\0", queueItem->filename, br->blockId, len, checksum);
 }
@@ -629,7 +630,7 @@ void processTagReturnData(struct espTagReturnData* trd, uint8_t len, bool local)
     char buffer[64];
     sprintf(buffer, "<TRD %02X%02X%02X%02X%02X%02X%02X%02X\r\n", trd->src[7], trd->src[6], trd->src[5], trd->src[4], trd->src[3], trd->src[2], trd->src[1], trd->src[0]);
     wsLog((String)buffer);
-    sprintf(buffer, "TRD Data: len=%d, type=%d, ver=0x%08X\r\n", payloadLength, trd->returnData.dataType, trd->returnData.dataVer);
+    sprintf(buffer, "TRD Data: len=%d, type=%d, ver=0x%08lX\r\n", payloadLength, trd->returnData.dataType, (unsigned long)trd->returnData.dataVer);
     wsLog((String)buffer);
 
 #ifndef SAVE_SPACE

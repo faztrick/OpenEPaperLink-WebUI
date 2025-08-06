@@ -1,22 +1,38 @@
+/*
+ * WifiManager.cpp - Optimized WiFi management for ESP32-S3
+ *
+ * Key optimizations implemented:
+ * - Enhanced error handling with detailed disconnect reasons
+ * - Improved NVS storage management with proper error checking
+ * - ESP32-S3 specific power and performance optimizations
+ * - Better memory management in WiFi scanning
+ * - Optimized connection timeouts and retry logic
+ * - Proper WiFi configuration validation
+ * - Enhanced AP mode with better client handling
+ * - Improved serial interface polling
+ *
+ * ESP32-S3 specific features:
+ * - WIFI_PS_NONE for better performance
+ * - WIFI_POWER_19_5dBm optimal power setting
+ * - PMF (Protected Management Frames) capability
+ * - Optimized scan parameters for faster network discovery
+ * - Enhanced bandwidth configuration for AP mode
+ */
+
 #include "wifimanager.h"
 
+#include <ETH.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <esp_wifi_types.h>
 
-#include <ETH.h>
-
+#include "ips_display.h"
 #include "newproto.h"
 #include "system.h"
 #include "tag_db.h"
 #include "udp.h"
 #include "web.h"
-#include "ips_display.h"
-#include "tag_db.h"
-
-// WiFi optimization includes for ESP32-S3
-#include "esp_wifi.h"
-#include "esp_wifi_types.h"
 
 uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
@@ -32,20 +48,65 @@ static long eth_timeout = 0;
 WifiManager::WifiManager() {
     _reconnectIntervalCheck = 5000;
     _retryIntervalCheck = 5 * 60000;
-    _connectionTimeout = 15000;
+    _connectionTimeout = 20000;  // Increased timeout for ESP32-S3
 
     _nextReconnectCheck = 0;
     _connected = false;
     _savewhensuccessfull = false;
+
+    // Initialize buffer to prevent undefined behavior
+    memset(serialBuffer, 0, sizeof(serialBuffer));
     _ssid = "";
     _APstarted = false;
     wifiStatus = NOINIT;
 
     WiFi.onEvent(WiFiEvent);
     WiFiEventId_t eventID = WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
-        Serial.print("WiFi lost connection. Reason: ");
-        Serial.println(info.wifi_sta_disconnected.reason);
-    }, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+        Serial.printf("WiFi lost connection. Reason: %d - ", info.wifi_sta_disconnected.reason);
+        // Print human-readable disconnect reason
+        switch (info.wifi_sta_disconnected.reason) {
+            case WIFI_REASON_AUTH_EXPIRE:
+                Serial.println("Auth expired");
+                break;
+            case WIFI_REASON_AUTH_LEAVE:
+                Serial.println("Auth leave");
+                break;
+            case WIFI_REASON_ASSOC_EXPIRE:
+                Serial.println("Assoc expired");
+                break;
+            case WIFI_REASON_ASSOC_TOOMANY:
+                Serial.println("Too many associations");
+                break;
+            case WIFI_REASON_NOT_AUTHED:
+                Serial.println("Not authenticated");
+                break;
+            case WIFI_REASON_NOT_ASSOCED:
+                Serial.println("Not associated");
+                break;
+            case WIFI_REASON_ASSOC_LEAVE:
+                Serial.println("Association leave");
+                break;
+            case WIFI_REASON_BEACON_TIMEOUT:
+                Serial.println("Beacon timeout");
+                break;
+            case WIFI_REASON_NO_AP_FOUND:
+                Serial.println("No AP found");
+                break;
+            case WIFI_REASON_AUTH_FAIL:
+                Serial.println("Auth failed");
+                break;
+            case WIFI_REASON_ASSOC_FAIL:
+                Serial.println("Association failed");
+                break;
+            case WIFI_REASON_HANDSHAKE_TIMEOUT:
+                Serial.println("Handshake timeout");
+                break;
+            default:
+                Serial.printf("Unknown reason: %d\n", info.wifi_sta_disconnected.reason);
+                break;
+        }
+    },
+                                         WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 }
 
 void WifiManager::terminalLog(String text) {
@@ -74,25 +135,37 @@ void WifiManager::poll() {
 
 #endif
 
-    if (wifiStatus == AP && millis() > _nextReconnectCheck && _ssid != "") {
+    // Optimized WiFi reconnection logic
+    if (wifiStatus == AP && millis() > _nextReconnectCheck && !_ssid.isEmpty()) {
         if (apClients == 0) {
-            terminalLog("Attempting to reconnect to WiFi.");
+            terminalLog("Attempting to reconnect to WiFi (no AP clients).");
             logLine("Attempting to reconnect to WiFi.");
             _APstarted = false;
             wifiStatus = NOINIT;
             connectToWifi();
         } else {
+            // Extend retry interval when clients are connected
             _nextReconnectCheck = millis() + _retryIntervalCheck;
         }
     }
 
+    // Enhanced connection monitoring
     if (wifiStatus == CONNECTED && millis() > _nextReconnectCheck) {
-        if (WiFi.status() != WL_CONNECTED) {
+        wl_status_t wifiStatus = WiFi.status();
+        if (wifiStatus != WL_CONNECTED) {
             _connected = false;
+            Serial.printf("WiFi connection lost (status: %d). Attempting to reconnect.\n", wifiStatus);
             terminalLog("WiFi connection lost. Attempting to reconnect.");
             logLine("WiFi connection lost. Attempting to reconnect.");
+
+            // Use WiFi.reconnect() first, then full reconnect if needed
             WiFi.reconnect();
-            waitForConnection();
+            _connected = waitForConnection();
+
+            if (!_connected) {
+                Serial.println("Reconnect failed, trying full connection process");
+                connectToWifi();
+            }
         } else {
             _nextReconnectCheck = millis() + _reconnectIntervalCheck;
         }
@@ -103,37 +176,51 @@ void WifiManager::poll() {
 #ifdef ETHERNET_CLK_MODE
     if (!(ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_IN || ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_OUT)) {
 #endif
-    // ap_and_flasher has gpio0 in use as FLASHER_AP_POWER
-    if (digitalRead(0) == LOW) {
-        Serial.println("GPIO0 LOW");
-        long starttime = millis();
-        while (digitalRead(0) == LOW && millis() - starttime < 5000) {
-        }
+        // Handle GPIO0 reset functionality
         if (digitalRead(0) == LOW) {
-            Serial.println("Resetting WIFI settings");
-            Preferences preferences;
-            preferences.begin("wifi", false);
-            preferences.putString("ssid", "");
-            preferences.putString("pw", "");
-            preferences.putString("ip", "");
-            preferences.putString("mask", "");
-            preferences.putString("gw", "");
-            preferences.putString("dns", "");
-            preferences.end();
-
-            wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-            esp_wifi_init(&cfg);
-            delay(2000);
-
-            if (esp_wifi_restore() != ESP_OK) {
-                Serial.println("WiFi is not initialized by esp_wifi_init ");
-            } else {
-                Serial.println("WiFi Configurations Cleared!");
+            Serial.println("GPIO0 LOW detected");
+            unsigned long starttime = millis();
+            while (digitalRead(0) == LOW && millis() - starttime < 5000) {
+                vTaskDelay(pdMS_TO_TICKS(10));  // Small delay to prevent tight loop
             }
-            delay(100);
-            ESP.restart();
+            if (digitalRead(0) == LOW) {
+                Serial.println("Resetting WiFi settings...");
+
+                // Clear WiFi settings from NVS
+                Preferences preferences;
+                if (preferences.begin("wifi", false)) {
+                    preferences.putString("ssid", "");
+                    preferences.putString("pw", "");
+                    preferences.putString("ip", "");
+                    preferences.putString("mask", "");
+                    preferences.putString("gw", "");
+                    preferences.putString("dns", "");
+                    preferences.end();
+                    Serial.println("✅ WiFi settings cleared from NVS");
+                } else {
+                    Serial.println("❌ Failed to clear WiFi settings from NVS");
+                }
+
+                // Clear ESP32 WiFi config
+                wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+                esp_err_t ret = esp_wifi_init(&cfg);
+                if (ret == ESP_OK || ret == ESP_ERR_WIFI_NOT_INIT) {
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+
+                    ret = esp_wifi_restore();
+                    if (ret != ESP_OK) {
+                        Serial.printf("WiFi restore failed: %s\n", esp_err_to_name(ret));
+                    } else {
+                        Serial.println("✅ WiFi configurations cleared!");
+                    }
+                } else {
+                    Serial.printf("WiFi init failed: %s\n", esp_err_to_name(ret));
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(100));
+                ESP.restart();
+            }
         }
-    }
 #ifdef ETHERNET_CLK_MODE
     }
 #endif
@@ -166,12 +253,22 @@ bool WifiManager::connectToWifi() {
 #endif
 
     Preferences preferences;
-    preferences.begin("wifi", false);
+    if (!preferences.begin("wifi", false)) {
+        Serial.println("ERROR: Failed to open NVS wifi namespace");
+        startManagementServer();
+        return false;
+    }
+
     _ssid = preferences.getString("ssid", WiFi_SSID());
     _pass = preferences.getString("pw", WiFi_psk());
-    if (_ssid == "") {
+
+    // ESP32-S3 specific debug information
+    Serial.printf("NVS WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
+
+    if (_ssid.isEmpty()) {
         terminalLog("No connection info saved");
         logLine("No connection information saved");
+        preferences.end();
         startManagementServer();
         return false;
     }
@@ -181,13 +278,20 @@ bool WifiManager::connectToWifi() {
     String mask = preferences.getString("mask", "");
     String gw = preferences.getString("gw", "");
     String dns = preferences.getString("dns", "");
+    preferences.end();  // Close preferences properly
 
-    if (ip.length() > 0) {
+    // Configure static IP if available
+    if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0) {
         IPAddress staticIP, subnetMask, gatewayIP, dnsIP;
         if (staticIP.fromString(ip) && subnetMask.fromString(mask) && gatewayIP.fromString(gw)) {
-            if (dns.length() > 0) dnsIP.fromString(dns);
-            WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
+            if (dns.length() > 0 && dnsIP.fromString(dns)) {
+                WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
+            } else {
+                WiFi.config(staticIP, gatewayIP, subnetMask);
+            }
             terminalLog("Setting static IP: " + ip);
+        } else {
+            Serial.println("WARNING: Invalid static IP configuration, using DHCP");
         }
     }
 
@@ -201,40 +305,93 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
         return true;
 #endif
 
+    if (ssid.isEmpty()) {
+        Serial.println("ERROR: Empty SSID provided");
+        return false;
+    }
+
     _ssid = ssid;
     _pass = pass;
     _savewhensuccessfull = savewhensuccessfull;
 
     _APstarted = false;
+
+    // Proper WiFi disconnect and reset sequence
     WiFi.disconnect(true, true);
-    vTaskDelay(pdMS_TO_TICKS(200));  // Non-blocking delay
+    vTaskDelay(pdMS_TO_TICKS(500));  // Allow time for disconnect
     WiFi.mode(WIFI_MODE_NULL);
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    // Optimize WiFi settings for ESP32-S3
-    WiFi.setHostname(buildHostname(ESP_MAC_WIFI_STA).c_str());
+    // Set hostname before connecting
+    String hostname = buildHostname(ESP_MAC_WIFI_STA);
+    if (!WiFi.setHostname(hostname.c_str())) {
+        Serial.printf("WARNING: Failed to set hostname: %s\n", hostname.c_str());
+    }
+
     WiFi.mode(WIFI_STA);
 
-    // Performance optimizations
-    esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving for faster connection
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
+    // ESP32-S3 Performance optimizations
+    esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving for faster connection
+    if (ret != ESP_OK) {
+        Serial.printf("WARNING: Failed to set power save mode: %s\n", esp_err_to_name(ret));
+    }
 
-    // Configure for faster connection
+    ret = WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
+    if (!ret) {
+        Serial.println("WARNING: Failed to set TX power");
+    }
+
+    // Initialize WiFi with optimized configuration
+    wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    wifi_init_cfg.nvs_enable = 1;  // Enable NVS storage
+    ret = esp_wifi_init(&wifi_init_cfg);
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) {
+        Serial.printf("ERROR: WiFi init failed: %s\n", esp_err_to_name(ret));
+        return false;
+    }
+
+    // Set WiFi storage to flash for persistence
+    ret = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+    if (ret != ESP_OK) {
+        Serial.printf("WARNING: Failed to set WiFi storage: %s\n", esp_err_to_name(ret));
+    }
+
+    Serial.printf("WiFi optimizations applied for ESP32-S3 - SSID: %s\n", ssid.c_str());
+
+    // Configure WiFi connection parameters
     wifi_config_t wifi_config;
     memset(&wifi_config, 0, sizeof(wifi_config));
+
+    // Safely copy SSID and password
     strncpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid) - 1);
+    wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
+
     strncpy((char *)wifi_config.sta.password, pass.c_str(), sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
+
+    // Optimized scan and connection settings
     wifi_config.sta.scan_method = WIFI_FAST_SCAN;             // Fast scan method
     wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;  // Connect to strongest signal
     wifi_config.sta.threshold.rssi = -127;                    // Accept any signal strength
     wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;      // Accept any auth mode initially
+    wifi_config.sta.pmf_cfg.capable = true;                   // Enable PMF capability
+    wifi_config.sta.pmf_cfg.required = false;                 // But don't require it
 
     terminalLog("Connecting to WiFi with optimized settings...");
     WiFi.persistent(savewhensuccessfull);
 
-    // Use optimized connection
-    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-    esp_wifi_connect();
+    // Apply configuration and connect
+    ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (ret != ESP_OK) {
+        Serial.printf("ERROR: Failed to set WiFi config: %s\n", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = esp_wifi_connect();
+    if (ret != ESP_OK) {
+        Serial.printf("ERROR: WiFi connect failed: %s\n", esp_err_to_name(ret));
+        return false;
+    }
 
     _connected = waitForConnection();
     return _connected;
@@ -248,30 +405,71 @@ bool WifiManager::waitForConnection() {
 
     unsigned long timeout = millis() + _connectionTimeout;
     wifiStatus = WAIT_CONNECTING;
+    wl_status_t lastStatus = WL_IDLE_STATUS;
 
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() > timeout) {
-            terminalLog("!Unable to connect to WiFi");
+            wl_status_t currentStatus = WiFi.status();
+            Serial.printf("WiFi connection timeout. Final status: %d\n", currentStatus);
+
+            // Provide more detailed error information
+            switch (currentStatus) {
+                case WL_NO_SSID_AVAIL:
+                    terminalLog("!WiFi Error: SSID not found");
+                    break;
+                case WL_CONNECT_FAILED:
+                    terminalLog("!WiFi Error: Connection failed (wrong password?)");
+                    break;
+                case WL_CONNECTION_LOST:
+                    terminalLog("!WiFi Error: Connection lost during handshake");
+                    break;
+                case WL_DISCONNECTED:
+                    terminalLog("!WiFi Error: Disconnected");
+                    break;
+                default:
+                    terminalLog("!Unable to connect to WiFi - timeout");
+                    break;
+            }
+
             logLine("Unable to connect to WiFi");
             startManagementServer();
             return false;
         }
-        vTaskDelay(250 / portTICK_PERIOD_MS);
+
+        // Log status changes for debugging
+        wl_status_t currentStatus = WiFi.status();
+        if (currentStatus != lastStatus) {
+            Serial.printf("WiFi status changed: %d -> %d\n", lastStatus, currentStatus);
+            lastStatus = currentStatus;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(250));
     }
 
+    // Save credentials if requested
     if (_savewhensuccessfull) {
         Preferences preferences;
-        preferences.begin("wifi", false);
-        preferences.putString("ssid", _ssid);
-        preferences.putString("pass", _pass);
-        preferences.end();
+        if (preferences.begin("wifi", false)) {
+            Serial.printf("Saving WiFi credentials - SSID: '%s'\n", _ssid.c_str());
+            preferences.putString("ssid", _ssid);
+            preferences.putString("pw", _pass);  // Use "pw" key for consistency
+            preferences.end();
+            Serial.println("✅ WiFi credentials saved to NVS");
+        } else {
+            Serial.println("❌ ERROR: Failed to save WiFi credentials to NVS");
+        }
         _savewhensuccessfull = false;
     }
+
+    // Configure WiFi for optimal performance
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
+
     IPAddress IP = WiFi.localIP();
-    terminalLog("Connected!");
-    // logLine("Connected!");
+    terminalLog("✅ Connected! IP: " + IP.toString());
+    Serial.printf("WiFi connected successfully - IP: %s, RSSI: %d dBm\n",
+                  IP.toString().c_str(), WiFi.RSSI());
+
     _nextReconnectCheck = millis() + _reconnectIntervalCheck;
     wifiStatus = CONNECTED;
     return true;
@@ -281,18 +479,27 @@ void WifiManager::startManagementServer() {
     if (!_APstarted && wifiStatus != ETHERNET) {
         terminalLog("Starting config AP, ssid: OpenEPaperLink");
         logLine("Starting configuration AP, ssid OpenEPaperLink");
-        WiFi.disconnect(true, true);
-        delay(100);
 
-        // Optimized WiFi settings for ESP32-S3
+        // Proper disconnect sequence
+        WiFi.disconnect(true, true);
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Optimized WiFi settings for ESP32-S3 AP mode
         WiFi.mode(WIFI_AP_STA);  // Use dual mode to allow scanning while in AP mode
 
         // Configure WiFi performance settings
-        esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving for better performance
-        WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Set optimal power for ESP32-S3
+        esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving for better performance
+        if (ret != ESP_OK) {
+            Serial.printf("WARNING: Failed to set AP power save mode: %s\n", esp_err_to_name(ret));
+        }
 
-        // Configure scan settings for better performance
+        if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {  // Set optimal power for ESP32-S3
+            Serial.println("WARNING: Failed to set AP TX power");
+        }
+
+        // Pre-configure scan settings for when users request WiFi networks
         wifi_scan_config_t scanConf;
+        memset(&scanConf, 0, sizeof(scanConf));
         scanConf.ssid = NULL;
         scanConf.bssid = NULL;
         scanConf.channel = 0;
@@ -300,16 +507,27 @@ void WifiManager::startManagementServer() {
         scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
         scanConf.scan_time.active.min = 100;  // Faster scan timing
         scanConf.scan_time.active.max = 300;
-        esp_wifi_scan_start(&scanConf, false);
 
-        WiFi.softAP("OpenEPaperLink", "", 1, false, 8);  // Allow up to 8 connections
-        WiFi.softAPsetHostname("OpenEPaperLink");
+        // Start AP with optimized settings
+        if (!WiFi.softAP("OpenEPaperLink", "", 1, false, 8)) {  // Allow up to 8 connections
+            Serial.println("ERROR: Failed to start WiFi AP");
+            return;
+        }
+
+        if (!WiFi.softAPsetHostname("OpenEPaperLink")) {
+            Serial.println("WARNING: Failed to set AP hostname");
+        }
 
         // Set optimal bandwidth for AP mode
-        esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+        ret = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+        if (ret != ESP_OK) {
+            Serial.printf("WARNING: Failed to set AP bandwidth: %s\n", esp_err_to_name(ret));
+        }
 
         IPAddress IP = WiFi.softAPIP();
-        terminalLog("Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
+        terminalLog("✅ AP Started! Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
+        Serial.printf("AP Mode: IP=%s, MAC=%s\n", IP.toString().c_str(), WiFi.softAPmacAddress().c_str());
+
         _APstarted = true;
         _nextReconnectCheck = millis() + _retryIntervalCheck;
         wifiStatus = AP;
@@ -321,13 +539,21 @@ String WifiManager::buildHostname(esp_mac_type_t mac_type) {
     uint8_t mac[6];
     esp_read_mac(mac, mac_type);
     char lastTwoBytes[5];
-    sprintf(lastTwoBytes, "%02X%02X", mac[4], mac[5]);
-    strcat(hostname, lastTwoBytes);
+    snprintf(lastTwoBytes, sizeof(lastTwoBytes), "%02X%02X", mac[4], mac[5]);
+
+    // Use safe string concatenation with bounds checking
+    size_t currentLen = strlen(hostname);
+    size_t remaining = sizeof(hostname) - currentLen - 1;
+    if (strlen(lastTwoBytes) <= remaining) {
+        strncat(hostname, lastTwoBytes, remaining);
+    }
 
     if (config.alias[0] != '\0') {
+        // Reset hostname to use alias instead
+        memset(hostname, 0, sizeof(hostname));
         int len = strlen(config.alias);
         int j = 0;
-        for (int i = 0; i < len; i++) {
+        for (int i = 0; i < len && j < (int)(sizeof(hostname) - 1); i++) {
             char c = config.alias[i];
             if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
                 hostname[j] = c;
@@ -563,11 +789,12 @@ bool onCommandCallback(improv::ImprovCommand cmd) {
 }
 
 void getAvailableWifiNetworks() {
-    // Use async scan for better performance
-    WiFi.scanDelete();  // Clear previous results
+    // Clear previous scan results
+    WiFi.scanDelete();
 
-    // Configure optimized scan parameters
+    // Configure optimized scan parameters for ESP32-S3
     wifi_scan_config_t scanConf;
+    memset(&scanConf, 0, sizeof(scanConf));
     scanConf.ssid = NULL;
     scanConf.bssid = NULL;
     scanConf.channel = 0;
@@ -576,16 +803,27 @@ void getAvailableWifiNetworks() {
     scanConf.scan_time.active.min = 100;  // Fast scan
     scanConf.scan_time.active.max = 200;
 
-    // Start optimized scan
-    esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
+    // Start optimized scan with timeout protection
+    esp_err_t ret = esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
+    if (ret != ESP_OK) {
+        Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
+        // Send empty response on scan failure
+        std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
+        send_response(data);
+        return;
+    }
 
     int networkNum = WiFi.scanComplete();
+    Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
 
     if (networkNum > 0) {
-        // Create array for sorting by signal strength
-        std::vector<std::pair<int, int>> networks;  // index, rssi
+        // Create vector for sorting by signal strength with better memory management
+        std::vector<std::pair<int, int>> networks;
+        networks.reserve(std::min(networkNum, 30));  // Reserve memory to prevent reallocations
+
         for (int i = 0; i < networkNum; i++) {
-            if (WiFi.SSID(i).length() > 0) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.length() > 0 && ssid.length() <= 32) {  // Valid SSID length check
                 networks.push_back(std::make_pair(i, WiFi.RSSI(i)));
             }
         }
@@ -596,25 +834,37 @@ void getAvailableWifiNetworks() {
                       return a.second > b.second;
                   });
 
-        // Send sorted results (limit to prevent memory issues)
+        // Send sorted results with memory-efficient processing
         int maxNetworks = std::min((int)networks.size(), 30);
         for (int idx = 0; idx < maxNetworks; idx++) {
             int id = networks[idx].first;
+
+            // Get network info with bounds checking
+            String ssid = WiFi.SSID(id);
+            int32_t rssi = WiFi.RSSI(id);
+            wifi_auth_mode_t authMode = WiFi.encryptionType(id);
+
+            if (ssid.length() == 0) continue;  // Skip invalid entries
+
+            // Build response efficiently
             std::vector<uint8_t> data = improv::build_rpc_response(
                 improv::GET_WIFI_NETWORKS,
-                {WiFi.SSID(id), String(WiFi.RSSI(id)), (WiFi.encryptionType(id) == WIFI_AUTH_OPEN ? "NO" : "YES")},
+                {ssid, String(rssi), (authMode == WIFI_AUTH_OPEN ? "NO" : "YES")},
                 false);
             send_response(data);
-            vTaskDelay(pdMS_TO_TICKS(1));  // Non-blocking delay
+
+            // Small delay to prevent overwhelming the serial interface
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
+    } else {
+        Serial.println("No WiFi networks found during scan");
     }
 
-    // final response
-    std::vector<uint8_t> data =
-        improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
+    // Send final empty response to indicate scan completion
+    std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
     send_response(data);
 
-    // Clean up
+    // Clean up scan results to free memory
     WiFi.scanDelete();
 }
 

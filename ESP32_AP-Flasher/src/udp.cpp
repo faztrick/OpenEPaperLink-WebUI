@@ -90,7 +90,8 @@ void UDPcomm::processPacket(AsyncUDPPacket packet) {
         case PKT_APLIST_REQ: {
             APlist APitem;
             APitem.src = wm.localIP();
-            strcpy(APitem.alias, config.alias);
+            strncpy(APitem.alias, config.alias, sizeof(APitem.alias) - 1);
+            APitem.alias[sizeof(APitem.alias) - 1] = '\0';  // Ensure null termination
             APitem.channelId = curChannel.channel;
             APitem.tagCount = getTagCount();
             APitem.version = apInfo.version;
@@ -156,7 +157,8 @@ void autoselect(void* pvParameters) {
 void UDPcomm::getAPList() {
     APlist APitem;
     APitem.src = wm.localIP();
-    strcpy(APitem.alias, config.alias);
+    strncpy(APitem.alias, config.alias, sizeof(APitem.alias) - 1);
+    APitem.alias[sizeof(APitem.alias) - 1] = '\0';  // Ensure null termination
     APitem.channelId = curChannel.channel;
     APitem.tagCount = getTagCount();
     APitem.version = apInfo.version;

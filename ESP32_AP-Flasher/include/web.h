@@ -16,6 +16,9 @@ void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index
 void doJsonUpload(AsyncWebServerRequest *request);
 void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 
+// Enhanced Module Management API
+void setupModuleManagementAPI(AsyncWebServer &server);
+
 // Missing function declarations for OTA handlers
 void handleSysinfoRequest(AsyncWebServerRequest *request);
 void handleCheckFile(AsyncWebServerRequest *request);

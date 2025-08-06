@@ -23,18 +23,6 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# Performance optimizations
-if ($FastBuild) {
-    $env:PLATFORMIO_BUILD_CACHE_DIR = ".pio\build_cache"
-    $env:PLATFORMIO_LIBDEPS_CACHE_DIR = ".pio\libdeps_cache"
-}
-
-# Optimize job count
-if ($Jobs -eq 0) {
-    $cpuCores = [Environment]::ProcessorCount
-    $Jobs = [Math]::Min(16, [Math]::Max(4, $cpuCores * 2))  # Use 2x CPU cores, max 16
-}
-
 # Colors for enhanced output
 $Colors = @{
     Success = "Green"
@@ -48,6 +36,19 @@ function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
     $fgColor = if ($Colors.ContainsKey($Color)) { $Colors[$Color] } else { "White" }
     Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] $Message" -ForegroundColor $fgColor
+}
+
+# Optimize job count
+if ($Jobs -eq 0) {
+    $cpuCores = [Environment]::ProcessorCount
+    $Jobs = [Math]::Min(16, [Math]::Max(4, $cpuCores * 2))  # Use 2x CPU cores, max 16
+}
+
+# Performance optimizations
+if ($FastBuild) {
+    # Use environment variables for faster builds (these are supported)
+    $env:PLATFORMIO_BUILD_FLAGS = ""
+    Write-ColorOutput "FastBuild mode enabled - using parallel compilation" "Info"
 }
 
 function Test-ComPort {
@@ -193,11 +194,8 @@ if (-not $SkipBuild) {
             # Build main firmware with parallel compilation
             Write-ColorOutput "  ├─ Compiling firmware (${jobCount} parallel jobs)..." "Progress"
             
-            # Add caching flags for faster builds
+            # Build with optimized parallel compilation
             $buildArgs = @("run", "--environment", $Environment, "--jobs", $jobCount)
-            if ($FastBuild) {
-                $buildArgs += "--build-cache"
-            }
             
             & $pioPath @buildArgs
             if ($LASTEXITCODE -ne 0) { throw "Firmware build failed" }
@@ -205,13 +203,10 @@ if (-not $SkipBuild) {
             # Build filesystem in parallel if possible
             Write-ColorOutput "  ├─ Building filesystem..." "Progress"
             $filesystemJob = Start-Job -ScriptBlock {
-                param($pioPath, $Environment, $FastBuild)
+                param($pioPath, $Environment)
                 $fsArgs = @("run", "--target", "buildfs", "--environment", $Environment, "--jobs", "4")
-                if ($FastBuild) {
-                    $fsArgs += "--build-cache"
-                }
                 & $pioPath @fsArgs
-            } -ArgumentList $pioPath, $Environment, $FastBuild
+            } -ArgumentList $pioPath, $Environment
             
             # Wait for filesystem build to complete
             $filesystemJob | Wait-Job | Out-Null

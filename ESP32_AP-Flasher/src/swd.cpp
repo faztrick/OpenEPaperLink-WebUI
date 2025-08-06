@@ -164,6 +164,8 @@ void swd::swd_Direction(bool WorR) {  // 1 = Write 0 = Read
 #define DP_RDBUFF 0x0c
 
 nrfswd::nrfswd(uint8_t swdio, uint8_t swdclk) : swd(swdio, swdclk) {
+    // Initialize nrf_info to prevent undefined behavior
+    memset(&nrf_info, 0, sizeof(nrf_info));
 }
 bool nrfswd::init() {
     uint32_t temp = swd_Init();

@@ -771,8 +771,21 @@
 				body: JSON.stringify(data)
 			})
 			.then(response => {
+				console.log('Response status:', response.status);
 				if (response.ok) {
-					statusMsg.textContent = 'WiFi settings saved! Access Point will reboot...';
+					return response.json().catch(() => ({ success: true, message: 'Settings saved' }));
+				} else {
+					return response.json().then(errorData => {
+						throw new Error(errorData.error || `HTTP ${response.status}`);
+					}).catch(() => {
+						throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+					});
+				}
+			})
+				.then(result => {
+					console.log('Save result:', result);
+					if (result.success !== false) {
+						statusMsg.textContent = result.message || 'WiFi settings saved! Access Point will reboot...';
 					statusMsg.style.color = '#6bcf7f';
 					
 					// Clear password field for security
@@ -783,12 +796,12 @@
 						statusMsg.textContent = 'Rebooting... Please wait and reconnect.';
 					}, 2000);
 				} else {
-					throw new Error('Failed to save WiFi settings');
+					throw new Error(result.error || 'Unknown error occurred');
 				}
 			})
 			.catch(error => {
 				console.error('Error saving WiFi settings:', error);
-				statusMsg.textContent = 'Failed to save WiFi settings';
+				statusMsg.textContent = 'Failed to save WiFi settings: ' + error.message;
 				statusMsg.style.color = '#ff6b6b';
 			})
 			.finally(() => {

@@ -21,6 +21,7 @@
 #include "commstructs.h"
 #include "language.h"
 #include "leds.h"
+#include "module_manager.h"
 #include "newproto.h"
 #include "ota.h"
 #include "serialap.h"
@@ -204,9 +205,9 @@ void wsSendSysteminfo() {
 
         char result[40];
         if (timeoutcount > 0) {
-            snprintf(result, sizeof(result), "%lu/%lu, %lu timeout", tagcount, tagDB.size(), timeoutcount);
+            snprintf(result, sizeof(result), "%u/%zu, %u timeout", tagcount, tagDB.size(), timeoutcount);
         } else {
-            snprintf(result, sizeof(result), "%lu / %lu", tagcount, tagDB.size());
+            snprintf(result, sizeof(result), "%u / %zu", tagcount, tagDB.size());
         }
         setVarDB("ap_tagcount", result);
 
@@ -856,30 +857,73 @@ void init_web() {
     });
 
     AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler("/save_wifi_config", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        Serial.println("WiFi config save request received");
+
+        // Validate JSON input
+        if (!json.is<JsonObject>()) {
+            Serial.println("ERROR: Invalid JSON received");
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
         const JsonObject &jsonObj = json.as<JsonObject>();
+
+        // Debug: Print received data
+        String debugData;
+        serializeJson(jsonObj, debugData);
+        Serial.println("Received WiFi config: " + debugData);
+
+        // Initialize NVS with error handling
         Preferences preferences;
-        preferences.begin("wifi", false);
+        if (!preferences.begin("wifi", false)) {
+            Serial.println("ERROR: Failed to initialize NVS storage");
+            request->send(500, "application/json", "{\"error\":\"Storage initialization failed\"}");
+            return;
+        }
+
+        // Save configuration with validation
         const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
         const size_t numKeys = sizeof(keys) / sizeof(keys[0]);
+        bool saveSuccess = true;
+
         for (size_t i = 0; i < numKeys; i++) {
             String key = keys[i];
-            if (jsonObj[key].is<String>()) {
-                preferences.putString(key.c_str(), jsonObj[key].as<String>());
+            if (jsonObj.containsKey(key)) {
+                String value = jsonObj[key].as<String>();
+                Serial.printf("Saving %s: %s\n", key.c_str(), value.c_str());
+
+                size_t written = preferences.putString(key.c_str(), value);
+                if (written == 0 && !value.isEmpty()) {
+                    Serial.printf("WARNING: Failed to write %s\n", key.c_str());
+                    saveSuccess = false;
+                }
             }
         }
-        preferences.end();
-        Serial.println("config saved");
-        request->send(200, "text/plain", "Ok, saved");
 
+        preferences.end();
+
+        if (!saveSuccess) {
+            Serial.println("ERROR: Some settings failed to save");
+            request->send(500, "application/json", "{\"error\":\"Failed to save some settings\"}");
+            return;
+        }
+
+        Serial.println("WiFi config saved successfully");
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved\"}");
+
+        // Disable websocket to prevent interference during restart
         ws.enable(false);
 
         if (jsonObj["ssid"].as<String>() == "factory") {
+            Serial.println("Factory reset initiated");
             config.runStatus = RUNSTATUS_STOP;
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            vTaskDelay(pdMS_TO_TICKS(2000));
+
             preferences.begin("wifi", false);
             preferences.putString("ssid", "");
             preferences.putString("pw", "");
             preferences.end();
+            
             destroyDB();
             cleanupCurrent();
             contentFS->remove("/AP_FW_Pack.bin");
@@ -893,21 +937,45 @@ void init_web() {
             contentFS->remove("/current/tagDB.json.bak");
             contentFS->remove("/current/tagDBrestored.json");
             contentFS->remove("/current/apconfig.json");
-            delay(100);
+            vTaskDelay(pdMS_TO_TICKS(100));
             esp_deep_sleep_start();
             ESP.restart();
         } else {
+            Serial.println("Preparing for restart with new WiFi settings");
             refreshAllPending();
             saveDB("/current/tagDB.json");
         }
 
         ws.closeAll();
-        delay(100);
+        vTaskDelay(pdMS_TO_TICKS(1000));  // Give time for response to be sent
         ESP.restart();
     });
     server.addHandler(handler);
 
-    // end of setup
+    // Add WiFi config retrieval endpoint for debugging
+    server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        Preferences preferences;
+
+        if (preferences.begin("wifi", true)) {  // Read-only mode
+            doc["ssid"] = preferences.getString("ssid", "");
+            doc["ip"] = preferences.getString("ip", "");
+            doc["mask"] = preferences.getString("mask", "");
+            doc["gw"] = preferences.getString("gw", "");
+            doc["dns"] = preferences.getString("dns", "");
+            // Don't return password for security
+            doc["hasPassword"] = !preferences.getString("pw", "").isEmpty();
+            preferences.end();
+            doc["success"] = true;
+        } else {
+            doc["success"] = false;
+            doc["error"] = "Failed to read WiFi configuration";
+        }
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
 
     server.on("/backup_db", HTTP_GET, [](AsyncWebServerRequest *request) {
         saveDB("/current/tagDB.json");
@@ -980,6 +1048,9 @@ void init_web() {
         serializeJson(doc, response);
         request->send(200, "application/json", response);
     });
+
+    // Enhanced Module Management API Endpoints
+    setupModuleManagementAPI(server);
 
     // C6 Module Management Endpoints
     server.on("/get_c6_settings", HTTP_GET, handleGetC6Settings);
@@ -1712,16 +1783,22 @@ void init_web() {
 
         // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
-        Serial.printf("Current WiFi mode: %d\n", currentMode);
+        Serial.printf("ESP32-S3 WiFi scan - Current WiFi mode: %d\n", currentMode);
 
         if (currentMode == WIFI_OFF) {
-            Serial.println("WiFi was off, switching to STA mode");
+            Serial.println("WiFi was off, switching to STA mode with ESP32-S3 optimizations");
             WiFi.mode(WIFI_STA);
-            vTaskDelay(pdMS_TO_TICKS(200));  // Non-blocking delay
+            // ESP32-S3 specific WiFi performance settings
+            esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving
+            WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
+            vTaskDelay(pdMS_TO_TICKS(200));
         } else if (currentMode == WIFI_AP) {
-            Serial.println("WiFi was in AP mode, switching to AP+STA mode");
+            Serial.println("WiFi was in AP mode, switching to AP+STA mode with ESP32-S3 optimizations");
             WiFi.mode(WIFI_AP_STA);
-            vTaskDelay(pdMS_TO_TICKS(200));  // Non-blocking delay
+            // Apply optimizations for dual mode
+            esp_wifi_set_ps(WIFI_PS_NONE);
+            WiFi.setTxPower(WIFI_POWER_19_5dBm);
+            vTaskDelay(pdMS_TO_TICKS(200));
         }
 
         // Check if scan is already in progress
@@ -2118,9 +2195,26 @@ void init_web() {
             } });
 
 #ifdef C6_OTA_FLASHING
-    // Initialize and register C6 module handlers
+    // Initialize and register all enhanced modules using the module manager
+    Serial.println("[WEB] Initializing enhanced module system...");
+
+    // Initialize the module manager first
+    if (!moduleManager.initializeAll()) {
+        Serial.println("[WEB] Warning: Module manager initialization had some issues");
+    }
+
+    // Initialize C6 module (this will register it with the module manager)
     initC6Module();
-    registerC6WebHandlers(server);
+
+    // Start all auto-start modules
+    if (!moduleManager.startAll()) {
+        Serial.println("[WEB] Warning: Some modules failed to start");
+    }
+
+    // Register all module web handlers
+    moduleManager.registerAllWebHandlers(server);
+
+    Serial.println("[WEB] Enhanced module system initialization complete");
 #endif
 
     server.begin();
@@ -2376,4 +2470,142 @@ void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index
         loadDB("/current/tagDBrestored.json");
         request->send(200, "text/plain", "Ok, restored.");
     }
+}
+
+// Enhanced Module Management API Implementation
+// =============================================
+
+void setupModuleManagementAPI(AsyncWebServer &server) {
+    Serial.println("[WEB] Setting up module management API endpoints...");
+
+    // Module list endpoint - GET /api/modules
+    server.on("/api/modules", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(2048);
+
+        // Get module manager instance
+        ModuleManager &manager = ModuleManager::getInstance();
+
+        // System status
+        doc["totalModules"] = manager.getModuleCount();
+        doc["activeModules"] = manager.getActiveModuleCount();
+        doc["uptime"] = millis();
+        doc["timestamp"] = millis();  // Use millis() instead of WiFi.getTime()
+
+        // Module list
+        JsonArray modules = doc["modules"].to<JsonArray>();
+        const auto &moduleList = manager.getModules();
+
+        for (const auto &module : moduleList) {
+            if (module.instance != nullptr) {
+                JsonObject moduleObj = modules.createNestedObject();
+                ModuleInfo info = module.instance->getInfo();
+
+                moduleObj["name"] = info.name;
+                moduleObj["version"] = info.version;
+                moduleObj["description"] = info.description;
+                moduleObj["type"] = static_cast<int>(info.type);
+                moduleObj["state"] = static_cast<int>(info.state);
+                moduleObj["healthy"] = module.instance->isHealthy();
+                moduleObj["lastActivity"] = info.lastActivity;
+
+                if (!info.errorMessage.isEmpty()) {
+                    moduleObj["error"] = info.errorMessage;
+                }
+
+                // Capabilities
+                JsonObject caps = moduleObj["capabilities"].to<JsonObject>();
+                caps["hasWebHandlers"] = info.capabilities.hasWebHandlers;
+                caps["hasTaskHandlers"] = info.capabilities.hasTaskHandlers;
+                caps["hasEventHandlers"] = info.capabilities.hasEventHandlers;
+                caps["hasConfigInterface"] = info.capabilities.hasConfigInterface;
+                caps["hasStatusInterface"] = info.capabilities.hasStatusInterface;
+                caps["requiresHardware"] = info.capabilities.requiresHardware;
+                caps["isOptional"] = info.capabilities.isOptional;
+            }
+        }
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Module status endpoint - GET /api/modules/status
+    server.on("/api/modules/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        ModuleManager &manager = ModuleManager::getInstance();
+
+        doc["systemHealthy"] = manager.isSystemHealthy();
+        doc["totalModules"] = manager.getModuleCount();
+        doc["activeModules"] = manager.getActiveModuleCount();
+        doc["uptime"] = millis();
+
+        // List unhealthy modules
+        JsonArray unhealthy = doc["unhealthyModules"].to<JsonArray>();
+        const auto &modules = manager.getModules();
+
+        for (const auto &module : modules) {
+            if (module.instance != nullptr && !module.instance->isHealthy()) {
+                ModuleInfo info = module.instance->getInfo();
+                unhealthy.add(info.name);
+            }
+        }
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Module control endpoint - POST /api/modules/control
+    server.on("/api/modules/control", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("module", true) || !request->hasParam("action", true)) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing parameters\"}");
+            return;
+        }
+
+        String moduleName = request->getParam("module", true)->value();
+        String action = request->getParam("action", true)->value();
+
+        DynamicJsonDocument doc(512);
+        doc["module"] = moduleName;
+        doc["action"] = action;
+
+        ModuleManager &manager = ModuleManager::getInstance();
+        ModuleInterface *module = manager.getModule(moduleName);
+
+        if (module == nullptr) {
+            doc["success"] = false;
+            doc["message"] = "Module not found";
+        } else {
+            bool success = false;
+            String message = "";
+
+            if (action == "start") {
+                success = module->start();
+                message = success ? "Module started" : "Failed to start module";
+            } else if (action == "stop") {
+                success = module->stop();
+                message = success ? "Module stopped" : "Failed to stop module";
+            } else if (action == "restart") {
+                success = module->stop() && module->start();
+                message = success ? "Module restarted" : "Failed to restart module";
+            } else if (action == "status") {
+                ModuleInfo info = module->getInfo();
+                success = true;
+                message = "State: " + String(static_cast<int>(info.state)) +
+                          ", Healthy: " + (module->isHealthy() ? "Yes" : "No");
+            } else {
+                success = false;
+                message = "Unknown action";
+            }
+
+            doc["success"] = success;
+            doc["message"] = message;
+        }
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    Serial.println("[WEB] Module management API endpoints configured");
 }
