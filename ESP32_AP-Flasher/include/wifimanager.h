@@ -9,8 +9,10 @@
 #ifndef WIFI_MANAGER_H
 #define WIFI_MANAGER_H
 
-#include <esp_wifi.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
+
+#include "wifi_utils.h"  // Include centralized WiFi utilities
 
 enum WifiStatus {
     NOINIT,

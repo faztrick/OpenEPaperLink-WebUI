@@ -19,6 +19,7 @@
 #include "SPIFFSEditor.h"
 #include "c6_module.h"
 #include "commstructs.h"
+#include "enum_string_utils.h"
 #include "language.h"
 #include "leds.h"
 #include "module_manager.h"
@@ -27,6 +28,7 @@
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
+#include "storage_utils.cpp"  // Include new storage utilities
 #include "system.h"
 #include "tag_db.h"
 #include "udp.h"
@@ -110,7 +112,10 @@ void wsSendSysteminfo() {
     sys["dbsize"] = dbSize();
     sys["apstate"] = apInfo.state;
     sys["runstate"] = config.runStatus;
-    sys["rssi"] = WiFi.RSSI();
+
+    // Use centralized WiFi utilities for consistent data
+    WiFiConnectionInfo wifiInfo = WiFiUtils::getInstance().getConnectionInfo();
+    sys["rssi"] = wifiInfo.rssi;
     sys["wifistatus"] = WiFi.status();
     sys["uptime"] = esp_timer_get_time() / 1000000;
 
@@ -126,11 +131,11 @@ void wsSendSysteminfo() {
     sys["psfree"] = ESP.getFreePsram();
 #endif
 
-    // Cache WiFi SSID to avoid repeated calls
+    // Cache WiFi SSID to avoid repeated calls - use centralized utilities
     static String cachedSSID;
     static uint32_t lastSSIDUpdate = 0;
     if (now - lastSSIDUpdate > 10 || lastSSIDUpdate == 0) {
-        cachedSSID = WiFi.SSID();
+        cachedSSID = wifiInfo.ssid;  // Use already retrieved WiFi info
         lastSSIDUpdate = now;
     }
     sys["wifissid"] = cachedSSID;
@@ -289,6 +294,8 @@ uint8_t wsClientCount() {
 }
 
 void init_web() {
+    ModuleInitializer::logInitStart("Web Server");
+
     // Initialize WebSocket utilities
     WebSocketUtils::initialize(&ws);
 
@@ -757,16 +764,13 @@ void init_web() {
     });
 
     server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Preferences preferences;
+        // Use new WiFi storage manager for consistent configuration retrieval
+        WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(2048);
-        preferences.begin("wifi", false);
-        const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
-        const size_t numKeys = sizeof(keys) / sizeof(keys[0]);
-        for (size_t i = 0; i < numKeys; i++) {
-            doc[keys[i]] = preferences.getString(keys[i], "");
-        }
+        DynamicJsonDocument doc = wifiStorage.toJson();
         doc["mac"] = WiFi.macAddress();
+
         serializeJson(doc, *response);
         request->send(response);
     });
@@ -786,11 +790,11 @@ void init_web() {
     });
 
     AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler("/save_wifi_config", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        Serial.println("WiFi config save request received");
+        Serial.println("[NEW_STORAGE] WiFi config save request received");
 
         // Validate JSON input
         if (!json.is<JsonObject>()) {
-            Serial.println("ERROR: Invalid JSON received");
+            Serial.println("[NEW_STORAGE] ERROR: Invalid JSON received");
             request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
             return;
         }
@@ -800,84 +804,57 @@ void init_web() {
         // Debug: Print received data
         String debugData;
         serializeJson(jsonObj, debugData);
-        Serial.println("Received WiFi config: " + debugData);
+        Serial.println("[NEW_STORAGE] Received WiFi config: " + debugData);
 
-        // Initialize NVS with error handling
-        Preferences preferences;
-        if (!preferences.begin("wifi", false)) {
-            Serial.println("ERROR: Failed to initialize NVS storage");
-            request->send(500, "application/json", "{\"error\":\"Storage initialization failed\"}");
-            return;
-        }
+        // Use new WiFi storage manager for configuration saving
+        WiFiStorageManager &wifiStorage = WIFI_STORAGE;
 
-        // Save configuration with validation
-        const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
-        const size_t numKeys = sizeof(keys) / sizeof(keys[0]);
-        bool saveSuccess = true;
+        StorageUtils::Result result = wifiStorage.fromJson(jsonObj);
 
-        for (size_t i = 0; i < numKeys; i++) {
-            String key = keys[i];
-            if (jsonObj.containsKey(key)) {
-                String value = jsonObj[key].as<String>();
-                Serial.printf("Saving %s: %s\n", key.c_str(), value.c_str());
+        if (result == StorageUtils::SUCCESS) {
+            Serial.println("[NEW_STORAGE] WiFi config saved successfully");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved\"}");
 
-                size_t written = preferences.putString(key.c_str(), value);
-                if (written == 0 && !value.isEmpty()) {
-                    Serial.printf("WARNING: Failed to write %s\n", key.c_str());
-                    saveSuccess = false;
-                }
+            // Disable websocket to prevent interference during restart
+            ws.enable(false);
+
+            // Handle factory reset
+            if (jsonObj.containsKey("ssid") && jsonObj["ssid"].as<String>() == "factory") {
+                Serial.println("[NEW_STORAGE] Factory reset initiated");
+                config.runStatus = RUNSTATUS_STOP;
+                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                wifiStorage.factoryReset();
+                destroyDB();
+                cleanupCurrent();
+                contentFS->remove("/AP_FW_Pack.bin");
+                ESP.restart();
+            } else {
+                Serial.println("Preparing for restart with new WiFi settings");
+                refreshAllPending();
+                saveDB("/current/tagDB.json");
+
+                // Clean up temporary files
+                contentFS->remove("/OpenEPaperLink_esp32_C6.bin");
+                contentFS->remove("/bootloader.bin");
+                contentFS->remove("/partition-table.bin");
+                contentFS->remove("/update_actions.json");
+                contentFS->remove("/log.txt");
+                contentFS->remove("/logold.txt");
+                contentFS->remove("/current/tagDB.json");
+                contentFS->remove("/current/tagDB.json.bak");
+                contentFS->remove("/current/tagDBrestored.json");
+                contentFS->remove("/current/apconfig.json");
+
+                ws.closeAll();
+                vTaskDelay(pdMS_TO_TICKS(1000));  // Give time for response to be sent
+                ESP.restart();
             }
-        }
-
-        preferences.end();
-
-        if (!saveSuccess) {
-            Serial.println("ERROR: Some settings failed to save");
-            request->send(500, "application/json", "{\"error\":\"Failed to save some settings\"}");
-            return;
-        }
-
-        Serial.println("WiFi config saved successfully");
-        request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved\"}");
-
-        // Disable websocket to prevent interference during restart
-        ws.enable(false);
-
-        if (jsonObj["ssid"].as<String>() == "factory") {
-            Serial.println("Factory reset initiated");
-            config.runStatus = RUNSTATUS_STOP;
-            vTaskDelay(pdMS_TO_TICKS(2000));
-
-            preferences.begin("wifi", false);
-            preferences.putString("ssid", "");
-            preferences.putString("pw", "");
-            preferences.end();
-
-            destroyDB();
-            cleanupCurrent();
-            contentFS->remove("/AP_FW_Pack.bin");
-            contentFS->remove("/OpenEPaperLink_esp32_C6.bin");
-            contentFS->remove("/bootloader.bin");
-            contentFS->remove("/partition-table.bin");
-            contentFS->remove("/update_actions.json");
-            contentFS->remove("/log.txt");
-            contentFS->remove("/logold.txt");
-            contentFS->remove("/current/tagDB.json");
-            contentFS->remove("/current/tagDB.json.bak");
-            contentFS->remove("/current/tagDBrestored.json");
-            contentFS->remove("/current/apconfig.json");
-            vTaskDelay(pdMS_TO_TICKS(100));
-            esp_deep_sleep_start();
-            ESP.restart();
         } else {
-            Serial.println("Preparing for restart with new WiFi settings");
-            refreshAllPending();
-            saveDB("/current/tagDB.json");
+            Serial.printf("[NEW_STORAGE] Failed to save config: %s\n",
+                          StorageUtils::getInstance().resultToString(result).c_str());
+            request->send(500, "application/json", "{\"error\":\"Failed to save configuration\"}");
         }
-
-        ws.closeAll();
-        vTaskDelay(pdMS_TO_TICKS(1000));  // Give time for response to be sent
-        ESP.restart();
     });
     server.addHandler(handler);
 
@@ -1000,7 +977,7 @@ void init_web() {
     server.on("/update_c6", HTTP_POST, [](AsyncWebServerRequest *request) { request->send(200, "text/plain", "Update complete"); }, handleC6FirmwareUpload);
 #endif
 
-    // Drives and device management endpoints
+// Drives and device management endpoints
 #if HAS_C6_MODULE
     server.on("/list_drives", HTTP_GET, handleListDrives);
     server.on("/list_serial_ports", HTTP_GET, handleListSerialPorts);
@@ -1515,8 +1492,11 @@ void init_web() {
         doc["freeSketchSpace"] = ESP.getFreeSketchSpace();
         doc["uptime"] = millis();
         doc["wifiStatus"] = WiFi.status();
-        doc["localIP"] = WiFi.localIP().toString();
-        doc["macAddress"] = WiFi.macAddress();
+
+        // Use centralized WiFi utilities for consistent data
+        WiFiConnectionInfo sysWifiInfo = WiFiUtils::getInstance().getConnectionInfo();
+        doc["localIP"] = sysWifiInfo.ip;
+        doc["macAddress"] = sysWifiInfo.mac;
         doc["temperature"] = temperatureRead();
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -1561,9 +1541,12 @@ void init_web() {
         doc["heap"]["minimum"] = ESP.getMinFreeHeap();
         doc["flash"]["size"] = ESP.getFlashChipSize();
         doc["flash"]["free"] = ESP.getFreeSketchSpace();
-        doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
-        doc["wifi"]["rssi"] = WiFi.RSSI();
-        doc["wifi"]["channel"] = WiFi.channel();
+
+        // Use centralized WiFi utilities for consistent data
+        WiFiConnectionInfo wifiMetrics = WiFiUtils::getInstance().getConnectionInfo();
+        doc["wifi"]["connected"] = wifiMetrics.connected;
+        doc["wifi"]["rssi"] = wifiMetrics.rssi;
+        doc["wifi"]["channel"] = wifiMetrics.channel;
         doc["temperature"] = temperatureRead();
         doc["uptime"] = millis();
         doc["apInfo"]["online"] = apInfo.isOnline;
@@ -1742,8 +1725,14 @@ void init_web() {
             WiFi.disconnect();
             doc["result"] = "Disconnected from WiFi";
         } else if (action == "scan") {
-            WiFi.scanNetworks(true);
-            doc["result"] = "WiFi scan initiated";
+            // Use centralized WiFi scanning
+            WiFiUtils &wifiUtils = WiFiUtils::getInstance();
+            bool scanStarted = wifiUtils.performAsyncScan(true, 1000);
+            if (scanStarted) {
+                doc["result"] = "WiFi scan initiated";
+            } else {
+                doc["result"] = "WiFi scan failed or already in progress";
+            }
         } else if (action == "startAP") {
             WiFi.softAP("ESP32-AP-Flasher", "");
             doc["result"] = "Access Point started";
@@ -2038,6 +2027,7 @@ void init_web() {
 #endif
 
     server.begin();
+    ModuleInitializer::logInitSuccess("Web Server");
 }
 
 #define UPLOAD_BUFFER_SIZE 16384  // Reduced from 32768 for better memory management

@@ -5,6 +5,7 @@
 
 #include "AsyncUDP.h"
 #include "commstructs.h"
+#include "enum_string_utils.h"
 #include "newproto.h"
 #include "serialap.h"
 #include "tag_db.h"
@@ -20,7 +21,9 @@ extern uint8_t channelList[6];
 extern espSetChannelPower curChannel;
 
 void init_udp() {
+    ModuleInitializer::logInitStart("UDP Communication");
     udpsync.init();
+    ModuleInitializer::logInitSuccess("UDP Communication");
 }
 
 UDPcomm::UDPcomm() {
@@ -209,7 +212,7 @@ void UDPcomm::netTaginfo(struct TagInfo* taginfoitem) {
     writeUdpPacket(buffer, sizeof(buffer), UDPIP);
 }
 
-void UDPcomm::writeUdpPacket(uint8_t *buffer, uint16_t len, IPAddress senderIP) {
+void UDPcomm::writeUdpPacket(uint8_t* buffer, uint16_t len, IPAddress senderIP) {
     if (config.discovery == 0) {
         udp.writeTo(buffer, len, senderIP, UDPPORT);
     } else {

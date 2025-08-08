@@ -3,6 +3,8 @@
 #include <WiFi.h>
 #include <esp_system.h>
 
+#include "wifi_utils.h"  // Use centralized WiFi utilities
+
 // Centralized JSON response utilities implementation
 // ===================================================
 
@@ -137,19 +139,22 @@ JsonObject JsonResponseUtils::buildSystemInfo(JsonDocument& doc) {
 JsonObject JsonResponseUtils::buildWiFiInfo(JsonDocument& doc) {
     JsonObject wifi = doc["wifi"].to<JsonObject>();
 
-    wifi["connected"] = (WiFi.status() == WL_CONNECTED);
-    wifi["ssid"] = WiFi.SSID();
-    wifi["ip"] = WiFi.localIP().toString();
-    wifi["rssi"] = WiFi.RSSI();
-    wifi["channel"] = WiFi.channel();
-    wifi["mac"] = WiFi.macAddress();
-    wifi["hostname"] = WiFi.getHostname();
-    wifi["mode"] = WiFi.getMode();
+    // Use centralized WiFi utilities for consistent data
+    WiFiConnectionInfo wifiInfo = WiFiUtils::getInstance().getConnectionInfo();
+
+    wifi["connected"] = wifiInfo.connected;
+    wifi["ssid"] = wifiInfo.ssid;
+    wifi["ip"] = wifiInfo.ip;
+    wifi["rssi"] = wifiInfo.rssi;
+    wifi["channel"] = wifiInfo.channel;
+    wifi["mac"] = wifiInfo.mac;
+    wifi["hostname"] = wifiInfo.hostname;
+    wifi["mode"] = wifiInfo.mode;
 
     // AP info
-    wifi["apEnabled"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-    wifi["apClients"] = WiFi.softAPgetStationNum();
-    wifi["apIP"] = WiFi.softAPIP().toString();
+    wifi["apEnabled"] = wifiInfo.apEnabled;
+    wifi["apClients"] = wifiInfo.apClients;
+    wifi["apIP"] = wifiInfo.apIP;
 
     return wifi;
 }

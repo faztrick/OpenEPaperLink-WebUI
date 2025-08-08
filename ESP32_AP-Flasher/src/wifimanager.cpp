@@ -27,6 +27,9 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 
+#include "storage_utils.cpp"  // Include new storage utilities
+#include "wifi_utils.h"       // Use centralized WiFi utilities
+
 #ifdef HAS_IPS_DISPLAY
 #include "ips_display.h"
 #endif
@@ -201,19 +204,14 @@ void WifiManager::poll() {
             if (digitalRead(0) == LOW) {
                 Serial.println("Resetting WiFi settings...");
 
-                // Clear WiFi settings from NVS
-                Preferences preferences;
-                if (preferences.begin("wifi", false)) {
-                    preferences.putString("ssid", "");
-                    preferences.putString("pw", "");
-                    preferences.putString("ip", "");
-                    preferences.putString("mask", "");
-                    preferences.putString("gw", "");
-                    preferences.putString("dns", "");
-                    preferences.end();
-                    Serial.println("✅ WiFi settings cleared from NVS");
+                // Use new WiFi storage manager for factory reset
+                WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+                StorageUtils::Result result = wifiStorage.factoryReset();
+
+                if (result == StorageUtils::SUCCESS) {
+                    Serial.println("✅ WiFi settings cleared successfully");
                 } else {
-                    Serial.println("❌ Failed to clear WiFi settings from NVS");
+                    Serial.println("❌ Failed to clear WiFi settings");
                 }
 
                 // Clear ESP32 WiFi config
@@ -267,44 +265,34 @@ bool WifiManager::connectToWifi() {
         return true;
 #endif
 
-    Preferences preferences;
-    if (!preferences.begin("wifi", false)) {
-        Serial.println("ERROR: Failed to open NVS wifi namespace");
-        startManagementServer();
-        return false;
-    }
+    // Use new WiFi storage manager for configuration
+    WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+    WiFiStorageManager::WiFiConfig config = wifiStorage.loadConfig();
 
-    _ssid = preferences.getString("ssid", WiFi_SSID());
-    _pass = preferences.getString("pw", WiFi_psk());
+    _ssid = config.ssid.isEmpty() ? WiFi_SSID() : config.ssid;
+    _pass = config.password.isEmpty() ? WiFi_psk() : config.password;
 
     // ESP32-S3 specific debug information
-    Serial.printf("NVS WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
+    Serial.printf("WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
 
     if (_ssid.isEmpty()) {
         terminalLog("No connection info saved");
         logLine("No connection information saved");
-        preferences.end();
         startManagementServer();
         return false;
     }
     terminalLog("ssid: " + String(_ssid));
 
-    String ip = preferences.getString("ip", "");
-    String mask = preferences.getString("mask", "");
-    String gw = preferences.getString("gw", "");
-    String dns = preferences.getString("dns", "");
-    preferences.end();  // Close preferences properly
-
     // Configure static IP if available
-    if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0) {
+    if (wifiStorage.hasStaticIP()) {
         IPAddress staticIP, subnetMask, gatewayIP, dnsIP;
-        if (staticIP.fromString(ip) && subnetMask.fromString(mask) && gatewayIP.fromString(gw)) {
-            if (dns.length() > 0 && dnsIP.fromString(dns)) {
+        if (staticIP.fromString(config.ip) && subnetMask.fromString(config.mask) && gatewayIP.fromString(config.gateway)) {
+            if (!config.dns.isEmpty() && dnsIP.fromString(config.dns)) {
                 WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
             } else {
                 WiFi.config(staticIP, gatewayIP, subnetMask);
             }
-            terminalLog("Setting static IP: " + ip);
+            terminalLog("Setting static IP: " + config.ip);
         } else {
             Serial.println("WARNING: Invalid static IP configuration, using DHCP");
         }
@@ -463,15 +451,17 @@ bool WifiManager::waitForConnection() {
 
     // Save credentials if requested
     if (_savewhensuccessfull) {
-        Preferences preferences;
-        if (preferences.begin("wifi", false)) {
-            Serial.printf("Saving WiFi credentials - SSID: '%s'\n", _ssid.c_str());
-            preferences.putString("ssid", _ssid);
-            preferences.putString("pw", _pass);  // Use "pw" key for consistency
-            preferences.end();
-            Serial.println("✅ WiFi credentials saved to NVS");
+        // Use new WiFi storage manager for credential saving
+        WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+        Serial.printf("Saving WiFi credentials - SSID: '%s'\n", _ssid.c_str());
+
+        StorageUtils::Result ssidResult = wifiStorage.setSSID(_ssid);
+        StorageUtils::Result passResult = wifiStorage.setPassword(_pass);
+
+        if (ssidResult == StorageUtils::SUCCESS && passResult == StorageUtils::SUCCESS) {
+            Serial.println("✅ WiFi credentials saved successfully");
         } else {
-            Serial.println("❌ ERROR: Failed to save WiFi credentials to NVS");
+            Serial.println("❌ ERROR: Failed to save WiFi credentials");
         }
         _savewhensuccessfull = false;
     }
@@ -480,10 +470,11 @@ bool WifiManager::waitForConnection() {
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
 
-    IPAddress IP = WiFi.localIP();
-    terminalLog("✅ Connected! IP: " + IP.toString());
+    // Use centralized WiFi utilities for connection info
+    WiFiConnectionInfo connectedInfo = WiFiUtils::getInstance().getConnectionInfo();
+    terminalLog("✅ Connected! IP: " + connectedInfo.ip);
     Serial.printf("WiFi connected successfully - IP: %s, RSSI: %d dBm\n",
-                  IP.toString().c_str(), WiFi.RSSI());
+                  connectedInfo.ip.c_str(), connectedInfo.rssi);
 
     _nextReconnectCheck = millis() + _reconnectIntervalCheck;
     wifiStatus = CONNECTED;
@@ -633,10 +624,13 @@ void WifiManager::WiFiEvent(WiFiEvent_t event) {
         case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
             eventname = "Authentication mode of access point has changed";
             break;
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            eventname = "Obtained IP address: " + String(WiFi.localIP().toString().c_str());
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP: {
+            // Use centralized WiFi utilities for IP info in events
+            WiFiConnectionInfo eventInfo = WiFiUtils::getInstance().getConnectionInfo();
+            eventname = "Obtained IP address: " + eventInfo.ip;
             init_udp();
             break;
+        }
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             eventname = "Lost IP address and IP address is reset to 0";
             break;
@@ -723,7 +717,9 @@ void WifiManager::WiFiEvent(WiFiEvent_t event) {
 #endif
 
 std::vector<std::string> getLocalUrl() {
-    return {String("http://" + WiFi.localIP().toString()).c_str()};
+    // Use centralized WiFi utilities for IP info
+    WiFiConnectionInfo urlInfo = WiFiUtils::getInstance().getConnectionInfo();
+    return {String("http://" + urlInfo.ip).c_str()};
 }
 
 void onErrorCallback(improv::Error err) {
@@ -756,11 +752,10 @@ bool onCommandCallback(improv::ImprovCommand cmd) {
             ws.closeAll();
             delay(100);
             if (wm.connectToWifi(String(cmd.ssid.c_str()), String(cmd.password.c_str()), true)) {
-                Preferences preferences;
-                preferences.begin("wifi", false);
-                preferences.putString("ssid", cmd.ssid.c_str());
-                preferences.putString("pw", cmd.password.c_str());
-                preferences.end();
+                // Use new WiFi storage manager for improv credentials
+                WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+                wifiStorage.setSSID(cmd.ssid.c_str());
+                wifiStorage.setPassword(cmd.password.c_str());
                 ws.enable(true);
 
                 set_state(improv::STATE_PROVISIONED);
@@ -804,83 +799,63 @@ bool onCommandCallback(improv::ImprovCommand cmd) {
 }
 
 void getAvailableWifiNetworks() {
-    // Clear previous scan results
-    WiFi.scanDelete();
+    Serial.println("Starting WiFi network scan for Improv protocol...");
 
-    // Configure optimized scan parameters for ESP32-S3
-    wifi_scan_config_t scanConf;
-    memset(&scanConf, 0, sizeof(scanConf));
-    scanConf.ssid = NULL;
-    scanConf.bssid = NULL;
-    scanConf.channel = 0;
-    scanConf.show_hidden = true;
-    scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-    scanConf.scan_time.active.min = 100;  // Fast scan
-    scanConf.scan_time.active.max = 200;
+    // Use centralized WiFi utilities for consistent scanning
+    WiFiUtils &wifiUtils = WiFiUtils::getInstance();
 
-    // Start optimized scan with timeout protection
-    esp_err_t ret = esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
-    if (ret != ESP_OK) {
-        Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
-        // Send empty response on scan failure
+    // Start async scan
+    bool scanStarted = wifiUtils.performAsyncScan(true, 5000);
+    if (!scanStarted) {
+        Serial.println("ERROR: Failed to start WiFi scan");
         std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
         send_response(data);
         return;
     }
 
-    int networkNum = WiFi.scanComplete();
-    Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
+    // Wait for scan completion with timeout
+    uint32_t startTime = millis();
+    const uint32_t maxWaitTime = 10000;  // 10 seconds max wait
 
-    if (networkNum > 0) {
-        // Create vector for sorting by signal strength with better memory management
-        std::vector<std::pair<int, int>> networks;
-        networks.reserve(std::min(networkNum, 30));  // Reserve memory to prevent reallocations
+    while (wifiUtils.isScanning() && (millis() - startTime) < maxWaitTime) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
-        for (int i = 0; i < networkNum; i++) {
-            String ssid = WiFi.SSID(i);
-            if (ssid.length() > 0 && ssid.length() <= 32) {  // Valid SSID length check
-                networks.push_back(std::make_pair(i, WiFi.RSSI(i)));
-            }
-        }
+    // Get scan results
+    WiFiScanResult scanResult = wifiUtils.getScanResults(false);
 
-        // Sort by signal strength (strongest first)
-        std::sort(networks.begin(), networks.end(),
-                  [](const std::pair<int, int> &a, const std::pair<int, int> &b) {
-                      return a.second > b.second;
-                  });
+    if (scanResult.success && scanResult.networksFound > 0) {
+        Serial.printf("WiFi scan completed: %d networks found\n", scanResult.networksFound);
 
-        // Send sorted results with memory-efficient processing
-        int maxNetworks = std::min((int)networks.size(), 30);
-        for (int idx = 0; idx < maxNetworks; idx++) {
-            int id = networks[idx].first;
+        // Send sorted results (WiFiUtils already sorts by signal strength)
+        int maxNetworks = std::min(scanResult.networksFound, 30);
+        for (int i = 0; i < maxNetworks && i < scanResult.networks.size(); i++) {
+            const WiFiNetworkInfo &network = scanResult.networks[i];
 
-            // Get network info with bounds checking
-            String ssid = WiFi.SSID(id);
-            int32_t rssi = WiFi.RSSI(id);
-            wifi_auth_mode_t authMode = WiFi.encryptionType(id);
+            if (network.ssid.length() == 0 || network.ssid.length() > 32) continue;
 
-            if (ssid.length() == 0) continue;  // Skip invalid entries
+            // Use centralized encryption string conversion
+            String authStatus = (network.encryption == WIFI_AUTH_OPEN) ? "NO" : "YES";
 
-            // Build response efficiently
+            // Build response with enhanced info
             std::vector<uint8_t> data = improv::build_rpc_response(
                 improv::GET_WIFI_NETWORKS,
-                {ssid, String(rssi), (authMode == WIFI_AUTH_OPEN ? "NO" : "YES")},
+                {network.ssid, String(network.rssi), authStatus},
                 false);
             send_response(data);
 
             // Small delay to prevent overwhelming the serial interface
-            vTaskDelay(pdMS_TO_TICKS(1));
+            vTaskDelay(pdMS_TO_TICKS(2));
         }
     } else {
-        Serial.println("No WiFi networks found during scan");
+        Serial.println("No WiFi networks found during scan or scan failed");
     }
 
     // Send final empty response to indicate scan completion
     std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
     send_response(data);
 
-    // Clean up scan results to free memory
-    WiFi.scanDelete();
+    Serial.println("WiFi network scan completed for Improv protocol");
 }
 
 void set_state(improv::State state) {

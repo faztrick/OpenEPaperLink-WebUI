@@ -4,6 +4,55 @@
 
 #include <ArduinoJson.h>
 
+#include "enum_string_utils.h"
+#include "settings.h"
+#include "storage.h"
+
+// IR Command Type String Converter
+static const EnumStringConverter<IRCommandType>::EnumMapping irCommandMappings[] = {
+    {IR_CMD_POWER, "Power"},
+    {IR_CMD_VOLUME_UP, "Volume Up"},
+    {IR_CMD_VOLUME_DOWN, "Volume Down"},
+    {IR_CMD_CHANNEL_UP, "Channel Up"},
+    {IR_CMD_CHANNEL_DOWN, "Channel Down"},
+    {IR_CMD_MUTE, "Mute"},
+    {IR_CMD_MENU, "Menu"},
+    {IR_CMD_OK, "OK"},
+    {IR_CMD_BACK, "Back"},
+    {IR_CMD_HOME, "Home"},
+    {IR_CMD_UP, "Up"},
+    {IR_CMD_DOWN, "Down"},
+    {IR_CMD_LEFT, "Left"},
+    {IR_CMD_RIGHT, "Right"},
+    {IR_CMD_CUSTOM, "Custom"}};
+
+static const EnumStringConverter<IRCommandType> irCommandConverter(
+    irCommandMappings,
+    sizeof(irCommandMappings) / sizeof(irCommandMappings[0]),
+    IR_CMD_UNKNOWN);
+
+// IR Protocol Type String Converter
+static const EnumStringConverter<IRProtocolType>::EnumMapping irProtocolMappings[] = {
+    {IR_PROTOCOL_NEC, "NEC"},
+    {IR_PROTOCOL_SAMSUNG, "Samsung"},
+    {IR_PROTOCOL_SONY, "Sony"},
+    {IR_PROTOCOL_LG, "LG"},
+    {IR_PROTOCOL_RC5, "RC5"},
+    {IR_PROTOCOL_RC6, "RC6"},
+    {IR_PROTOCOL_PANASONIC, "Panasonic"},
+    {IR_PROTOCOL_RAW, "RAW"}};
+
+static const EnumStringConverter<IRProtocolType> irProtocolConverter(
+    irProtocolMappings,
+    sizeof(irProtocolMappings) / sizeof(irProtocolMappings[0]),
+    IR_PROTOCOL_UNKNOWN);
+
+#endif  // HAS_IR_REMOTE
+
+#ifdef HAS_IR_REMOTE
+
+#include <ArduinoJson.h>
+
 #include "settings.h"
 #include "storage.h"
 
@@ -517,42 +566,19 @@ void IRInterface::setSendPin(uint8_t pin) {
 
 // Helper functions
 String irCommandTypeToString(IRCommandType type) {
-    return irInterface.getCommandName(type);
+    return irCommandConverter.toString(type);
 }
 
 IRCommandType stringToIRCommandType(const String& str) {
-    if (str == "Power") return IR_CMD_POWER;
-    if (str == "Volume Up") return IR_CMD_VOLUME_UP;
-    if (str == "Volume Down") return IR_CMD_VOLUME_DOWN;
-    if (str == "Channel Up") return IR_CMD_CHANNEL_UP;
-    if (str == "Channel Down") return IR_CMD_CHANNEL_DOWN;
-    if (str == "Mute") return IR_CMD_MUTE;
-    if (str == "Menu") return IR_CMD_MENU;
-    if (str == "OK") return IR_CMD_OK;
-    if (str == "Back") return IR_CMD_BACK;
-    if (str == "Home") return IR_CMD_HOME;
-    if (str == "Up") return IR_CMD_UP;
-    if (str == "Down") return IR_CMD_DOWN;
-    if (str == "Left") return IR_CMD_LEFT;
-    if (str == "Right") return IR_CMD_RIGHT;
-    if (str == "Custom") return IR_CMD_CUSTOM;
-    return IR_CMD_UNKNOWN;
+    return irCommandConverter.fromString(str);
 }
 
 String irProtocolTypeToString(IRProtocolType protocol) {
-    return irInterface.protocolToString(protocol);
+    return irProtocolConverter.toString(protocol);
 }
 
 IRProtocolType stringToIRProtocolType(const String& str) {
-    if (str == "NEC") return IR_PROTOCOL_NEC;
-    if (str == "Samsung") return IR_PROTOCOL_SAMSUNG;
-    if (str == "Sony") return IR_PROTOCOL_SONY;
-    if (str == "LG") return IR_PROTOCOL_LG;
-    if (str == "RC5") return IR_PROTOCOL_RC5;
-    if (str == "RC6") return IR_PROTOCOL_RC6;
-    if (str == "Panasonic") return IR_PROTOCOL_PANASONIC;
-    if (str == "Raw") return IR_PROTOCOL_RAW;
-    return IR_PROTOCOL_UNKNOWN;
+    return irProtocolConverter.fromString(str);
 }
 
 #endif  // HAS_IR_REMOTE

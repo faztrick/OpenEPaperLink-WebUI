@@ -12,6 +12,7 @@
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
+#include "storage_utils.cpp"  // Include new storage utilities
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"
@@ -62,6 +63,31 @@ void delayedStart(void* parameter) {
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
+}
+
+// Initialize the new storage system
+void initializeStorageSystem() {
+    StorageUtils& storage = StorageUtils::getInstance();
+
+    // Enable debug logging during development
+    storage.enableDebugLogging(true);
+
+    // Initialize boot count tracking
+    int bootCount = STORAGE_GET_INT("system", "bootCount", 0);
+    STORAGE_SET_INT("system", "bootCount", bootCount + 1);
+
+    // Set device info if not already set
+    if (STORAGE_GET_STRING("system", "deviceName", "").isEmpty()) {
+        STORAGE_SET_STRING("system", "deviceName", "ESP32-AP-Flasher");
+        STORAGE_SET_STRING("system", "version", "2.0.0");
+        STORAGE_SET_BOOL("system", "firstBoot", true);
+        Serial.println("[STORAGE] First boot detected, initializing default settings");
+    }
+
+    // Print storage health
+    storage.printStorageInfo();
+
+    Serial.printf("[STORAGE] Storage system initialized - Boot count: %d\n", bootCount + 1);
 }
 
 void setup() {
@@ -120,6 +146,9 @@ void setup() {
     } else {
         Serial.printf("❌ NVS Flash initialization failed: %s\n", esp_err_to_name(ret));
     }
+
+    // Initialize new centralized storage system
+    initializeStorageSystem();
 
     Storage.begin();
 

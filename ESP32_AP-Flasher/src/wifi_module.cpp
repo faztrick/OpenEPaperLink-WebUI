@@ -3,8 +3,11 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
-// WiFi Module Implementation
-// ==========================
+#include "storage_utils.cpp"  // Include new storage utilities
+#include "wifi_utils.h"       // Use centralized WiFi utilities
+
+// WiFi Module Implementation - Unified with WiFiUtils
+// ===================================================
 
 bool WiFiModule::initialize() {
     Serial.println("[WIFI_MODULE] Initializing WiFi module...");
@@ -25,18 +28,32 @@ bool WiFiModule::start() {
         return false;
     }
     Serial.println("[WIFI_MODULE] Starting WiFi module...");
-    Preferences prefs;
-    prefs.begin("wifi", true);
-    String ssid = prefs.getString("ssid", "");
-    String password = prefs.getString("password", "");
-    prefs.end();
 
-    if (ssid.isEmpty()) {
+    // Use new WiFi storage manager for credentials
+    WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+    WiFiStorageManager::WiFiConfig config = wifiStorage.loadConfig();
+
+    if (!wifiStorage.hasCredentials()) {
         Serial.println("[WIFI_MODULE] No WiFi credentials configured, starting in AP mode");
         WiFi.softAP("ESP32-AP-Flasher", "password123");
     } else {
-        Serial.printf("[WIFI_MODULE] Connecting to WiFi: %s\n", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
+        Serial.printf("[WIFI_MODULE] Connecting to WiFi: %s\n", config.ssid.c_str());
+        WiFi.begin(config.ssid.c_str(), config.password.c_str());
+
+        // Configure static IP if available
+        if (wifiStorage.hasStaticIP()) {
+            IPAddress ip, mask, gateway, dns;
+            ip.fromString(config.ip);
+            mask.fromString(config.mask);
+            gateway.fromString(config.gateway);
+            if (!config.dns.isEmpty()) {
+                dns.fromString(config.dns);
+                WiFi.config(ip, gateway, mask, dns);
+            } else {
+                WiFi.config(ip, gateway, mask);
+            }
+        }
+
         int attempts = 0;
         while (WiFi.status() != WL_CONNECTED && attempts < 20) {
             delay(500);
@@ -44,7 +61,9 @@ bool WiFiModule::start() {
             Serial.print(".");
         }
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("\n[WIFI_MODULE] Connected to WiFi. IP: %s\n", WiFi.localIP().toString().c_str());
+            // Use centralized WiFi utilities for IP info
+            WiFiConnectionInfo connInfo = WiFiUtils::getInstance().getConnectionInfo();
+            Serial.printf("\n[WIFI_MODULE] Connected to WiFi. IP: %s\n", connInfo.ip.c_str());
             optimizeWiFiSettings();
         } else {
             Serial.println("\n[WIFI_MODULE] Failed to connect to WiFi, starting AP mode");
@@ -129,20 +148,18 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
 
     // WiFi status endpoint
     server.on("/api/wifi/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        // Use centralized WiFi utilities for consistent data
+        String statusJson = WiFiUtils::getInstance().getConnectionInfoJson();
 
-        doc["connected"] = (WiFi.status() == WL_CONNECTED);
-        doc["ssid"] = WiFi.SSID();
-        doc["ip"] = WiFi.localIP().toString();
-        doc["rssi"] = WiFi.RSSI();
-        doc["channel"] = WiFi.channel();
-        doc["mac"] = WiFi.macAddress();
-        doc["apMode"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-        doc["apClients"] = WiFi.softAPgetStationNum();
+        // Add module-specific data
+        DynamicJsonDocument doc(1024);
+        deserializeJson(doc, statusJson);
+
         doc["reconnectAttempts"] = reconnectAttempts;
         doc["lastScan"] = lastScanTime;
         doc["healthy"] = isHealthy();
         doc["error"] = lastError;
+        doc["moduleVersion"] = "2.1.0";
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
@@ -151,16 +168,31 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
 
     // WiFi scan endpoint
     server.on("/api/wifi/scan", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        performWiFiScan();
+        // Use centralized WiFi scanning
+        WiFiUtils &wifiUtils = WiFiUtils::getInstance();
+        bool scanStarted = wifiUtils.performAsyncScan(true, 1000);
 
         DynamicJsonDocument doc(2048);
-        doc["success"] = true;
-        doc["scanning"] = true;
-        doc["message"] = "WiFi scan initiated";
+        if (scanStarted) {
+            doc["success"] = true;
+            doc["scanning"] = true;
+            doc["message"] = "WiFi scan initiated";
+        } else {
+            doc["success"] = false;
+            doc["scanning"] = wifiUtils.isScanning();
+            doc["message"] = "Scan already in progress or failed to start";
+        }
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
         request->send(response);
+    });
+
+    // WiFi scan results endpoint
+    server.on("/api/wifi/scan_results", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        WiFiUtils &wifiUtils = WiFiUtils::getInstance();
+        String resultsJson = wifiUtils.buildScanResultsJson(false);
+        request->send(200, "application/json", resultsJson);
     });
 
     // WiFi connection endpoint
@@ -173,24 +205,27 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
         String ssid = request->getParam("ssid", true)->value();
         String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
 
-        // Save credentials
-        Preferences prefs;
-        prefs.begin("wifi", false);
-        prefs.putString("ssid", ssid);
-        prefs.putString("password", password);
-        prefs.end();
+        // Use new WiFi storage manager for credentials
+        WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+        StorageUtils::Result result = wifiStorage.setSSID(ssid);
 
-        // Attempt connection
-        WiFi.begin(ssid.c_str(), password.c_str());
+        if (result == StorageUtils::SUCCESS) {
+            wifiStorage.setPassword(password);
 
-        DynamicJsonDocument doc(512);
-        doc["success"] = true;
-        doc["message"] = "WiFi connection initiated";
-        doc["ssid"] = ssid;
+            // Attempt connection
+            WiFi.begin(ssid.c_str(), password.c_str());
 
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response);
+            DynamicJsonDocument doc(512);
+            doc["success"] = true;
+            doc["message"] = "WiFi connection initiated";
+            doc["ssid"] = ssid;
+
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            serializeJson(doc, *response);
+            request->send(response);
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Invalid SSID format\"}");
+        }
     });
 
     // WiFi disconnect endpoint
@@ -209,11 +244,13 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
 
 void WiFiModule::handleEvent(const String &event, const String &data) {
     if (event == "wifi_scan_requested") {
-        performWiFiScan();
+        // Use centralized WiFi scanning
+        WiFiUtils::getInstance().performAsyncScan(true, 1000);
     } else if (event == "system_restart") {
         Serial.println("[WIFI_MODULE] Preparing for system restart");
         // Gracefully disconnect
         WiFi.disconnect();
+        WiFiUtils::getInstance().cleanup();
     } else if (event == "network_check") {
         checkConnectionStatus();
     }
@@ -233,18 +270,14 @@ void WiFiModule::update() {
 }
 
 String WiFiModule::getConfig() const {
-    DynamicJsonDocument doc(512);
+    // Use new WiFi storage manager for configuration retrieval
+    WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+    DynamicJsonDocument doc = wifiStorage.toJson();
 
-    Preferences prefs;
-    prefs.begin("wifi", true);
-
-    doc["ssid"] = prefs.getString("ssid", "");
-    doc["autoReconnect"] = prefs.getBool("autoReconnect", true);
-    doc["powerSave"] = prefs.getBool("powerSave", false);
-    doc["channel"] = prefs.getInt("channel", 0);
-    doc["hostname"] = prefs.getString("hostname", "esp32-ap-flasher");
-
-    prefs.end();
+    // Add module-specific settings
+    doc["autoReconnect"] = STORAGE_GET_BOOL("wifi", "autoReconnect", true);
+    doc["powerSave"] = STORAGE_GET_BOOL("wifi", "powerSave", false);
+    doc["channel"] = STORAGE_GET_INT("wifi", "channel", 0);
 
     String config;
     serializeJson(doc, config);
@@ -260,15 +293,24 @@ bool WiFiModule::setConfig(const String &config) {
         return false;
     }
 
-    Preferences prefs;
-    prefs.begin("wifi", false);
+    // Use new storage utilities for configuration
+    StorageUtils::Result result = StorageUtils::SUCCESS;
 
-    if (doc.containsKey("autoReconnect")) prefs.putBool("autoReconnect", doc["autoReconnect"]);
-    if (doc.containsKey("powerSave")) prefs.putBool("powerSave", doc["powerSave"]);
-    if (doc.containsKey("channel")) prefs.putInt("channel", doc["channel"]);
-    if (doc.containsKey("hostname")) prefs.putString("hostname", doc["hostname"].as<String>());
+    if (doc.containsKey("autoReconnect")) result = STORAGE_SET_BOOL("wifi", "autoReconnect", doc["autoReconnect"]);
+    if (doc.containsKey("powerSave") && result == StorageUtils::SUCCESS) result = STORAGE_SET_BOOL("wifi", "powerSave", doc["powerSave"]);
+    if (doc.containsKey("channel") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("wifi", "channel", doc["channel"]);
 
-    prefs.end();
+    // Use WiFi storage manager for WiFi-specific config
+    WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+    if (doc.containsKey("hostname") && result == StorageUtils::SUCCESS) {
+        StorageUtils::Result hostResult = wifiStorage.setHostname(doc["hostname"].as<String>());
+        if (hostResult != StorageUtils::SUCCESS) result = hostResult;
+    }
+
+    if (result != StorageUtils::SUCCESS) {
+        lastError = "Failed to save configuration";
+        return false;
+    }
 
     // Apply settings if module is running
     if (isStarted) {
@@ -279,24 +321,34 @@ bool WiFiModule::setConfig(const String &config) {
 }
 
 String WiFiModule::getStatus() const {
+    // Use centralized WiFi connection info as base
+    WiFiConnectionInfo info = WiFiUtils::getInstance().getConnectionInfo();
+
     DynamicJsonDocument doc(1024);
 
+    // Core connection info from WiFiUtils
     doc["status"] = WiFi.status();
-    doc["connected"] = (WiFi.status() == WL_CONNECTED);
-    doc["ssid"] = WiFi.SSID();
-    doc["ip"] = WiFi.localIP().toString();
-    doc["gateway"] = WiFi.gatewayIP().toString();
-    doc["dns"] = WiFi.dnsIP().toString();
-    doc["rssi"] = WiFi.RSSI();
-    doc["channel"] = WiFi.channel();
-    doc["mac"] = WiFi.macAddress();
-    doc["apMode"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-    doc["apIP"] = WiFi.softAPIP().toString();
-    doc["apClients"] = WiFi.softAPgetStationNum();
+    doc["connected"] = info.connected;
+    doc["ssid"] = info.ssid;
+    doc["ip"] = info.ip;
+    doc["gateway"] = info.gateway;
+    doc["dns"] = info.dns;
+    doc["rssi"] = info.rssi;
+    doc["channel"] = info.channel;
+    doc["mac"] = info.mac;
+    doc["hostname"] = info.hostname;
+    doc["mode"] = info.mode;
+    doc["apEnabled"] = info.apEnabled;
+    doc["apIP"] = info.apIP;
+    doc["apClients"] = info.apClients;
+
+    // Module-specific status info
     doc["reconnectAttempts"] = reconnectAttempts;
     doc["lastScan"] = lastScanTime;
     doc["lastStatusCheck"] = lastStatusCheck;
     doc["error"] = lastError;
+    doc["moduleState"] = static_cast<int>(getState());
+    doc["signalQuality"] = WiFiUtils::calculateSignalQuality(info.rssi);
 
     String status;
     serializeJson(doc, status);
@@ -304,18 +356,28 @@ String WiFiModule::getStatus() const {
 }
 
 void WiFiModule::getMetrics(JsonObject &metrics) const {
-    metrics["wifi_connected"] = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
-    metrics["wifi_rssi"] = WiFi.RSSI();
-    metrics["wifi_channel"] = WiFi.channel();
-    metrics["wifi_ap_clients"] = WiFi.softAPgetStationNum();
+    // Use centralized WiFi utilities for consistent metrics
+    WiFiConnectionInfo metricsInfo = WiFiUtils::getInstance().getConnectionInfo();
+
+    metrics["wifi_connected"] = metricsInfo.connected ? 1 : 0;
+    metrics["wifi_rssi"] = metricsInfo.rssi;
+    metrics["wifi_channel"] = metricsInfo.channel;
+    metrics["wifi_ap_clients"] = metricsInfo.apClients;
     metrics["wifi_reconnect_attempts"] = reconnectAttempts;
 }
 
-// Private methods
+// Private methods - Now using centralized utilities where possible
 void WiFiModule::performWiFiScan() {
-    Serial.println("[WIFI_MODULE] Starting WiFi scan...");
-    WiFi.scanNetworks(true);  // Async scan
-    lastScanTime = millis();
+    Serial.println("[WIFI_MODULE] Starting WiFi scan using centralized utilities...");
+    WiFiUtils &wifiUtils = WiFiUtils::getInstance();
+    bool scanStarted = wifiUtils.performAsyncScan(true, 1000);
+
+    if (scanStarted) {
+        lastScanTime = millis();
+        Serial.println("[WIFI_MODULE] WiFi scan started successfully");
+    } else {
+        Serial.println("[WIFI_MODULE] WiFi scan failed to start or already in progress");
+    }
 }
 
 void WiFiModule::checkConnectionStatus() {
@@ -353,11 +415,12 @@ bool WiFiModule::attemptReconnection() {
 
 void WiFiModule::optimizeWiFiSettings() {
     Serial.println("[WIFI_MODULE] Optimizing WiFi settings...");
-    Preferences prefs;
-    prefs.begin("wifi", true);
-    bool powerSave = prefs.getBool("powerSave", false);
-    String hostname = prefs.getString("hostname", "esp32-ap-flasher");
-    prefs.end();
+    bool powerSave = STORAGE_GET_BOOL("wifi", "powerSave", false);
+
+    WiFiStorageManager &wifiStorage = WIFI_STORAGE;
+    String hostname = wifiStorage.getHostname();
+    if (hostname.isEmpty()) hostname = "esp32-ap-flasher";
+
     WiFi.setSleep(powerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
     WiFi.setHostname(hostname.c_str());
     Serial.println("[WIFI_MODULE] WiFi optimization complete");
