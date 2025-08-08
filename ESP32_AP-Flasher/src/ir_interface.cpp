@@ -6,8 +6,22 @@
 #include "settings.h"
 #include <ArduinoJson.h>
 
-// Global instance
-IRInterface irInterface;
+// Global instancebool IRInterface::sendRaw(uint16_t* rawData, uint16_t length, uint16_t frequency) {
+    if (!enabled || !irSender) return false;
+    
+    if (debugMode) {
+        Serial.printf("📡 Sending raw IR: %d samples @ %dHz\n", length, frequency);
+    }
+    
+    irSender->sendRaw(rawData, length, frequency);
+    return true;
+}
+
+bool IRInterface::hasReceivedCommand() {
+    if (!enabled || !receiverEnabled || !irReceiver) return false;
+    
+    return irReceiver->decode(&results);
+}Interface;
 
 IRInterface::IRInterface() :
     enabled(false),
@@ -15,7 +29,9 @@ IRInterface::IRInterface() :
     learningMode(false),
     debugMode(false),
     irSendPin(IR_SEND_PIN),
-    irRecvPin(IR_RECV_PIN)
+    irRecvPin(IR_RECV_PIN),
+    irSender(nullptr),
+    irReceiver(nullptr)
 {
     // Initialize empty profile
     currentProfile = {};
@@ -30,11 +46,17 @@ bool IRInterface::begin() {
     
     Serial.println("🔴 Initializing IR Interface...");
     
-    // Initialize IR sender with the correct API for IRremote 4.x
-    IrSender.begin(irSendPin);
+    // Initialize IR sender for IRremoteESP8266
+    if (!irSender) {
+        irSender = new IRsend(irSendPin);
+        irSender->begin();
+    }
     
-    // Initialize IR receiver with the correct API for IRremote 4.x
-    IrReceiver.begin(irRecvPin);
+    // Initialize IR receiver for IRremoteESP8266  
+    if (!irReceiver) {
+        irReceiver = new IRrecv(irRecvPin);
+        irReceiver->enableIRIn();
+    }
     
     // Load profiles from storage
     loadProfilesFromStorage();
@@ -61,15 +83,24 @@ void IRInterface::end() {
     if (!enabled) return;
     
     enableReceiver(false);
-    IrReceiver.stop();
-    // Note: IrSender doesn't have a stop() method in IRremote 4.x
+    
+    // Clean up IR objects
+    if (irReceiver) {
+        delete irReceiver;
+        irReceiver = nullptr;
+    }
+    
+    if (irSender) {
+        delete irSender;
+        irSender = nullptr;
+    }
     
     enabled = false;
     Serial.println("IR Interface stopped");
 }
 
 bool IRInterface::sendCommand(IRProtocolType protocol, uint32_t code, uint16_t bits) {
-    if (!enabled) return false;
+    if (!enabled || !irSender) return false;
     
     if (debugMode) {
         Serial.printf("📤 Sending IR: Protocol=%s, Code=0x%X, Bits=%d\n", 
@@ -80,36 +111,36 @@ bool IRInterface::sendCommand(IRProtocolType protocol, uint32_t code, uint16_t b
     
     switch (protocol) {
         case IR_PROTOCOL_NEC:
-            // For IRremote 4.x, use address and command format
-            IrSender.sendNEC((code >> 16) & 0xFFFF, code & 0xFFFF, 0);
+            // For IRremoteESP8266, use sendNEC
+            irSender->sendNEC(code);
             success = true;
             break;
         case IR_PROTOCOL_SAMSUNG:
-            // Samsung protocol expects address and command
-            IrSender.sendSamsung((code >> 16) & 0xFFFF, code & 0xFFFF, 0);
+            // Samsung protocol
+            irSender->sendSAMSUNG(code, bits);
             success = true;
             break;
         case IR_PROTOCOL_SONY:
-            // Sony uses address and command format
-            IrSender.sendSony((code >> 8) & 0xFF, code & 0xFF, 0, bits);
+            // Sony uses different bit lengths
+            irSender->sendSony(code, bits);
             success = true;
             break;
         case IR_PROTOCOL_LG:
-            // LG uses address and command format
-            IrSender.sendLG((code >> 8) & 0xFF, code & 0xFF, 0);
+            // LG protocol
+            irSender->sendLG(code, bits);
             success = true;
             break;
         case IR_PROTOCOL_RC5:
-            IrSender.sendRC5((code >> 6) & 0x1F, code & 0x3F, 0, true);
+            irSender->sendRC5(code, bits);
             success = true;
             break;
         case IR_PROTOCOL_RC6:
-            IrSender.sendRC6Raw(code, bits);
+            irSender->sendRC6(code, bits);
             success = true;
             break;
         case IR_PROTOCOL_PANASONIC:
-            // Panasonic uses address and command format
-            IrSender.sendPanasonic((code >> 8) & 0xFF, code & 0xFF, 0);
+            // Panasonic protocol
+            irSender->sendPanasonic(code);
             success = true;
             break;
         default:

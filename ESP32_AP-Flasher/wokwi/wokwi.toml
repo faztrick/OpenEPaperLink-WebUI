@@ -1,13 +1,7 @@
 [wokwi]
 version = 1
-elf = ".pio/build/OutdoorAP/firmware.elf"
-firmware = ".pio/build/OutdoorAP/firmware.bin"
+firmware = "../.pio/build/WokwiAP/firmware.elf"
+elf = "../.pio/build/WokwiAP/firmware.elf"
 
-[[wokwi.libs]]
-name = "esp32-s3"
-
-[chip]
-type = "esp32s3"
-
-[env]
-ESPTOOL_CHIP = "esp32s3"
+[[wokwi.files]]
+name = "../.pio/build/WokwiAP/firmware.bin"

@@ -1,135 +1,213 @@
 {
-    "version": 1,
-    "author": "ESP32 OpenEPaperLink Project",
-    "editor": "vscode",
-    "parts": [
-        {
-            "type": "wokwi-esp32-s3-devkit-c-1",
-            "id": "esp32s3",
-            "top": 0,
-            "left": 0,
-            "attrs": {
-                "psramSize": "8",
-                "flashSize": "32"
-            }
-        },
-        {
-            "type": "wokwi-st7789",
-            "id": "display1",
-            "top": -150,
-            "left": 200,
-            "attrs": {
-                "width": "240",
-                "height": "320"
-            }
-        },
-        {
-            "type": "wokwi-neopixel",
-            "id": "rgb_led1",
-            "top": -50,
-            "left": -100,
-            "attrs": {
-                "pin": "38"
-            }
-        },
-        {
-            "type": "wokwi-led",
-            "id": "status_led1",
-            "top": -80,
-            "left": -60,
-            "attrs": {
-                "color": "green"
-            }
-        },
-        {
-            "type": "wokwi-resistor",
-            "id": "r1",
-            "top": -70,
-            "left": -40,
-            "attrs": {
-                "value": "220"
-            }
-        }
+  "version": 1,
+  "author": "OpenEPaperLink Team",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {
+        "env": "esp32-s3-devkitc-1",
+        "flashSize": "32",
+        "psramSize": "8",
+        "flashMode": "dio"
+      }
+    },
+    {
+      "type": "wokwi-esp32-c6-devkit",
+      "id": "esp32c6",
+      "top": 0,
+      "left": 400,
+      "attrs": {
+        "name": "ESP32-C6 Module",
+        "flashSize": "4"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -67.6,
+      "left": 158.4,
+      "attrs": {
+        "color": "red"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": -67.6,
+      "left": 177.6,
+      "attrs": {
+        "color": "green"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led3",
+      "top": -67.6,
+      "left": 196.8,
+      "attrs": {
+        "color": "blue"
+      }
+    },
+    {
+      "type": "wokwi-ir-receiver",
+      "id": "ir_recv",
+      "top": 200,
+      "left": 100,
+      "attrs": {
+        "name": "IR Receiver"
+      }
+    },
+    {
+      "type": "wokwi-ir-remote",
+      "id": "ir_remote",
+      "top": 300,
+      "left": 100,
+      "attrs": {
+        "name": "IR Remote Control"
+      }
+    },
+    {
+      "type": "wokwi-spi-flash",
+      "id": "spi_flash",
+      "top": 200,
+      "left": 300,
+      "attrs": {
+        "size": "16777216",
+        "name": "External SPI Flash"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
     ],
-    "connections": [
-        [
-            "esp32s3:GPIO13",
-            "display1:MOSI",
-            "blue",
-            []
-        ],
-        [
-            "esp32s3:GPIO12",
-            "display1:SCLK",
-            "yellow",
-            []
-        ],
-        [
-            "esp32s3:GPIO10",
-            "display1:CS",
-            "green",
-            []
-        ],
-        [
-            "esp32s3:GPIO11",
-            "display1:DC",
-            "purple",
-            []
-        ],
-        [
-            "esp32s3:GPIO1",
-            "display1:RST",
-            "orange",
-            []
-        ],
-        [
-            "esp32s3:3V3",
-            "display1:VCC",
-            "red",
-            []
-        ],
-        [
-            "esp32s3:GND.1",
-            "display1:GND",
-            "black",
-            []
-        ],
-        [
-            "esp32s3:GPIO38",
-            "rgb_led1:DIN",
-            "cyan",
-            []
-        ],
-        [
-            "esp32s3:3V3",
-            "rgb_led1:VDD",
-            "red",
-            []
-        ],
-        [
-            "esp32s3:GND.2",
-            "rgb_led1:GND",
-            "black",
-            []
-        ],
-        [
-            "esp32s3:GPIO21",
-            "r1:1",
-            "orange",
-            []
-        ],
-        [
-            "r1:2",
-            "status_led1:A",
-            "orange",
-            []
-        ],
-        [
-            "status_led1:C",
-            "esp32s3:GND.3",
-            "black",
-            []
-        ]
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
     ],
-    "dependencies": {}
+    [
+      "led1:A",
+      "esp:16",
+      "red",
+      []
+    ],
+    [
+      "led1:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "led2:A",
+      "esp:17",
+      "green",
+      []
+    ],
+    [
+      "led2:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "led3:A",
+      "esp:18",
+      "blue",
+      []
+    ],
+    [
+      "led3:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ir_recv:OUT",
+      "esp:4",
+      "yellow",
+      []
+    ],
+    [
+      "ir_recv:VCC",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "ir_recv:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp32c6:TX",
+      "esp:47",
+      "blue",
+      []
+    ],
+    [
+      "esp32c6:RX",
+      "esp:48",
+      "green",
+      []
+    ],
+    [
+      "esp32c6:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp32c6:3V3",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "spi_flash:CS",
+      "esp:10",
+      "orange",
+      []
+    ],
+    [
+      "spi_flash:DI",
+      "esp:11",
+      "blue",
+      []
+    ],
+    [
+      "spi_flash:DO",
+      "esp:12",
+      "green",
+      []
+    ],
+    [
+      "spi_flash:CLK",
+      "esp:13",
+      "yellow",
+      []
+    ],
+    [
+      "spi_flash:VCC",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "spi_flash:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ]
+  ],
+  "dependencies": {}
 }

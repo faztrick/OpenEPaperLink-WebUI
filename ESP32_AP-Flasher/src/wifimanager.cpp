@@ -27,7 +27,9 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 
+#ifdef HAS_IPS_DISPLAY
 #include "ips_display.h"
+#endif
 #include "newproto.h"
 #include "system.h"
 #include "tag_db.h"
@@ -117,16 +119,15 @@ void WifiManager::terminalLog(String text) {
 }
 
 void WifiManager::poll() {
-
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
 
     if (eth_connected) {
         wifiStatus = ETHERNET;
-        if(!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000) {
+        if (!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000) {
             eth_timeout = 0;
             eth_connected = false;
         }
-    } else if(!eth_connected && wifiStatus == ETHERNET) {
+    } else if (!eth_connected && wifiStatus == ETHERNET) {
         wifiStatus = NOINIT;
         _APstarted = false;
         WiFi.mode(WIFI_STA);
@@ -232,7 +233,7 @@ void WifiManager::poll() {
 
 void WifiManager::initEth() {
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if(!eth_init) {
+    if (!eth_init) {
         eth_init = true;
         ETH.begin(
             ETH_PHY_ADDR,
@@ -606,7 +607,7 @@ void WifiManager::pollSerial() {
 
 void WifiManager::WiFiEvent(WiFiEvent_t event) {
     Serial.printf("[WiFi-event %d] ", event);
-    String eventname="";
+    String eventname = "";
 
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
@@ -648,7 +649,7 @@ void WifiManager::WiFiEvent(WiFiEvent_t event) {
 
         case ARDUINO_EVENT_ETH_START:
             eventname = "ETH Started";
-            //set eth hostname here
+            // set eth hostname here
             ETH.setHostname(buildHostname(ESP_MAC_ETH).c_str());
             eth_timeout = 0;
             break;

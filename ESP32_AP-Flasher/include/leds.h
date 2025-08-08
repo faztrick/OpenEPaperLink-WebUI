@@ -1,5 +1,42 @@
 #include <Arduino.h>
 
+#ifdef USE_DUMMY_LEDS
+// Dummy LED functions for simulation - no FastLED dependency
+inline void ledTask(void* parameter) {}
+inline void setBrightness(int brightness) {}
+inline void updateBrightnessFromConfig() {}
+inline void ledcSet(uint8_t channel, uint8_t brightness) {}
+inline void quickBlink(uint8_t repeat) {}
+inline void addFadeMono(uint8_t value) {}
+// Dummy CRGB struct for compatibility
+struct CRGB_dummy {
+    uint8_t r, g, b;
+    CRGB_dummy(uint8_t red = 0, uint8_t green = 0, uint8_t blue = 0) : r(red), g(green), b(blue) {}
+    
+    // Color constants for compatibility
+    static const CRGB_dummy Red;
+    static const CRGB_dummy Green;
+    static const CRGB_dummy Blue;
+    static const CRGB_dummy Yellow;
+    static const CRGB_dummy White;
+    static const CRGB_dummy Black;
+};
+
+// Define color constants
+inline const CRGB_dummy CRGB_dummy::Red(255, 0, 0);
+inline const CRGB_dummy CRGB_dummy::Green(0, 255, 0);
+inline const CRGB_dummy CRGB_dummy::Blue(0, 0, 255);
+inline const CRGB_dummy CRGB_dummy::Yellow(255, 255, 0);
+inline const CRGB_dummy CRGB_dummy::White(255, 255, 255);
+inline const CRGB_dummy CRGB_dummy::Black(0, 0, 0);
+
+#define CRGB CRGB_dummy
+inline void shortBlink(CRGB cname) {}
+inline void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree) {}
+inline void rgbIdle() {}
+inline void addFadeColor(CRGB cname) {}
+#else
+
 #ifdef HAS_RGB_LED
 #define FASTLED_INTERNAL
 #include <FastLED.h>
@@ -22,7 +59,7 @@ const uint8_t PROGMEM gamma8[] = {
     144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
     177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255};
-    
+
 void ledTask(void* parameter);
 void setBrightness(int brightness);
 void updateBrightnessFromConfig();
@@ -39,3 +76,5 @@ void addFadeColor(CRGB cname);
 
 void quickBlink(uint8_t repeat);
 void addFadeMono(uint8_t value);
+
+#endif

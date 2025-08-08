@@ -11,7 +11,7 @@
 #include "tag_db.h"
 #include "util.h"
 
-#ifdef HAS_TFT
+#ifdef HAS_IPS_DISPLAY
 #include "ips_display.h"
 #endif
 
@@ -111,7 +111,7 @@ std::tuple<int, int, float, float> findClosestColors(const Color &pixel, const s
             std::swap(closestDist, secondClosestDist);
         }
     }
-    return { closestIndex, secondClosestIndex, closestDist, secondClosestDist};
+    return {closestIndex, secondClosestIndex, closestDist, secondClosestDist};
 }
 
 void spr2color(TFT_eSprite &spr, imgParam &imageParams, uint8_t *buffer, size_t buffer_size, bool is_red) {
@@ -342,7 +342,7 @@ void rewriteHeader(File &f_out) {
 uint8_t *g5Compress(uint16_t width, uint16_t height, uint8_t *buffer, uint16_t buffersize, uint16_t &outBufferSize) {
     G5ENCIMAGE g5enc;
     int rc;
-    uint8_t *outbuffer = (uint8_t *)ps_malloc(buffersize+16384);
+    uint8_t *outbuffer = (uint8_t *)ps_malloc(buffersize + 16384);
     if (outbuffer == NULL) {
         Serial.println("Failed to allocate the output buffer for the G5 encoder");
         return nullptr;

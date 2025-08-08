@@ -5,9 +5,12 @@
 
 #ifdef HAS_IR_REMOTE
 
-#include <IRremote.h>  // Standard IRremote library
-#include <vector>
+#include <IRrecv.h>   // IRremoteESP8266 receive library
+#include <IRsend.h>   // IRremoteESP8266 send library
+#include <IRutils.h>  // IRremoteESP8266 utilities
+
 #include <map>
+#include <vector>
 
 // IR Command types
 enum IRCommandType {
@@ -134,6 +137,11 @@ private:
     uint8_t irSendPin;
     uint8_t irRecvPin;
     
+    // IRremoteESP8266 objects
+    IRsend* irSender;
+    IRrecv* irReceiver;
+    decode_results results;
+    
     IRRemoteProfile currentProfile;
     std::vector<IRRemoteProfile> profiles;
     std::vector<IRCommand> receivedCommands;
@@ -145,9 +153,7 @@ private:
     void logCommand(const IRCommand& command);
     void saveProfilesToStorage();
     void loadProfilesFromStorage();
-};
-
-// Global IR interface instance
+};// Global IR interface instance
 extern IRInterface irInterface;
 
 // Helper functions
@@ -156,6 +162,6 @@ IRCommandType stringToIRCommandType(const String& str);
 String irProtocolTypeToString(IRProtocolType protocol);
 IRProtocolType stringToIRProtocolType(const String& str);
 
-#endif // HAS_IR_REMOTE
+#endif  // HAS_IR_REMOTE
 
-#endif // IR_INTERFACE_H
+#endif  // IR_INTERFACE_H
