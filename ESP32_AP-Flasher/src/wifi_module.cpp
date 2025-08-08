@@ -7,18 +7,14 @@
 // ==========================
 
 bool WiFiModule::initialize() {
-    Serial.println("[WIFI_MODULE] Initializing enhanced WiFi module...");
-
-    // Initialize WiFi with optimized settings
+    Serial.println("[WIFI_MODULE] Initializing WiFi module...");
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
-
-    // Set advanced WiFi configuration
-    WiFi.setSleep(WIFI_PS_NONE);  // Disable power saving for better performance
-
+    WiFi.setSleep(WIFI_PS_NONE);
     isInitialized = true;
     lastStatusCheck = millis();
+    lastError = "";
     Serial.println("[WIFI_MODULE] WiFi module initialized successfully");
     return true;
 }
@@ -28,31 +24,25 @@ bool WiFiModule::start() {
         lastError = "Module not initialized";
         return false;
     }
-
     Serial.println("[WIFI_MODULE] Starting WiFi module...");
-
-    // Load WiFi credentials from preferences
     Preferences prefs;
     prefs.begin("wifi", true);
     String ssid = prefs.getString("ssid", "");
     String password = prefs.getString("password", "");
     prefs.end();
 
-    if (ssid.length() == 0) {
+    if (ssid.isEmpty()) {
         Serial.println("[WIFI_MODULE] No WiFi credentials configured, starting in AP mode");
         WiFi.softAP("ESP32-AP-Flasher", "password123");
     } else {
         Serial.printf("[WIFI_MODULE] Connecting to WiFi: %s\n", ssid.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
-
-        // Wait for connection with timeout
         int attempts = 0;
         while (WiFi.status() != WL_CONNECTED && attempts < 20) {
             delay(500);
             attempts++;
             Serial.print(".");
         }
-
         if (WiFi.status() == WL_CONNECTED) {
             Serial.printf("\n[WIFI_MODULE] Connected to WiFi. IP: %s\n", WiFi.localIP().toString().c_str());
             optimizeWiFiSettings();
@@ -61,33 +51,27 @@ bool WiFiModule::start() {
             WiFi.softAP("ESP32-AP-Flasher", "password123");
         }
     }
-
     isStarted = true;
     reconnectAttempts = 0;
+    lastError = "";
     return true;
 }
 
 bool WiFiModule::stop() {
     Serial.println("[WIFI_MODULE] Stopping WiFi module...");
-
     WiFi.disconnect(true);
     WiFi.softAPdisconnect(true);
-
     isStarted = false;
+    lastError = "";
     return true;
 }
 
 bool WiFiModule::cleanup() {
     Serial.println("[WIFI_MODULE] Cleaning up WiFi module...");
-
-    if (isStarted) {
-        stop();
-    }
-
+    if (isStarted) stop();
     WiFi.mode(WIFI_OFF);
     isInitialized = false;
     lastError = "";
-
     return true;
 }
 
@@ -237,15 +221,12 @@ void WiFiModule::handleEvent(const String &event, const String &data) {
 
 void WiFiModule::update() {
     if (!isStarted) return;
-
-    // Periodic status check
-    if (millis() - lastStatusCheck > 5000) {  // Every 5 seconds
+    unsigned long now = millis();
+    if (now - lastStatusCheck > 5000) {
         checkConnectionStatus();
     }
-
-    // Handle disconnections
     if (WiFi.status() != WL_CONNECTED && reconnectAttempts < 5) {
-        if (millis() - lastStatusCheck > 10000) {  // Try reconnect every 10 seconds
+        if (now - lastStatusCheck > 10000) {
             attemptReconnection();
         }
     }
@@ -339,15 +320,15 @@ void WiFiModule::performWiFiScan() {
 
 void WiFiModule::checkConnectionStatus() {
     lastStatusCheck = millis();
-
-    if (WiFi.status() != WL_CONNECTED) {
-        if (lastError.length() == 0) {
+    wl_status_t status = WiFi.status();
+    if (status != WL_CONNECTED) {
+        if (lastError.isEmpty()) {
             lastError = "WiFi connection lost";
             Serial.println("[WIFI_MODULE] WiFi connection lost");
         }
     } else {
         if (lastError == "WiFi connection lost") {
-            lastError = "";  // Clear error when reconnected
+            lastError = "";
             Serial.println("[WIFI_MODULE] WiFi connection restored");
             reconnectAttempts = 0;
         }
@@ -364,31 +345,21 @@ void WiFiModule::handleDisconnection() {
 
 bool WiFiModule::attemptReconnection() {
     Serial.printf("[WIFI_MODULE] Attempting WiFi reconnection (attempt %d)\n", reconnectAttempts + 1);
-
     WiFi.reconnect();
     reconnectAttempts++;
     lastStatusCheck = millis();
-
     return WiFi.status() == WL_CONNECTED;
 }
 
 void WiFiModule::optimizeWiFiSettings() {
     Serial.println("[WIFI_MODULE] Optimizing WiFi settings...");
-
     Preferences prefs;
     prefs.begin("wifi", true);
-
     bool powerSave = prefs.getBool("powerSave", false);
     String hostname = prefs.getString("hostname", "esp32-ap-flasher");
-
     prefs.end();
-
-    // Apply power saving settings
     WiFi.setSleep(powerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
-
-    // Set hostname
     WiFi.setHostname(hostname.c_str());
-
     Serial.println("[WIFI_MODULE] WiFi optimization complete");
 }
 
@@ -407,15 +378,9 @@ ModuleState WiFiModule::getState() const {
 // Module registration function
 void registerWiFiModule() {
     Serial.println("[WIFI_MODULE] Registering WiFi module with module manager...");
-
     auto wifiModule = std::make_unique<WiFiModule>();
-
     bool registered = ModuleManager::getInstance().registerModule(
-        std::move(wifiModule),
-        true,  // auto-start
-        {}     // no dependencies
-    );
-
+        std::move(wifiModule), true, {});
     if (registered) {
         Serial.println("[WIFI_MODULE] WiFi module registered successfully");
     } else {

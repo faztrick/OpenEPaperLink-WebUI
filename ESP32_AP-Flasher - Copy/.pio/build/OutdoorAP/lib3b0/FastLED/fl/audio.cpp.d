@@ -1,0 +1,25 @@
+.pio/build/OutdoorAP/lib3b0/FastLED/fl/audio.cpp.o: \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/audio.cpp \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/audio.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/fft.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/scoped_ptr.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/allocator.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/inplacenew.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/type_traits.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/namespace.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/unused.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/deprecated.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/slice.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/clamp.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/force_inline.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/geometry.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/math.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/map_range.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/math_macros.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/vector.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/functional.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/ptr.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/template_magic.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/insert_result.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/thread_local.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/thread.h

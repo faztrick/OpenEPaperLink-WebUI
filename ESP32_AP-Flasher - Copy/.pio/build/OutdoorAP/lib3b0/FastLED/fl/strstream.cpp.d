@@ -1,0 +1,32 @@
+.pio/build/OutdoorAP/lib3b0/FastLED/fl/strstream.cpp.o: \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/strstream.cpp \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/strstream.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/crgb.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/chsv.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/namespace.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/color.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/lib8tion/types.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/force_inline.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/template_magic.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/type_traits.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/str.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/geometry.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/math.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/clamp.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/map_range.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/math_macros.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/ptr.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/scoped_ptr.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/allocator.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/inplacenew.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/unused.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/deprecated.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/vector.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/functional.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/insert_result.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/tile2x2.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/pair.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/slice.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/xymap.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/lut.h \
+ .pio/libdeps/OutdoorAP/FastLED/src/fl/xmap.h
