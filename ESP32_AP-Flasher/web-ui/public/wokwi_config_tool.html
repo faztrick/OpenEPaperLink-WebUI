@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wokwi & Diagram Configuration Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .config-panel {
+            padding: 30px;
+            border-right: 1px solid #eee;
+        }
+
+        .preview-panel {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .section-title {
+            font-size: 1.5em;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: #f8f9fa;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            margin-right: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+        }
+
+        .preview-area {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .component-card {
+            background: white;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .component-card:hover {
+            border-color: #3498db;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .component-card.selected {
+            border-color: #27ae60;
+            background: #f0fff4;
+        }
+
+        .component-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .component-description {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+
+        .connection-builder {
+            margin-top: 20px;
+        }
+
+        .connection-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .connection-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .remove-connection {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        .add-connection {
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .config-panel {
+                border-right: none;
+                border-bottom: 1px solid #eee;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Wokwi & Diagram Configuration Tool</h1>
+            <p>Configure your ESP32 Wokwi simulation and circuit diagram</p>
+        </div>
+
+        <div class="main-content">
+            <div class="config-panel">
+                <div class="tabs">
+                    <button class="tab active" data-tab="wokwi">Wokwi Config</button>
+                    <button class="tab" data-tab="diagram">Diagram Config</button>
+                </div>
+
+                <!-- Wokwi Configuration Tab -->
+                <div class="tab-content active" id="wokwi-tab">
+                    <h2 class="section-title">Wokwi Configuration</h2>
+
+                    <div class="form-group">
+                        <label for="board-type">Board Type:</label>
+                        <select id="board-type">
+                            <option value="esp32s3">ESP32-S3</option>
+                            <option value="esp32">ESP32</option>
+                            <option value="esp32c3">ESP32-C3</option>
+                            <option value="esp32c6">ESP32-C6</option>
+                            <option value="esp32s2">ESP32-S2</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="firmware-path">Firmware Path:</label>
+                        <input type="text" id="firmware-path" value="OutdoorAP/firmware.bin"
+                            placeholder="Path to firmware binary">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="elf-path">ELF Path:</label>
+                        <input type="text" id="elf-path" value="OutdoorAP/firmware.elf" placeholder="Path to ELF file">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="gdb-port">GDB Server Port:</label>
+                        <input type="number" id="gdb-port" value="3333" placeholder="3333">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="flash-size">Flash Size:</label>
+                        <select id="flash-size">
+                            <option value="4MB">4MB</option>
+                            <option value="8MB">8MB</option>
+                            <option value="16MB">16MB</option>
+                            <option value="32MB" selected>32MB</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="psram-size">PSRAM Size:</label>
+                        <select id="psram-size">
+                            <option value="2MB">2MB</option>
+                            <option value="4MB">4MB</option>
+                            <option value="8MB" selected>8MB</option>
+                            <option value="16MB">16MB</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="psram-mode">PSRAM Mode:</label>
+                        <select id="psram-mode">
+                            <option value="opi_opi" selected>OPI OPI</option>
+                            <option value="quad_quad">Quad Quad</option>
+                            <option value="disabled">Disabled</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="flash-mode">Flash Mode:</label>
+                        <select id="flash-mode">
+                            <option value="qio" selected>QIO</option>
+                            <option value="qout">QOUT</option>
+                            <option value="dio">DIO</option>
+                            <option value="dout">DOUT</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="flash-freq">Flash Frequency:</label>
+                        <select id="flash-freq">
+                            <option value="40m">40MHz</option>
+                            <option value="80m" selected>80MHz</option>
+                            <option value="120m">120MHz</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="usb-cdc" checked>
+                            <label for="usb-cdc">Enable USB CDC</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="usb-mode">USB Mode:</label>
+                        <select id="usb-mode">
+                            <option value="0">Mode 0</option>
+                            <option value="1" selected>Mode 1</option>
+                            <option value="2">Mode 2</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Diagram Configuration Tab -->
+                <div class="tab-content" id="diagram-tab">
+                    <h2 class="section-title">Circuit Diagram Configuration</h2>
+
+                    <div class="form-group">
+                        <label for="diagram-author">Author:</label>
+                        <input type="text" id="diagram-author" value="Uri Shaked" placeholder="Author name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="main-board">Main Board:</label>
+                        <select id="main-board">
+                            <option value="board-esp32-s3-devkitc-1" selected>ESP32-S3 DevKitC-1</option>
+                            <option value="board-esp32-devkit-v1">ESP32 DevKit v1</option>
+                            <option value="board-esp32-c3-devkitm-1">ESP32-C3 DevKitM-1</option>
+                            <option value="board-esp32-c6-devkitc-1">ESP32-C6 DevKitC-1</option>
+                            <option value="board-esp32-s2-devkitm-1">ESP32-S2 DevKitM-1</option>
+                        </select>
+                    </div>
+
+                    <h3 style="margin-top: 30px; margin-bottom: 15px; color: #2c3e50;">Available Components</h3>
+                    <div class="components-grid" id="components-grid">
+                        <!-- Components will be populated by JavaScript -->
+                    </div>
+
+                    <h3 style="margin-top: 30px; margin-bottom: 15px; color: #2c3e50;">Connections</h3>
+                    <div class="connection-builder">
+                        <div id="connections-container">
+                            <!-- Connections will be added here -->
+                        </div>
+                        <button class="add-connection" onclick="addConnection()">+ Add Connection</button>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="generateConfigs()">Generate Configurations</button>
+                    <button class="btn btn-secondary" onclick="loadExisting()">Load Existing</button>
+                    <button class="btn btn-success" onclick="downloadConfigs()">Download Files</button>
+                </div>
+
+                <div class="status-message" id="status-message"></div>
+            </div>
+
+            <div class="preview-panel">
+                <h2 class="section-title">Configuration Preview</h2>
+
+                <div class="tabs">
+                    <button class="tab active" data-preview="wokwi">wokwi.toml</button>
+                    <button class="tab" data-preview="diagram">diagram.json</button>
+                </div>
+
+                <div class="tab-content active" id="wokwi-preview">
+                    <pre class="preview-area" id="wokwi-content"></pre>
+                </div>
+
+                <div class="tab-content" id="diagram-preview">
+                    <pre class="preview-area" id="diagram-content"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="wokwi_config_tool.js"></script>
+    <script src="wokwi_backend_integration.js"></script>
+</body>
+
+</html>

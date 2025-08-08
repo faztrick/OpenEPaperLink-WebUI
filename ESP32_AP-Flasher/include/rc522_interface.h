@@ -3,10 +3,10 @@
 
 #include <Arduino.h>
 
-#ifdef HAS_RC522
+#if HAS_RC522
 
-#include <SPI.h>
 #include <MFRC522.h>
+#include <SPI.h>
 
 // Card types
 enum RC522CardType {
@@ -62,97 +62,97 @@ struct RFIDKey {
 };
 
 class RC522Interface {
-public:
+   public:
     RC522Interface();
     ~RC522Interface();
-    
+
     // Initialization
     bool begin();
     void end();
     bool isEnabled() const { return enabled; }
-    
+
     // Card detection
     bool isCardPresent();
     bool readCard();
     RFIDCardInfo getCardInfo() const { return currentCard; }
     void clearCard();
-    
+
     // Card operations
     RFIDResult readBlock(uint8_t blockNumber, uint8_t* buffer, uint8_t bufferSize);
     RFIDResult writeBlock(uint8_t blockNumber, const uint8_t* data, uint8_t dataSize);
     RFIDResult readSector(uint8_t sector, String& data);
     RFIDResult writeSector(uint8_t sector, const String& data);
-    
+
     // Authentication
     RFIDResult authenticateBlock(uint8_t blockNumber, const RFIDKey& key, bool useKeyA = true);
     bool setDefaultKeys();
     void addKey(const RFIDKey& key);
     std::vector<RFIDKey> getKeys() const { return keys; }
-    
+
     // Data operations
     RFIDResult readAllSectors(String& data);
     RFIDResult writeText(const String& text, uint8_t startSector = 1);
     RFIDResult readText(String& text);
     RFIDResult formatCard();
-    
+
     // Card management
     RFIDResult cloneCard(const RFIDCardInfo& sourceCard);
     RFIDResult backupCard(String& backupData);
     RFIDResult restoreCard(const String& backupData);
-    
+
     // Access control
     RFIDResult changeKey(uint8_t sector, const RFIDKey& oldKey, const RFIDKey& newKey);
     RFIDResult setAccessBits(uint8_t sector, uint8_t accessBits[4]);
-    
+
     // Monitoring and logging
     void startMonitoring();
     void stopMonitoring();
     bool isMonitoring() const { return monitoring; }
     std::vector<RFIDCardInfo> getDetectedCards() const { return detectedCards; }
     void clearDetectedCards();
-    
+
     // Configuration
     void setReadTimeout(unsigned long timeout) { readTimeout = timeout; }
     void setDebugMode(bool enable) { debugMode = enable; }
     void setAutoRead(bool enable) { autoRead = enable; }
-    
+
     // Hardware control
     void setAntennaGain(uint8_t gain);
     uint8_t getAntennaGain();
     void softReset();
     void hardReset();
-    
+
     // Status and diagnostics
     String getStatusJSON();
-    
+
     // Helper functions
     String getCardTypeName(RC522CardType type);
     void printCardInfo();
     void printSystemInfo();
     bool selfTest();
-    
-private:
+
+   private:
     MFRC522* mfrc522;
     SPIClass* spiInterface;
-    
+
     bool enabled;
     bool monitoring;
     bool autoRead;
     bool debugMode;
-    
+
     uint8_t rstPin;
     uint8_t ssPin;
     uint8_t sckPin;
     uint8_t misoPin;
     uint8_t mosiPin;
-    
+
     unsigned long readTimeout;
     unsigned long lastCardCheck;
-    
+
     RFIDCardInfo currentCard;
     std::vector<RFIDCardInfo> detectedCards;
     std::vector<RFIDKey> keys;
-    
+
     // Internal functions
     void initializeDefaultKeys();
     RC522CardType getCardType(MFRC522::PICC_Type piccType);
@@ -183,6 +183,6 @@ bool compareCards(const RFIDCardInfo& card1, const RFIDCardInfo& card2);
 String encryptCardData(const String& data, const String& key);
 String decryptCardData(const String& encryptedData, const String& key);
 
-#endif // HAS_RC522
+#endif  // HAS_RC522
 
-#endif // RC522_INTERFACE_H
+#endif  // RC522_INTERFACE_H

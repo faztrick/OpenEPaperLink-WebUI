@@ -36,6 +36,16 @@
 #include "udp.h"
 #include "web.h"
 
+// Stub function if not compiled with display support
+#ifdef HAS_TFT
+extern void TFTLog(String text);
+#else
+void TFTLogStub(String text) {
+    // Stub implementation
+    Serial.println("TFTLog: " + text);
+}
+#endif
+
 uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
 uint8_t x_position = 0;
@@ -114,7 +124,11 @@ WifiManager::WifiManager() {
 void WifiManager::terminalLog(String text) {
     Serial.println(text);
 #ifdef HAS_TFT
+#ifdef HAS_TFT
     TFTLog(text);
+#else
+    TFTLogStub(text);
+#endif
 #endif
 }
 

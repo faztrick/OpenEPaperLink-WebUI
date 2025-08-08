@@ -1,7 +1,0 @@
-[wokwi]
-version = 1
-firmware = "../.pio/build/WokwiAP/firmware.elf"
-elf = "../.pio/build/WokwiAP/firmware.elf"
-
-[[wokwi.files]]
-name = "../.pio/build/WokwiAP/firmware.bin"

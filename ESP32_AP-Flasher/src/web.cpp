@@ -30,13 +30,19 @@
 #include "system.h"
 #include "tag_db.h"
 #include "udp.h"
+#include "websocket_utils.h"
 #include "wifimanager.h"
+
+// New unified utilities
+#include "json_response_utils.h"
+#include "websocket_utils.h"
+#include "wifi_utils.h"
 
 #ifdef HAS_IR_REMOTE
 #include "ir_interface.h"
 #endif
 
-#ifdef HAS_RC522
+#if HAS_RC522
 #include "rc522_interface.h"
 #endif
 
@@ -53,39 +59,15 @@ AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 WifiManager wm;
 
-SemaphoreHandle_t wsMutex;
 uint32_t lastssidscan = 0;
 
-// Optimized WebSocket message sending with error handling
-static bool sendWSMessage(const JsonDocument &doc, uint32_t timeout_ms = WEBSOCKET_SEND_TIMEOUT_MS) {
-    if (!wsMutex) return false;
-
-    if (xSemaphoreTake(wsMutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
-        String message;
-        size_t serializedSize = serializeJson(doc, message);
-        if (serializedSize > 0 && ws.count() > 0) {
-            ws.textAll(message);
-        }
-        xSemaphoreGive(wsMutex);
-        return serializedSize > 0;
-    }
-    return false;
-}
-
+// Wrapper functions for backward compatibility
 void wsLog(const String &text) {
-    if (text.isEmpty() || ws.count() == 0) return;
-
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
-    doc["logMsg"] = text;
-    sendWSMessage(doc);
+    WebSocketUtils::sendLogMessage(text, "info");
 }
 
 void wsErr(const String &text) {
-    if (text.isEmpty() || ws.count() == 0) return;
-
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
-    doc["errMsg"] = text;
-    sendWSMessage(doc);
+    WebSocketUtils::sendErrorMessage(text);
 }
 
 // Optimized database size calculation with caching
@@ -211,7 +193,7 @@ void wsSendSysteminfo() {
         }
         setVarDB("ap_tagcount", result);
 
-#ifdef HAS_RGB_LED
+#if defined(HAS_RGB_LED) && !defined(USE_DUMMY_LEDS)
         if (timeoutcount > 0) {
             if (apInfo.state == AP_STATE_ONLINE && apInfo.isOnline == true) rgbIdleColor = CRGB::DarkBlue;
         } else {
@@ -221,7 +203,7 @@ void wsSendSysteminfo() {
         tagcounttimer = millis();
     }
 
-    sendWSMessage(doc);
+    WebSocketUtils::sendMessage(doc);
 }
 
 void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
@@ -230,10 +212,7 @@ void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
     if (syncMode != SYNC_DELETE) {
         String json = tagDBtoJson(mac);
         if (!json.isEmpty() && ws.count() > 0) {
-            if (xSemaphoreTake(wsMutex, pdMS_TO_TICKS(WEBSOCKET_SEND_TIMEOUT_MS)) == pdTRUE) {
-                ws.textAll(json);
-                xSemaphoreGive(wsMutex);
-            }
+            WebSocketUtils::sendMessage(json);
         }
     }
 
@@ -284,7 +263,7 @@ void wsSendAPitem(struct APlist *apitem) {
     ap["channel"] = apitem->channelId;
     ap["version"] = version_str;
 
-    sendWSMessage(doc);
+    WebSocketUtils::sendMessage(doc);
 }
 
 void wsSerial(const String &text) {
@@ -301,7 +280,7 @@ void wsSerial(const String &text, const String &color) {
     Serial.println(text);
 
     if (ws.count() > 0) {
-        sendWSMessage(doc);
+        WebSocketUtils::sendMessage(doc);
     }
 }
 
@@ -310,7 +289,9 @@ uint8_t wsClientCount() {
 }
 
 void init_web() {
-    wsMutex = xSemaphoreCreateMutex();
+    // Initialize WebSocket utilities
+    WebSocketUtils::initialize(&ws);
+
     WiFi.mode(WIFI_STA);
     WiFi.setTxPower(static_cast<wifi_power_t>(config.wifiPower));
 
@@ -791,69 +772,17 @@ void init_web() {
     });
 
     server.on("/get_ssid_list", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->addHeader("Cache-Control", "max-age=30");  // Cache for 30 seconds
+        WiFiUtils &wifiUtils = WiFiUtils::getInstance();
 
-        // Increased buffer size for better compatibility
-        DynamicJsonDocument doc(4096);
-
-        // Ensure WiFi is in a mode that allows scanning
-        wifi_mode_t currentMode = WiFi.getMode();
-        if (currentMode == WIFI_OFF) {
-            WiFi.mode(WIFI_STA);
-            vTaskDelay(pdMS_TO_TICKS(200));
-        } else if (currentMode == WIFI_AP) {
-            WiFi.mode(WIFI_AP_STA);
-            vTaskDelay(pdMS_TO_TICKS(200));
+        // Trigger scan if needed and not already scanning
+        if (!wifiUtils.isScanning()) {
+            wifiUtils.performAsyncScan(true);
         }
 
-        int scanResult = WiFi.scanComplete();
-        doc["scanstatus"] = scanResult;
-
-        JsonArray networks = doc["networks"].to<JsonArray>();
-
-        if (scanResult > 0) {
-            // Create array for sorting
-            std::vector<std::pair<int, int>> networkPairs;  // index, rssi
-
-            // Collect networks with valid SSIDs
-            for (int i = 0; i < scanResult; i++) {
-                String ssid = WiFi.SSID(i);
-                if (!ssid.isEmpty() && ssid.length() > 0) {
-                    networkPairs.push_back(std::make_pair(i, WiFi.RSSI(i)));
-                }
-            }
-
-            // Sort by RSSI (signal strength) descending
-            std::sort(networkPairs.begin(), networkPairs.end(),
-                      [](const std::pair<int, int> &a, const std::pair<int, int> &b) {
-                          return a.second > b.second;
-                      });
-
-            // Limit results to prevent memory issues and add sorted networks
-            int networkLimit = min((int)networkPairs.size(), 40);
-            for (int idx = 0; idx < networkLimit; idx++) {
-                int i = networkPairs[idx].first;
-                JsonObject network = networks.createNestedObject();
-                network["ssid"] = WiFi.SSID(i);
-                network["ch"] = WiFi.channel(i);
-                network["rssi"] = WiFi.RSSI(i);
-                network["enc"] = WiFi.encryptionType(i);
-                network["bssid"] = WiFi.BSSIDstr(i);
-            }
-        }
-
-        // Start new scan if needed (rate limited and improved)
-        if ((scanResult == WIFI_SCAN_FAILED || scanResult == WIFI_SCAN_RUNNING) &&
-            (millis() - lastssidscan > 25000)) {
-            WiFi.scanDelete();
-            Serial.println("Starting async WiFi scan for legacy endpoint");
-            WiFi.scanNetworks(true, true);  // async, show hidden
-            lastssidscan = millis();
-        }
-
-        serializeJson(doc, *response);
-        request->send(response);
+        // Get results and send as JSON
+        String json = wifiUtils.buildScanResultsJson(false);
+        JsonResponseUtils::addCacheHeaders(request, 30);  // Cache for 30 seconds
+        JsonResponseUtils::sendJsonResponse(request, json);
     });
 
     AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler("/save_wifi_config", [](AsyncWebServerRequest *request, JsonVariant &json) {
@@ -923,7 +852,7 @@ void init_web() {
             preferences.putString("ssid", "");
             preferences.putString("pw", "");
             preferences.end();
-            
+
             destroyDB();
             cleanupCurrent();
             contentFS->remove("/AP_FW_Pack.bin");
@@ -1052,6 +981,7 @@ void init_web() {
     // Enhanced Module Management API Endpoints
     setupModuleManagementAPI(server);
 
+#if HAS_C6_MODULE
     // C6 Module Management Endpoints
     server.on("/get_c6_settings", HTTP_GET, handleGetC6Settings);
     server.on("/save_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) { request->send(200, "text/plain", "Settings saved"); }, NULL, handleSaveC6SettingsBody);
@@ -1068,11 +998,14 @@ void init_web() {
 
     // Add the /update_c6 endpoint that JavaScript calls
     server.on("/update_c6", HTTP_POST, [](AsyncWebServerRequest *request) { request->send(200, "text/plain", "Update complete"); }, handleC6FirmwareUpload);
+#endif
 
     // Drives and device management endpoints
+#if HAS_C6_MODULE
     server.on("/list_drives", HTTP_GET, handleListDrives);
     server.on("/list_serial_ports", HTTP_GET, handleListSerialPorts);
     server.on("/flash_c6_ota", HTTP_POST, handleFlashC6OTA);
+#endif
 
     // Feature detection endpoints (HEAD requests)
     server.on("/tft_status", HTTP_HEAD, [](AsyncWebServerRequest *request) {
@@ -1218,7 +1151,7 @@ void init_web() {
 #endif
 
 // Temporarily disable RC522 until IR is working
-#ifdef HAS_RC522
+#if HAS_RC522
     // RC522 RFID control endpoints
     server.on("/rfid/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         String response = rc522Interface.getStatusJSON();
@@ -1249,6 +1182,7 @@ void init_web() {
         }
     });
 
+#if HAS_RC522
     server.on("/rfid/read", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!request->hasParam("type", true)) {
             request->send(400, "application/json", "{\"error\":\"Missing type parameter\"}");
@@ -1341,7 +1275,9 @@ void init_web() {
             request->send(400, "application/json", "{\"error\":\"Invalid write type\"}");
         }
     });
+#endif
 
+#if HAS_RC522
     server.on("/rfid/cards", HTTP_GET, [](AsyncWebServerRequest *request) {
         std::vector<RFIDCardInfo> cards = rc522Interface.getDetectedCards();
 
@@ -1387,6 +1323,7 @@ void init_web() {
         String response = "{\"success\":true,\"monitoring\":" + String(enable ? "true" : "false") + "}";
         request->send(200, "application/json", response);
     });
+#endif
 #endif
 
     // OpenAI Agent API endpoints for file management
@@ -1759,146 +1696,29 @@ void init_web() {
 
     // Network Endpoints
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
-        doc["success"] = true;
-        doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
-        doc["wifi"]["ssid"] = WiFi.SSID();
-        doc["wifi"]["rssi"] = WiFi.RSSI();
-        doc["wifi"]["localIP"] = WiFi.localIP().toString();
-        doc["wifi"]["macAddress"] = WiFi.macAddress();
-        doc["wifi"]["channel"] = WiFi.channel();
-        doc["wifi"]["hostname"] = WiFi.getHostname();
-        doc["ap"]["enabled"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-        doc["ap"]["clients"] = WiFi.softAPgetStationNum();
-        doc["ap"]["ip"] = WiFi.softAPIP().toString();
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response);
+        WiFiUtils &wifiUtils = WiFiUtils::getInstance();
+        String json = wifiUtils.getConnectionInfoJson();
+        JsonResponseUtils::sendJsonResponse(request, json);
     });
 
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request) {
-        // Increased buffer size for better memory handling
-        DynamicJsonDocument doc(4096);
+        WiFiUtils &wifiUtils = WiFiUtils::getInstance();
 
-        // Ensure WiFi is in a mode that allows scanning
-        wifi_mode_t currentMode = WiFi.getMode();
-        Serial.printf("ESP32-S3 WiFi scan - Current WiFi mode: %d\n", currentMode);
-
-        if (currentMode == WIFI_OFF) {
-            Serial.println("WiFi was off, switching to STA mode with ESP32-S3 optimizations");
-            WiFi.mode(WIFI_STA);
-            // ESP32-S3 specific WiFi performance settings
-            esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving
-            WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
-            vTaskDelay(pdMS_TO_TICKS(200));
-        } else if (currentMode == WIFI_AP) {
-            Serial.println("WiFi was in AP mode, switching to AP+STA mode with ESP32-S3 optimizations");
-            WiFi.mode(WIFI_AP_STA);
-            // Apply optimizations for dual mode
-            esp_wifi_set_ps(WIFI_PS_NONE);
-            WiFi.setTxPower(WIFI_POWER_19_5dBm);
-            vTaskDelay(pdMS_TO_TICKS(200));
-        }
-
-        // Check if scan is already in progress
-        int scanResult = WiFi.scanComplete();
-        if (scanResult == WIFI_SCAN_RUNNING) {
-            doc["success"] = false;
-            doc["message"] = "Scan already in progress";
-            doc["scanRunning"] = true;
-
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            serializeJson(doc, *response);
-            request->send(response);
+        // If already scanning, return status
+        if (wifiUtils.isScanning()) {
+            JsonResponseUtils::sendStatusResponse(request, false, "Scan already in progress");
             return;
         }
 
-        // Use async scan for better performance
-        Serial.println("Starting async WiFi scan...");
-        WiFi.scanDelete();              // Clear previous results
-        WiFi.scanNetworks(true, true);  // async=true, show_hidden=true
-
-        // Wait briefly for scan to initialize
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        // Check scan status again
-        scanResult = WiFi.scanComplete();
-        if (scanResult == WIFI_SCAN_RUNNING) {
-            doc["success"] = false;
-            doc["message"] = "Scan initiated, please try again in a few seconds";
-            doc["scanRunning"] = true;
-
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            serializeJson(doc, *response);
-            request->send(response);
-            return;
-        }
-
-        // If scan completed immediately or has results
-        int n = scanResult;
-        if (n < 0) {
-            Serial.printf("WiFi scan error: %d\n", n);
-            doc["success"] = false;
-            doc["message"] = "WiFi scan failed";
-            doc["errorCode"] = n;
+        // Start new scan
+        bool scanStarted = wifiUtils.performAsyncScan(true);
+        if (scanStarted) {
+            JsonResponseUtils::sendStatusResponse(request, false, "Scan initiated, please try again in a few seconds");
         } else {
-            Serial.printf("WiFi scan found %d networks\n", n);
-            doc["success"] = true;
-            doc["networkCount"] = n;
-            doc["wifiMode"] = WiFi.getMode();
-            doc["timestamp"] = millis();
-
-            JsonArray networks = doc.createNestedArray("networks");
-
-            // Limit networks to prevent memory issues and sort by signal strength
-            int maxNetworks = min(n, 50);
-
-            // Create array of network info for sorting
-            struct NetworkInfo {
-                int index;
-                int rssi;
-            };
-
-            std::vector<NetworkInfo> networkList;
-            for (int i = 0; i < n; i++) {
-                String ssid = WiFi.SSID(i);
-                if (!ssid.isEmpty() && ssid.length() > 0) {
-                    networkList.push_back({i, WiFi.RSSI(i)});
-                }
-            }
-
-            // Sort by RSSI (signal strength) descending
-            std::sort(networkList.begin(), networkList.end(),
-                      [](const NetworkInfo &a, const NetworkInfo &b) {
-                          return a.rssi > b.rssi;
-                      });
-
-            // Add sorted networks to JSON
-            int addedCount = 0;
-            for (const auto &netInfo : networkList) {
-                if (addedCount >= maxNetworks) break;
-
-                int i = netInfo.index;
-                JsonObject network = networks.createNestedObject();
-                network["ssid"] = WiFi.SSID(i);
-                network["rssi"] = WiFi.RSSI(i);
-                network["encryption"] = WiFi.encryptionType(i);
-                network["channel"] = WiFi.channel(i);
-                network["bssid"] = WiFi.BSSIDstr(i);
-
-                addedCount++;
-            }
-
-            doc["networksReturned"] = addedCount;
+            // Get existing results
+            String json = wifiUtils.buildScanResultsJson(true);
+            JsonResponseUtils::sendJsonResponse(request, json);
         }
-
-        // Clean up scan results
-        WiFi.scanDelete();
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response);
     });
 
     server.on("/wifi_manage", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -2125,31 +1945,31 @@ void init_web() {
               NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             // Handle OpenAI API proxy request
             static String requestBody = "";
-            
+
             // Accumulate the request body
             if (index == 0) {
                 requestBody = "";
             }
-            
+
             for (size_t i = 0; i < len; i++) {
                 requestBody += (char)data[i];
             }
-            
+
             // When we have the complete body
             if (index + len == total) {
                 // Parse the request
                 DynamicJsonDocument requestDoc(8192);
                 DeserializationError error = deserializeJson(requestDoc, requestBody);
-                
+
                 if (error) {
                     request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
                     return;
                 }
-                
+
                 // Load OpenAI configuration
                 String configPath = "/openai_config.json";
                 DynamicJsonDocument configDoc(4096);
-                
+
                 if (contentFS->exists(configPath)) {
                     File configFile = contentFS->open(configPath, "r");
                     if (configFile) {
@@ -2157,31 +1977,31 @@ void init_web() {
                         configFile.close();
                     }
                 }
-                
+
                 // Extract config values
                 String apiKey = configDoc["openai"]["api_key"].as<String>();
                 String apiUrl = configDoc["openai"]["api_url"].as<String>();
-                
+
                 if (apiKey.isEmpty()) {
                     request->send(500, "application/json", "{\"error\":\"OpenAI API key not configured\"}");
                     return;
                 }
-                
+
                 if (apiUrl.isEmpty()) {
                     apiUrl = "https://api.openai.com/v1/chat/completions";
                 }
-                
+
                 // Make HTTP request to OpenAI
                 WiFiClientSecure client;
                 client.setInsecure(); // For simplicity - in production you should verify certificates
-                
+
                 HTTPClient http;
                 http.begin(client, apiUrl);
                 http.addHeader("Content-Type", "application/json");
                 http.addHeader("Authorization", "Bearer " + apiKey);
-                
+
                 int httpCode = http.POST(requestBody);
-                
+
                 if (httpCode > 0) {
                     String response = http.getString();
                     request->send(httpCode, "application/json", response);
@@ -2189,7 +2009,7 @@ void init_web() {
                     String errorMsg = "{\"error\":\"HTTP request failed: " + String(httpCode) + "\"}";
                     request->send(500, "application/json", errorMsg);
                 }
-                
+
                 http.end();
                 requestBody = ""; // Clear for next request
             } });

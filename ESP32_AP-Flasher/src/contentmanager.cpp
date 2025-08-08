@@ -42,6 +42,46 @@
 #include "util.h"
 #include "web.h"
 
+// Forward declarations for functions defined later in this file
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size, uint16_t bgcolor);
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size);
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color);
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font);
+void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight, byte align);
+void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight);
+void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color);
+
+// Forward declarations for existing functions with correct signatures
+void drawNumber(String &filename, int32_t count, int32_t thresholdred, tagRecord *&taginfo, imgParam &imageParams);
+void drawDate(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+void drawWeather(String &filename, JsonObject &cfgobj, const tagRecord *taginfo, imgParam &imageParams);
+void drawForecast(String &filename, JsonObject &cfgobj, const tagRecord *taginfo, imgParam &imageParams);
+void drawQR(String &filename, String qrcontent, String title, tagRecord *&taginfo, imgParam &imageParams);
+void drawAPinfo(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+void drawTimestamp(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+
+// Forward declarations for root functions - using actual function signatures
+int getImgURL(String &filename, String URL, time_t fetched, imgParam &imageParams, String MAC);
+bool getRssFeed(String &filename, String URL, String title, tagRecord *&taginfo, imgParam &imageParams);
+bool getCalFeed(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+void prepareNFCReq(const uint8_t *dst, const char *url);
+uint8_t drawBuienradar(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+void prepareConfigFile(const uint8_t *dst, const JsonObject &config);
+bool getJsonTemplateFileExtractVariables(String &filename, String jsonfile, JsonDocument &variables, tagRecord *&taginfo, imgParam &imageParams);
+bool getJsonTemplateFile(String &filename, String jsonfile, tagRecord *&taginfo, imgParam &imageParams);
+int getJsonTemplateUrl(String &filename, String URL, time_t fetched, String MAC, tagRecord *&taginfo, imgParam &imageParams);
+bool getDayAheadFeed(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams);
+void prepareTIME_RAW(const uint8_t *dst, time_t now);
+
+void getTemplate(JsonDocument &json, const uint8_t id, const uint8_t hwtype);
+void getLocation(JsonObject &cfgobj);
+uint16_t getColor(const String &color);
+char *formatHttpDate(const time_t t);
+void drawElement(const JsonObject &element, TFT_eSprite &spr, imgParam &imageParams, uint8_t &currentOrientation);
+String windDirectionIcon(const int degrees);
+int windSpeedToBeaufort(const float windSpeed);
+void drawJsonStream(Stream &stream, String &filename, tagRecord *&taginfo, imgParam &imageParams);
+
 // https://csvjson.com/json_beautifier
 
 bool needRedraw(uint8_t contentMode, uint8_t wakeupReason) {
@@ -60,12 +100,11 @@ void contentRunner() {
     memset(&wifimac[6], 0, 2);
 
     for (tagRecord *taginfo : tagDB) {
-
         const bool isAp = memcmp(taginfo->mac, wifimac, 8) == 0;
         if (taginfo->RSSI &&
             (now >= taginfo->nextupdate || needRedraw(taginfo->contentMode, taginfo->wakeupReason)) &&
             config.runStatus == RUNSTATUS_RUN && (taginfo->expectedNextCheckin < now + 300 || isAp) &&
-             Storage.freeSpace() > 31000 && !util::isSleeping(config.sleepTime1, config.sleepTime2)) {
+            Storage.freeSpace() > 31000 && !util::isSleeping(config.sleepTime1, config.sleepTime2)) {
             drawNew(taginfo->mac, taginfo);
             taginfo->wakeupReason = 0;
         }
@@ -576,7 +615,7 @@ void drawNew(const uint8_t mac[8], tagRecord *&taginfo) {
         }
 #ifdef CONTENT_TIME_RAWDATA
         case 29:  // Time and raw data like strings etc. in the future
-        
+
             taginfo->nextupdate = now + 1800;
             prepareTIME_RAW(mac, now);
             break;
@@ -654,6 +693,19 @@ void replaceVariables(String &format) {
     }
 }
 
+// Overloaded versions of drawString for backward compatibility
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color) {
+    drawString(spr, content, posx, posy, font, align, color, 0, TFT_WHITE);
+}
+
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size) {
+    drawString(spr, content, posx, posy, font, align, color, size, TFT_WHITE);
+}
+
+void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font) {
+    drawString(spr, content, posx, posy, font, TL_DATUM, TFT_BLACK, 0, TFT_WHITE);
+}
+
 void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size, uint16_t bgcolor) {
     // drawString(spr,"test",100,10,"bahnschrift30",TC_DATUM,TFT_RED);
 
@@ -720,6 +772,15 @@ void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, St
             if (font != "") spr.unloadFont();
         }
     }
+}
+
+// Overloaded versions of drawTextBox for backward compatibility
+void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color) {
+    drawTextBox(spr, content, posx, posy, boxwidth, boxheight, font, color, TFT_WHITE, 1.0, TL_DATUM);
+}
+
+void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight) {
+    drawTextBox(spr, content, posx, posy, boxwidth, boxheight, font, color, bgcolor, lineheight, TL_DATUM);
 }
 
 void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight, byte align) {
@@ -791,7 +852,7 @@ void initSprite(TFT_eSprite &spr, int w, int h, imgParam &imageParams) {
 }
 
 String utf8FromCodepoint(uint16_t cp) {
-    char buf[4] = {0}; 
+    char buf[4] = {0};
     if (cp < 0x80) {
         buf[0] = cp;
     } else if (cp < 0x800) {
@@ -2343,7 +2404,7 @@ void drawElement(const JsonObject &element, TFT_eSprite &spr, imgParam &imagePar
         const uint16_t bgcolor = (bgcolorstr.length() > 0) ? getColor(bgcolorstr) : TFT_WHITE;
         drawString(spr, textArray[2], textArray[0].as<int>(), textArray[1].as<int>(), textArray[3], align, getColor(textArray[4]), size, bgcolor);
     } else if (element["textbox"].is<JsonArray>()) {
-        // posx, posy, width, height, text, font, color, lineheight, align  
+        // posx, posy, width, height, text, font, color, lineheight, align
         const JsonArray &textArray = element["textbox"];
         float lineheight = textArray[7].as<float>();
         if (lineheight == 0) lineheight = 1;
@@ -2355,8 +2416,8 @@ void drawElement(const JsonObject &element, TFT_eSprite &spr, imgParam &imagePar
     } else if (element["box"].is<JsonArray>()) {
         const JsonArray &boxArray = element["box"];
         spr.fillRect(boxArray[0].as<int>(), boxArray[1].as<int>(), boxArray[2].as<int>(), boxArray[3].as<int>(), getColor(boxArray[4]));
-        if (boxArray.size()>=7) {
-            for (int i=0; i < boxArray[6].as<int>(); i++) {
+        if (boxArray.size() >= 7) {
+            for (int i = 0; i < boxArray[6].as<int>(); i++) {
                 spr.drawRect(boxArray[0].as<int>() + i, boxArray[1].as<int>() + i, boxArray[2].as<int>() - 2 * i, boxArray[3].as<int>() - 2 * i, getColor(boxArray[5]));
             }
         }
@@ -2553,13 +2614,13 @@ void prepareConfigFile(const uint8_t *dst, const JsonObject &config) {
 #endif
 
 #ifdef CONTENT_TIME_RAWDATA
-bool is_leap_year(int year) {// Somehow mktime did not return the local unix time so lets to it in a manual way
+bool is_leap_year(int year) {  // Somehow mktime did not return the local unix time so lets to it in a manual way
     year += 1900;
     return (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
 }
 int days_in_month(int month, int year) {
-    static const int days[] = { 31, 28, 31, 30, 31, 30,
-                                31, 31, 30, 31, 30, 31 };
+    static const int days[] = {31, 28, 31, 30, 31, 30,
+                               31, 31, 30, 31, 30, 31};
     if (month == 1 && is_leap_year(year)) {
         return 29;
     }
@@ -2589,19 +2650,19 @@ void prepareTIME_RAW(const uint8_t *dst, time_t now) {
     size_t len = 1 + 4 + 4;
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
-    uint32_t local_time = convert_tm_to_seconds(&timeinfo) + 20;// Adding 20 seconds for the average of upload time
+    uint32_t local_time = convert_tm_to_seconds(&timeinfo) + 20;  // Adding 20 seconds for the average of upload time
     uint32_t unix_time = now + 20;
     data = new uint8_t[len + 1];
-    data[0] = len;// Length all
-    data[1] = 0x01;// Version of Time and RAW
-    data[2] = ((uint8_t*)&local_time)[0];
-    data[3] = ((uint8_t*)&local_time)[1];
-    data[4] = ((uint8_t*)&local_time)[2];
-    data[5] = ((uint8_t*)&local_time)[3];
-    data[6] = ((uint8_t*)&unix_time)[0];
-    data[7] = ((uint8_t*)&unix_time)[1];
-    data[8] = ((uint8_t*)&unix_time)[2];
-    data[9] = ((uint8_t*)&unix_time)[3];
+    data[0] = len;   // Length all
+    data[1] = 0x01;  // Version of Time and RAW
+    data[2] = ((uint8_t *)&local_time)[0];
+    data[3] = ((uint8_t *)&local_time)[1];
+    data[4] = ((uint8_t *)&local_time)[2];
+    data[5] = ((uint8_t *)&local_time)[3];
+    data[6] = ((uint8_t *)&unix_time)[0];
+    data[7] = ((uint8_t *)&unix_time)[1];
+    data[8] = ((uint8_t *)&unix_time)[2];
+    data[9] = ((uint8_t *)&unix_time)[3];
     prepareDataAvail(data, len + 1, DATATYPE_TIME_RAW_DATA, dst);
 }
 #endif
@@ -2636,7 +2697,3 @@ void getTemplate(JsonDocument &json, const uint8_t id, const uint8_t hwtype) {
         Serial.println("Failed to open " + String(filename));
     }
 }
-
-
-
-

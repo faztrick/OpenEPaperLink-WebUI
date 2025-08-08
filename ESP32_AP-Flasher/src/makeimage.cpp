@@ -5,14 +5,17 @@
 #include <makeimage.h>
 #include <web.h>
 
+#include "ips_display.h"
 #include "leds.h"
 #include "miniz-oepl.h"
 #include "storage.h"
 #include "tag_db.h"
 #include "util.h"
 
-#ifdef HAS_IPS_DISPLAY
-#include "ips_display.h"
+// Stub definitions if not compiled with display support
+#ifndef HAS_IPS_DISPLAY
+extern TFT_eSPI tft2;
+extern bool tftOverride;
 #endif
 
 #include "commstructs.h"

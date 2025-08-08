@@ -29,6 +29,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve Wokwi Configuration Tool
+app.use('/wokwi-tool', express.static(path.join(__dirname, '..')));
+app.get('/wokwi-tool', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'wokwi_config_tool.html'));
+});
+app.get('/wokwi-tool/js', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'wokwi_config_tool.js'));
+});
+
 // Store for active processes
 const activeProcesses = new Map();
 
@@ -132,6 +141,99 @@ app.get('/api/com-ports', async (req, res) => {
 app.get('/api/status', (req, res) => {
     const status = getProjectStatus();
     res.json(status);
+});
+
+// Wokwi Configuration endpoints
+app.get('/api/wokwi/config', (req, res) => {
+    try {
+        const wokwiPath = path.join(__dirname, '..', 'wokwi.toml');
+        const diagramPath = path.join(__dirname, '..', 'diagram.json');
+
+        const config = {
+            wokwi: fs.existsSync(wokwiPath) ? fs.readFileSync(wokwiPath, 'utf8') : '',
+            diagram: fs.existsSync(diagramPath) ? JSON.parse(fs.readFileSync(diagramPath, 'utf8')) : null
+        };
+
+        res.json({ success: true, config });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/wokwi/config', (req, res) => {
+    try {
+        const { wokwiConfig, diagramConfig } = req.body;
+
+        if (wokwiConfig) {
+            const wokwiPath = path.join(__dirname, '..', 'wokwi.toml');
+            fs.writeFileSync(wokwiPath, wokwiConfig, 'utf8');
+        }
+
+        if (diagramConfig) {
+            const diagramPath = path.join(__dirname, '..', 'diagram.json');
+            fs.writeFileSync(diagramPath, JSON.stringify(diagramConfig, null, 2), 'utf8');
+        }
+
+        res.json({ success: true, message: 'Wokwi configuration saved successfully' });
+
+        // Notify all connected clients about the config update
+        io.emit('wokwi-config-updated', { wokwiConfig, diagramConfig });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/wokwi/validate', (req, res) => {
+    try {
+        const wokwiPath = path.join(__dirname, '..', 'wokwi.toml');
+        const diagramPath = path.join(__dirname, '..', 'diagram.json');
+
+        const validation = {
+            wokwi: {
+                exists: fs.existsSync(wokwiPath),
+                valid: false,
+                errors: []
+            },
+            diagram: {
+                exists: fs.existsSync(diagramPath),
+                valid: false,
+                errors: []
+            }
+        };
+
+        // Validate wokwi.toml
+        if (validation.wokwi.exists) {
+            try {
+                const content = fs.readFileSync(wokwiPath, 'utf8');
+                if (content.includes('[wokwi]') && content.includes('version')) {
+                    validation.wokwi.valid = true;
+                } else {
+                    validation.wokwi.errors.push('Missing required wokwi section or version');
+                }
+            } catch (error) {
+                validation.wokwi.errors.push(`Parse error: ${error.message}`);
+            }
+        }
+
+        // Validate diagram.json
+        if (validation.diagram.exists) {
+            try {
+                const content = JSON.parse(fs.readFileSync(diagramPath, 'utf8'));
+                if (content.version && content.parts && content.connections) {
+                    validation.diagram.valid = true;
+                } else {
+                    validation.diagram.errors.push('Missing required fields: version, parts, or connections');
+                }
+            } catch (error) {
+                validation.diagram.errors.push(`JSON parse error: ${error.message}`);
+            }
+        }
+
+        res.json({ success: true, validation });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Build and execution endpoints
@@ -343,7 +445,7 @@ async function executeRemoteAction(action, processId, serverId) {
             try {
                 const remoteBuildPath = path.join(workingDir, '.pio/build', currentConfig.environment);
                 const localBuildPath = path.join(__dirname, '..', '.pio', 'build', currentConfig.environment);
-                
+
                 await remoteManager.downloadBuild(serverId, remoteBuildPath, localBuildPath);
                 io.emit('process-output', {
                     processId,
@@ -373,9 +475,9 @@ async function executeRemoteAction(action, processId, serverId) {
                 exitCode: 1
             }).then(analysis => {
                 if (analysis) {
-                    io.emit('ai-analysis', { 
-                        processId, 
-                        type: 'error', 
+                    io.emit('ai-analysis', {
+                        processId,
+                        type: 'error',
                         analysis,
                         remote: true,
                         timestamp: new Date().toISOString()
@@ -639,6 +741,45 @@ io.on('connection', (socket) => {
         config: aiAgent.getConfig()
     });
     socket.emit('remote-status', remoteManager.getConnectionStatus());
+
+    // Wokwi configuration socket handlers
+    socket.on('wokwi-save-config', async (data) => {
+        try {
+            const { wokwiConfig, diagramConfig } = data;
+
+            if (wokwiConfig) {
+                const wokwiPath = path.join(__dirname, '..', 'wokwi.toml');
+                fs.writeFileSync(wokwiPath, wokwiConfig, 'utf8');
+            }
+
+            if (diagramConfig) {
+                const diagramPath = path.join(__dirname, '..', 'diagram.json');
+                fs.writeFileSync(diagramPath, JSON.stringify(diagramConfig, null, 2), 'utf8');
+            }
+
+            socket.emit('wokwi-config-saved', { success: true });
+            io.emit('wokwi-config-updated', { wokwiConfig, diagramConfig });
+
+        } catch (error) {
+            socket.emit('wokwi-config-saved', { success: false, error: error.message });
+        }
+    });
+
+    socket.on('wokwi-load-config', () => {
+        try {
+            const wokwiPath = path.join(__dirname, '..', 'wokwi.toml');
+            const diagramPath = path.join(__dirname, '..', 'diagram.json');
+
+            const config = {
+                wokwi: fs.existsSync(wokwiPath) ? fs.readFileSync(wokwiPath, 'utf8') : '',
+                diagram: fs.existsSync(diagramPath) ? JSON.parse(fs.readFileSync(diagramPath, 'utf8')) : null
+            };
+
+            socket.emit('wokwi-config-loaded', { success: true, config });
+        } catch (error) {
+            socket.emit('wokwi-config-loaded', { success: false, error: error.message });
+        }
+    });
 });
 
 // Start server

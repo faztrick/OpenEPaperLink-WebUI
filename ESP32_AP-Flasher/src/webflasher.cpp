@@ -8,9 +8,7 @@
 // #include <freertos/task.h>
 
 #include "flasher.h"
-#ifdef HAS_IPS_DISPLAY
 #include "ips_display.h"
-#endif
 #include "settings.h"
 // #include "storage.h"
 
@@ -19,6 +17,40 @@
 #include "usbflasher.h"
 #include "util.h"
 #include "web.h"
+
+// Define TFT color constants if not available
+#ifndef TFT_BLUE
+#define TFT_BLUE 0x001F
+#endif
+#ifndef TFT_YELLOW
+#define TFT_YELLOW 0xFFE0
+#endif
+#ifndef TFT_GREEN
+#define TFT_GREEN 0x07E0
+#endif
+#ifndef TFT_RED
+#define TFT_RED 0xF800
+#endif
+#ifndef TFT_WHITE
+#define TFT_WHITE 0xFFFF
+#endif
+#ifndef TFT_PURPLE
+#define TFT_PURPLE 0xF81F
+#endif
+#ifndef TFT_DARKGREEN
+#define TFT_DARKGREEN 0x03E0
+#endif
+
+// Stub variables if not defined
+#ifdef HAS_TFT
+extern TFT_eSPI tft2;
+extern bool tftOverride;
+extern void sendAvail(uint8_t wakeupReason);
+#else
+TFT_eSPI tft2;
+bool tftOverride = false;
+void sendAvail(uint8_t wakeupReason) {}
+#endif
 #include "zbs_interface.h"
 
 #define FLASHMODE_OFF 0

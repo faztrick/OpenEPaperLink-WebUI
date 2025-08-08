@@ -13,7 +13,7 @@ class ESP32DevUI {
             verboseOutput: false,
             cleanBuild: false
         };
-        
+
         this.remoteConfig = {
             enabled: false,
             host: '94.200.149.94',
@@ -98,6 +98,28 @@ class ESP32DevUI {
         this.socket.on('ai-project-analysis', (data) => {
             this.showProjectAnalysis(data);
         });
+
+        // Wokwi configuration socket events
+        this.socket.on('wokwi-config-updated', (data) => {
+            this.log('Wokwi configuration updated', 'info');
+        });
+
+        this.socket.on('wokwi-config-saved', (data) => {
+            if (data.success) {
+                this.log('Wokwi configuration saved successfully', 'success');
+            } else {
+                this.log(`Failed to save Wokwi configuration: ${data.error}`, 'error');
+            }
+        });
+
+        this.socket.on('wokwi-config-loaded', (data) => {
+            if (data.success) {
+                // Configuration loaded successfully
+                this.log('Wokwi configuration loaded', 'info');
+            } else {
+                this.log(`Failed to load Wokwi configuration: ${data.error}`, 'error');
+            }
+        });
     }
 
     bindEvents() {
@@ -148,6 +170,9 @@ class ESP32DevUI {
         document.getElementById('remote-host').addEventListener('change', (e) => this.updateRemoteConfig('host', e.target.value));
         document.getElementById('remote-port').addEventListener('change', (e) => this.updateRemoteConfig('port', e.target.value));
         document.getElementById('remote-user').addEventListener('change', (e) => this.updateRemoteConfig('user', e.target.value));
+
+        // Wokwi configuration event handler
+        document.getElementById('wokwi-config-btn').addEventListener('click', () => this.showWokwiConfig());
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -861,7 +886,7 @@ window.ESP32DevUtils = {
         this.remoteConfig.enabled = enabled;
         const remoteOptions = document.getElementById('remote-options');
         remoteOptions.style.display = enabled ? 'block' : 'none';
-        
+
         if (enabled) {
             this.testRemoteConnection();
         } else {
@@ -877,10 +902,10 @@ window.ESP32DevUtils = {
     async testRemoteConnection() {
         const statusEl = document.getElementById('remote-status');
         const button = document.getElementById('test-connection');
-        
+
         button.disabled = true;
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
-        
+
         try {
             const response = await fetch('/api/remote/test-connection', {
                 method: 'POST',
@@ -895,7 +920,7 @@ window.ESP32DevUtils = {
             });
 
             const result = await response.json();
-            
+
             if (result.success) {
                 this.updateRemoteStatus('Connected', true);
                 this.remoteConfig.connected = true;
@@ -916,12 +941,160 @@ window.ESP32DevUtils = {
         const statusEl = document.getElementById('remote-status');
         const textEl = statusEl.querySelector('.status-text');
         textEl.textContent = text;
-        
+
         statusEl.className = `status-indicator ${connected ? 'connected' : 'disconnected'}`;
     },
 
     isUsingRemoteServer() {
         return this.remoteConfig.enabled && this.remoteConfig.connected;
+    },
+
+    // Wokwi Configuration Methods
+    showWokwiConfig() {
+        const modal = document.getElementById('wokwi-config-modal');
+        const container = document.getElementById('wokwi-tool-container');
+
+        modal.style.display = 'block';
+
+        // Load the Wokwi tool in an iframe
+        this.loadWokwiTool(container);
+    },
+
+    async loadWokwiTool(container) {
+        try {
+            // Show loading spinner
+            container.innerHTML = `
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading Wokwi Configuration Tool...</p>
+                </div>
+            `;
+
+            // Create iframe to load the Wokwi tool
+            const iframe = document.createElement('iframe');
+            iframe.src = '/wokwi_config_tool.html';
+            iframe.style.width = '100%';
+            iframe.style.height = '600px';
+            iframe.style.border = 'none';
+            iframe.style.borderRadius = '8px';
+
+            iframe.onload = () => {
+                container.innerHTML = '';
+                container.appendChild(iframe);
+
+                // Load existing configuration into the tool
+                this.loadExistingWokwiConfig(iframe);
+            };
+
+            iframe.onerror = () => {
+                container.innerHTML = `
+                    <div class="loading-spinner">
+                        <i class="fas fa-exclamation-triangle" style="color: #ef4444;"></i>
+                        <p>Failed to load Wokwi Configuration Tool</p>
+                        <button class="btn btn-primary" onclick="window.open('/wokwi_config_tool.html', '_blank')">
+                            Open in New Tab
+                        </button>
+                    </div>
+                `;
+            };
+
+        } catch (error) {
+            console.error('Error loading Wokwi tool:', error);
+            container.innerHTML = `
+                <div class="loading-spinner">
+                    <i class="fas fa-exclamation-triangle" style="color: #ef4444;"></i>
+                    <p>Error: ${error.message}</p>
+                </div>
+            `;
+        }
+    },
+
+    async loadExistingWokwiConfig(iframe) {
+        try {
+            const response = await fetch('/api/wokwi/config');
+            const data = await response.json();
+
+            if (data.success && data.config) {
+                // Send configuration to the iframe
+                iframe.contentWindow.postMessage({
+                    type: 'load-config',
+                    config: data.config
+                }, '*');
+            }
+        } catch (error) {
+            console.error('Error loading existing Wokwi config:', error);
+        }
+    },
+
+    async saveWokwiConfig(config) {
+        try {
+            const response = await fetch('/api/wokwi/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.log('Wokwi configuration saved successfully', 'success');
+                return true;
+            } else {
+                this.log(`Failed to save Wokwi configuration: ${data.error}`, 'error');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error saving Wokwi config:', error);
+            this.log(`Error saving Wokwi configuration: ${error.message}`, 'error');
+            return false;
+        }
+    },
+
+    async validateWokwiConfig() {
+        try {
+            const response = await fetch('/api/wokwi/validate');
+            const data = await response.json();
+
+            if (data.success) {
+                const { validation } = data;
+                let messages = [];
+
+                if (validation.wokwi.exists) {
+                    if (validation.wokwi.valid) {
+                        messages.push('✓ wokwi.toml is valid');
+                    } else {
+                        messages.push(`✗ wokwi.toml errors: ${validation.wokwi.errors.join(', ')}`);
+                    }
+                } else {
+                    messages.push('⚠ wokwi.toml not found');
+                }
+
+                if (validation.diagram.exists) {
+                    if (validation.diagram.valid) {
+                        messages.push('✓ diagram.json is valid');
+                    } else {
+                        messages.push(`✗ diagram.json errors: ${validation.diagram.errors.join(', ')}`);
+                    }
+                } else {
+                    messages.push('⚠ diagram.json not found');
+                }
+
+                messages.forEach(msg => {
+                    const type = msg.startsWith('✓') ? 'success' :
+                        msg.startsWith('✗') ? 'error' : 'warning';
+                    this.log(msg, type);
+                });
+
+                return validation;
+            }
+        } catch (error) {
+            console.error('Error validating Wokwi config:', error);
+            this.log(`Error validating Wokwi configuration: ${error.message}`, 'error');
+        }
+
+        return null;
     }
 };
 
@@ -932,6 +1105,10 @@ function closeAIChat() {
 
 function closeAIConfig() {
     document.getElementById('ai-config-modal').style.display = 'none';
+}
+
+function closeWokwiConfig() {
+    document.getElementById('wokwi-config-modal').style.display = 'none';
 }
 
 function openBuildFolder() {

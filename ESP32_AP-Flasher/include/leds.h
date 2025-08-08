@@ -12,7 +12,7 @@ inline void addFadeMono(uint8_t value) {}
 struct CRGB_dummy {
     uint8_t r, g, b;
     CRGB_dummy(uint8_t red = 0, uint8_t green = 0, uint8_t blue = 0) : r(red), g(green), b(blue) {}
-    
+
     // Color constants for compatibility
     static const CRGB_dummy Red;
     static const CRGB_dummy Green;
@@ -20,15 +20,18 @@ struct CRGB_dummy {
     static const CRGB_dummy Yellow;
     static const CRGB_dummy White;
     static const CRGB_dummy Black;
+    static const CRGB_dummy DarkBlue;
 };
 
 // Define color constants
+
 inline const CRGB_dummy CRGB_dummy::Red(255, 0, 0);
 inline const CRGB_dummy CRGB_dummy::Green(0, 255, 0);
 inline const CRGB_dummy CRGB_dummy::Blue(0, 0, 255);
 inline const CRGB_dummy CRGB_dummy::Yellow(255, 255, 0);
 inline const CRGB_dummy CRGB_dummy::White(255, 255, 255);
 inline const CRGB_dummy CRGB_dummy::Black(0, 0, 0);
+inline const CRGB_dummy CRGB_dummy::DarkBlue(0, 0, 139);
 
 #define CRGB CRGB_dummy
 inline void shortBlink(CRGB cname) {}

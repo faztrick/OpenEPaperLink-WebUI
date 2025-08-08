@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Development UI - Enhanced with Wokwi Tool</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .tool-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border: 2px solid #eee;
+            transition: all 0.3s ease;
+        }
+
+        .tool-card:hover {
+            border-color: #3498db;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .tool-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .tool-description {
+            color: #7f8c8d;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+            width: 100%;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
+        .status-bar {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .status-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .status-value {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .quick-btn {
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        .quick-btn:hover {
+            background: #7f8c8d;
+            transform: scale(1.05);
+        }
+
+        .highlight-new {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .highlight-new::before {
+            content: 'NEW!';
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 0 10px 0 10px;
+            font-size: 0.7em;
+            font-weight: bold;
+            z-index: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard">
+        <h1>🚀 ESP32 OutdoorAP Development UI</h1>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">Project</span>
+                <span class="status-value">OutdoorAP</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Board</span>
+                <span class="status-value">ESP32-S3</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Flash Size</span>
+                <span class="status-value">32MB</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Status</span>
+                <span class="status-value">Ready</span>
+            </div>
+        </div>
+
+        <div class="tools-grid">
+            <div class="tool-card">
+                <div class="tool-title">📝 Project Management</div>
+                <div class="tool-description">
+                    Manage your ESP32 project files, build configurations, and dependencies.
+                </div>
+                <button class="btn" onclick="alert('Project management features...')">
+                    Open Project Manager
+                </button>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-title">🔨 Build & Deploy</div>
+                <div class="tool-description">
+                    Compile your project, upload firmware, and monitor serial output.
+                </div>
+                <button class="btn btn-success" onclick="alert('Build and deploy features...')">
+                    Build Project
+                </button>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-title">🐛 Debug Tools</div>
+                <div class="tool-description">
+                    Debug your ESP32 application with GDB, monitor memory usage, and analyze performance.
+                </div>
+                <button class="btn btn-warning" onclick="alert('Debug tools...')">
+                    Start Debugging
+                </button>
+            </div>
+
+            <div class="tool-card highlight-new">
+                <div class="tool-title">🔧 Wokwi Configuration</div>
+                <div class="tool-description">
+                    Configure Wokwi simulation settings and design circuit diagrams for your ESP32 project.
+                </div>
+                <button class="btn" id="wokwi-config-btn">
+                    Configure Wokwi Simulation
+                </button>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-title">📊 System Monitor</div>
+                <div class="tool-description">
+                    Monitor system resources, view real-time logs, and track performance metrics.
+                </div>
+                <button class="btn" onclick="alert('System monitoring...')">
+                    Open Monitor
+                </button>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-title">⚙️ Settings</div>
+                <div class="tool-description">
+                    Configure development environment settings, board configurations, and preferences.
+                </div>
+                <button class="btn" onclick="alert('Settings panel...')">
+                    Open Settings
+                </button>
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <button class="quick-btn" onclick="alert('Quick compile...')">⚡ Quick Compile</button>
+            <button class="quick-btn" onclick="alert('Serial monitor...')">📺 Serial Monitor</button>
+            <button class="quick-btn" onclick="alert('File manager...')">📁 File Manager</button>
+            <button class="quick-btn" id="quick-wokwi-btn">🔧 Quick Wokwi</button>
+            <button class="quick-btn" onclick="alert('Task runner...')">🏃 Task Runner</button>
+        </div>
+    </div>
+
+    <!-- Load the Wokwi integration script -->
+    <script src="wokwi_integration.js"></script>
+    <script>
+        // Initialize the Wokwi tool integration
+        const wokwiTool = new WokwiToolIntegration('wokwi-modal');
+
+        // Add event listeners for Wokwi buttons
+        document.getElementById('wokwi-config-btn').addEventListener('click', () => {
+            wokwiTool.showTool();
+        });
+
+        document.getElementById('quick-wokwi-btn').addEventListener('click', () => {
+            wokwiTool.showTool();
+        });
+
+        // Auto-load the tool in the background
+        setTimeout(() => {
+            wokwiTool.loadTool().then(() => {
+                console.log('✅ Wokwi Configuration Tool loaded and ready!');
+            }).catch(error => {
+                console.warn('⚠️ Wokwi tool could not be loaded:', error.message);
+                // Fallback: open tool in new tab
+                document.getElementById('wokwi-config-btn').onclick = () => {
+                    window.open('/wokwi_config_tool.html', '_blank');
+                };
+                document.getElementById('quick-wokwi-btn').onclick = () => {
+                    window.open('/wokwi_config_tool.html', '_blank');
+                };
+            });
+        }, 1000);
+
+        // Simulate some dynamic status updates
+        setInterval(() => {
+            const status = document.querySelector('.status-value:last-child');
+            const statuses = ['Ready', 'Building', 'Uploading', 'Monitoring'];
+            const colors = ['#27ae60', '#f39c12', '#3498db', '#9b59b6'];
+
+            const randomIndex = Math.floor(Math.random() * statuses.length);
+            status.textContent = statuses[randomIndex];
+            status.style.color = colors[randomIndex];
+        }, 5000);
+    </script>
+</body>
+
+</html>

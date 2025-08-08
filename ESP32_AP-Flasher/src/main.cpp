@@ -54,12 +54,12 @@ void delayedStart(void* parameter) {
     // Changed: No longer auto-starts content generation
     // Content generation now requires manual start via web interface
     vTaskDelay(30000 / portTICK_PERIOD_MS);
-    
+
     // Just log the availability without auto-starting
     if (config.runStatus != RUNSTATUS_RUN) {
         wsLog("Content generation ready - use manual start button");
     }
-    
+
     vTaskDelay(10 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
 }
@@ -72,7 +72,7 @@ void setup() {
     Serial.begin(115200);
 #endif
 #if ARDUINO_USB_CDC_ON_BOOT == 1
-    Serial.setTxTimeoutMs(0); // workaround bug in USB CDC that slows down serial output when no usb connected
+    Serial.setTxTimeoutMs(0);  // workaround bug in USB CDC that slows down serial output when no usb connected
 #endif
     Serial.print(">\r\n");
 #ifdef HAS_TFT
@@ -191,16 +191,16 @@ void setup() {
     }
 #endif
 
-// Temporarily disable RC522 until IR is working
-// #ifdef HAS_RC522
-//     // Initialize RC522 RFID interface
-//     if (rc522Interface.begin()) {
-//         Serial.println("✅ RC522 RFID interface started");
-//         rc522Interface.startMonitoring(); // Start automatic card detection
-//     } else {
-//         Serial.println("❌ Failed to start RC522 RFID interface");
-//     }
-// #endif
+    // Temporarily disable RC522 until IR is working
+    // #ifdef HAS_RC522
+    //     // Initialize RC522 RFID interface
+    //     if (rc522Interface.begin()) {
+    //         Serial.println("✅ RC522 RFID interface started");
+    //         rc522Interface.startMonitoring(); // Start automatic card detection
+    //     } else {
+    //         Serial.println("❌ Failed to start RC522 RFID interface");
+    //     }
+    // #endif
 
 #ifdef HAS_USB
     // We'll need to start the 'usbflasher' task for boards with a second (USB) port. This can be used as a 'flasher' interface, using a python script on the host
@@ -210,7 +210,7 @@ void setup() {
 #ifdef ETHERNET_CLK_MODE
     if (!(ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_IN || ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_OUT))
 #endif
-    pinMode(0, INPUT_PULLUP);
+        pinMode(0, INPUT_PULLUP);
 
 #endif
 
@@ -238,13 +238,17 @@ void loop() {
         wsSendSysteminfo();
     }
     if (intervalVars.doRun() && config.runStatus != RUNSTATUS_STOP) {
+#ifndef USE_DUMMY_CONTENT_MANAGER
         checkVars();
+#endif
     }
     if (intervalSaveDB.doRun() && config.runStatus != RUNSTATUS_STOP) {
         saveDB("/current/tagDB.json");
     }
     if (intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO)) {
+#ifndef USE_DUMMY_CONTENT_MANAGER
         contentRunner();
+#endif
     }
 
 #ifdef HAS_TFT

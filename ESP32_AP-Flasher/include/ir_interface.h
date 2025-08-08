@@ -77,75 +77,75 @@ struct IRCommand {
 };
 
 class IRInterface {
-public:
+   public:
     IRInterface();
     ~IRInterface();
-    
+
     // Initialization
     bool begin();
     void end();
     bool isEnabled() const { return enabled; }
-    
+
     // Sending functions
     bool sendCommand(IRProtocolType protocol, uint32_t code, uint16_t bits = 32);
     bool sendCommand(const IRCommand& command);
     bool sendRaw(uint16_t* rawData, uint16_t length, uint16_t frequency = 38000);
-    
+
     // Receiving functions
     bool hasReceivedCommand();
     IRCommand getLastCommand();
     void enableReceiver(bool enable = true);
     void clearReceiveBuffer();
-    
+
     // Profile management
     bool loadProfile(const String& profileName);
     bool saveProfile(const IRRemoteProfile& profile);
     bool deleteProfile(const String& profileName);
     std::vector<String> getProfileList();
     IRRemoteProfile getCurrentProfile() const { return currentProfile; }
-    
+
     // Command mapping
     bool sendProfileCommand(IRCommandType commandType);
     String getCommandName(IRCommandType commandType);
     IRCommandType identifyCommand(uint32_t code);
-    
+
     // Learning mode
     bool startLearning();
     bool stopLearning();
     bool isLearning() const { return learningMode; }
     IRCommand learnCommand(unsigned long timeoutMs = 10000);
-    
+
     // Status and diagnostics
     void printLastCommand();
     void printProfile();
     String getStatusJSON();
-    
+
     // Configuration
     void setReceivePin(uint8_t pin);
     void setSendPin(uint8_t pin);
     void setDebugMode(bool enable) { debugMode = enable; }
-    
+
     // Helper functions
     String protocolToString(IRProtocolType protocol);
-    
-private:
+
+   private:
     bool enabled;
     bool receiverEnabled;
     bool learningMode;
     bool debugMode;
-    
+
     uint8_t irSendPin;
     uint8_t irRecvPin;
-    
+
     // IRremoteESP8266 objects
     IRsend* irSender;
     IRrecv* irReceiver;
     decode_results results;
-    
+
     IRRemoteProfile currentProfile;
     std::vector<IRRemoteProfile> profiles;
     std::vector<IRCommand> receivedCommands;
-    
+
     // Internal functions
     void initializeDefaultProfiles();
     IRProtocolType decodeTypeToProtocol(decode_type_t type);
@@ -153,7 +153,7 @@ private:
     void logCommand(const IRCommand& command);
     void saveProfilesToStorage();
     void loadProfilesFromStorage();
-};// Global IR interface instance
+};  // Global IR interface instance
 extern IRInterface irInterface;
 
 // Helper functions

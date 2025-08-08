@@ -146,7 +146,7 @@
                     <!-- Remote Server Section -->
                     <div class="section-group">
                         <h3><i class="fas fa-server"></i> Remote Server</h3>
-                        
+
                         <div class="form-group">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="use-remote">
@@ -158,17 +158,17 @@
                         <div class="form-group" id="remote-options" style="display: none;">
                             <label for="remote-host">Host:</label>
                             <input type="text" id="remote-host" value="94.200.149.94" class="form-input">
-                            
+
                             <label for="remote-port">Port:</label>
                             <input type="number" id="remote-port" value="22" class="form-input">
-                            
+
                             <label for="remote-user">User:</label>
                             <input type="text" id="remote-user" value="root" class="form-input">
-                            
+
                             <button class="btn btn-sm btn-info" id="test-connection">
                                 <i class="fas fa-plug"></i> Test Connection
                             </button>
-                            
+
                             <div id="remote-status" class="status-indicator">
                                 <span class="status-text">Not Connected</span>
                             </div>
@@ -236,6 +236,11 @@
                         <button class="btn btn-outline" data-action="test-endpoints">
                             <i class="fas fa-flask"></i>
                             Test API
+                        </button>
+
+                        <button class="btn btn-outline" id="wokwi-config-btn">
+                            <i class="fas fa-microchip"></i>
+                            Wokwi Configuration
                         </button>
 
                         <button class="btn btn-outline" onclick="window.open('http://192.168.4.1', '_blank')">
@@ -427,9 +432,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Wokwi Configuration Modal -->
+        <div id="wokwi-config-modal" class="modal">
+            <div class="modal-content wokwi-modal">
+                <div class="modal-header">
+                    <h3><i class="fas fa-microchip"></i> Wokwi Configuration</h3>
+                    <button class="modal-close" onclick="closeWokwiConfig()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="wokwi-tool-container">
+                        <div class="loading-spinner">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Loading Wokwi Configuration Tool...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="wokwi_integration.js"></script>
     <script src="app.js"></script>
 </body>
 
