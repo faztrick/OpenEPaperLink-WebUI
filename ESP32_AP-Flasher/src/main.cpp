@@ -17,7 +17,7 @@
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"
-#include "wifimanager.h"
+#include "wifi_utils.h"
 
 #ifdef HAS_EXT_FLASHER
 #include "webflasher.h"
@@ -40,10 +40,9 @@
 #include "ir_interface.h"
 #endif
 
-// Temporarily disable RC522 until IR is working
-// #ifdef HAS_RC522
-// #include "rc522_interface.h"
-// #endif
+#ifdef HAS_RC522
+#include "rc522_interface.h"
+#endif
 
 util::Timer intervalContentRunner(seconds(1));
 util::Timer intervalSysinfo(seconds(5));
@@ -179,7 +178,7 @@ void setup() {
     }
     */
 
-    wm.initEth();
+    wifiUtils.initEth();
     initAPconfig();
 
     updateLanguageFromConfig();
@@ -267,7 +266,7 @@ void setup() {
 
 void loop() {
     ws.cleanupClients();
-    wm.poll();
+    wifiUtils.poll();
 
     // Process serial commands
     SerialCommandHandler& serialCmdHandler = SerialCommandHandler::getInstance();

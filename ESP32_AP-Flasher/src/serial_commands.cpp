@@ -3,7 +3,6 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
-#include "storage_utils.h"
 #include "wifi_utils.h"
 
 // Define author/version information
@@ -37,10 +36,8 @@ void SerialCommandHandler::initialize() {
 }
 
 void SerialCommandHandler::setDefaultWiFiCredentials() {
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
-
     // Check if credentials already exist
-    String existingSSID = wifiStorage.getSSID();
+    String existingSSID = wifiUtils.getSSID();
     if (existingSSID.length() > 0) {
         Serial.println("📶 Existing WiFi credentials found: " + existingSSID);
 
@@ -55,13 +52,13 @@ void SerialCommandHandler::setDefaultWiFiCredentials() {
     // Set default credentials as requested
     Serial.println("🔧 Setting default WiFi credentials...");
 
-    wifiStorage.setSSID("Faztrick");
-    wifiStorage.setPassword("faztrick1234");
-    wifiStorage.setStaticIP("192.164.123.200");
-    wifiStorage.setGateway("192.164.123.91");
-    wifiStorage.setSubnetMask("255.255.255.0");
-    wifiStorage.setDNS("8.8.8.8");
-    wifiStorage.save();
+    wifiUtils.setSSID("Faztrick");
+    wifiUtils.setPassword("faztrick1234");
+    wifiUtils.setStaticIP("192.164.123.200");
+    wifiUtils.setGateway("192.164.123.91");
+    wifiUtils.setSubnetMask("255.255.255.0");
+    wifiUtils.setDNS("8.8.8.8");
+    wifiUtils.save();
 
     Serial.println("✅ Default WiFi credentials set:");
     Serial.println("   SSID: Faztrick");
@@ -288,9 +285,8 @@ void SerialCommandHandler::handleWiFiScan() {
 }
 
 void SerialCommandHandler::handleWiFiConnect(const String& params) {
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
-    String ssid = wifiStorage.getSSID();
-    String password = wifiStorage.getPassword();
+    String ssid = wifiUtils.getSSID();
+    String password = wifiUtils.getPassword();
 
     if (ssid.length() == 0) {
         sendErrorResponse("No SSID configured. Use wifi.setssid first.");
@@ -300,10 +296,10 @@ void SerialCommandHandler::handleWiFiConnect(const String& params) {
     sendResponse("Connecting to WiFi: " + ssid);
 
     // Check for static IP configuration
-    String staticIP = wifiStorage.getIP();
-    String gateway = wifiStorage.getGateway();
-    String subnet = wifiStorage.getMask();
-    String dns = wifiStorage.getDNS();
+    String staticIP = wifiUtils.getIP();
+    String gateway = wifiUtils.getGateway();
+    String subnet = wifiUtils.getMask();
+    String dns = wifiUtils.getDNS();
 
     if (staticIP.length() > 0) {
         IPAddress ip, gw, sn, dnsIP;
@@ -422,78 +418,49 @@ void SerialCommandHandler::handleWiFiSetSSID(const String& ssid) {
     }
 
     String cleanSSID = parseQuotedString(ssid);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setSSID(cleanSSID) == StorageUtils::Result::SUCCESS) {
-        sendResponse("SSID set to: " + cleanSSID);
-    } else {
-        sendErrorResponse("Failed to set SSID");
-    }
+    wifiUtils.setSSID(cleanSSID);
+    sendResponse("SSID set to: " + cleanSSID);
 }
 
 void SerialCommandHandler::handleWiFiSetPassword(const String& password) {
     String cleanPassword = parseQuotedString(password);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setPassword(cleanPassword) == StorageUtils::Result::SUCCESS) {
-        sendResponse("Password set (length: " + String(cleanPassword.length()) + " characters)");
-    } else {
-        sendErrorResponse("Failed to set password");
-    }
+    wifiUtils.setPassword(cleanPassword);
+    sendResponse("Password set (length: " + String(cleanPassword.length()) + " characters)");
 }
 
 void SerialCommandHandler::handleWiFiSetStaticIP(const String& ip) {
     String cleanIP = parseQuotedString(ip);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setStaticIP(cleanIP) == StorageUtils::Result::SUCCESS) {
-        sendResponse("Static IP set to: " + cleanIP);
-    } else {
-        sendErrorResponse("Failed to set static IP");
-    }
+    wifiUtils.setStaticIP(cleanIP);
+    sendResponse("Static IP set to: " + cleanIP);
 }
 
 void SerialCommandHandler::handleWiFiSetGateway(const String& gateway) {
     String cleanGateway = parseQuotedString(gateway);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setGateway(cleanGateway) == StorageUtils::Result::SUCCESS) {
-        sendResponse("Gateway set to: " + cleanGateway);
-    } else {
-        sendErrorResponse("Failed to set gateway");
-    }
+    wifiUtils.setGateway(cleanGateway);
+    sendResponse("Gateway set to: " + cleanGateway);
 }
 
 void SerialCommandHandler::handleWiFiSetSubnet(const String& subnet) {
     String cleanSubnet = parseQuotedString(subnet);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setSubnetMask(cleanSubnet) == StorageUtils::Result::SUCCESS) {
-        sendResponse("Subnet mask set to: " + cleanSubnet);
-    } else {
-        sendErrorResponse("Failed to set subnet mask");
-    }
+    wifiUtils.setSubnetMask(cleanSubnet);
+    sendResponse("Subnet mask set to: " + cleanSubnet);
 }
 
 void SerialCommandHandler::handleWiFiSetDNS(const String& dns) {
     String cleanDNS = parseQuotedString(dns);
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
 
-    if (wifiStorage.setDNS(cleanDNS) == StorageUtils::Result::SUCCESS) {
-        sendResponse("DNS server set to: " + cleanDNS);
-    } else {
-        sendErrorResponse("Failed to set DNS server");
-    }
+    wifiUtils.setDNS(cleanDNS);
+    sendResponse("DNS set to: " + cleanDNS);
 }
 
 void SerialCommandHandler::handleWiFiSave() {
-    WiFiStorageManager& wifiStorage = WIFI_STORAGE;
-
-    if (wifiStorage.save() == StorageUtils::Result::SUCCESS) {
-        sendResponse("WiFi configuration saved");
-    } else {
-        sendErrorResponse("Failed to save WiFi configuration");
-    }
+    wifiUtils.save();
+    sendResponse("WiFi configuration saved");
 }
 
 // Author/Endpoint Command Implementations

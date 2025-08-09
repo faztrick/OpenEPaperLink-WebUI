@@ -4,15 +4,11 @@
 
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
-// #include <freertos/FreeRTOS.h>
-// #include <freertos/task.h>
 
 #include "flasher.h"
 #include "ips_display.h"
-#include "settings.h"
-// #include "storage.h"
-
 #include "powermgt.h"
+#include "settings.h"
 #include "swd.h"
 #include "usbflasher.h"
 #include "util.h"

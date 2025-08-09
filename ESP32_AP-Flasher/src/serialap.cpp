@@ -13,8 +13,8 @@
 #include "settings.h"
 #include "storage.h"
 #include "web.h"
+#include "wifi_utils.h"
 #include "zbs_interface.h"
-#include "wifimanager.h"
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
 
@@ -804,7 +804,7 @@ void checkWaitPowerCycle() {
 #endif
 }
 void segmentedShowIp() {
-    IPAddress IP = wm.localIP();
+    IPAddress IP = wifiUtils.localIP();
     char temp[12];
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     sendAPSegmentedData(apInfo.mac, (String) "IP    Addr", 0x0200, true, true);

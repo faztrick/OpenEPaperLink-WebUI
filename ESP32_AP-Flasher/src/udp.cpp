@@ -10,7 +10,7 @@
 #include "serialap.h"
 #include "tag_db.h"
 #include "web.h"
-#include "wifimanager.h"
+#include "wifi_utils.h"
 
 #define UDPIP IPAddress(239, 10, 0, 1)
 #define UDPPORT 16033
@@ -38,7 +38,7 @@ void UDPcomm::init() {
     if (config.discovery == 0) {
         if (udp.listenMulticast(UDPIP, UDPPORT)) {
             udp.onPacket([this](AsyncUDPPacket packet) {
-                if (packet.remoteIP() != wm.localIP()) {
+                if (packet.remoteIP() != wifiUtils.localIP()) {
                     this->processPacket(packet);
                 }
             });
@@ -46,7 +46,7 @@ void UDPcomm::init() {
     } else {
         if (udp.listen(UDPPORT)) {
             udp.onPacket([this](AsyncUDPPacket packet) {
-                if (packet.isBroadcast() && packet.remoteIP() != wm.localIP()) {
+                if (packet.isBroadcast() && packet.remoteIP() != wifiUtils.localIP()) {
                     this->processPacket(packet);
                 }
             });
@@ -92,7 +92,7 @@ void UDPcomm::processPacket(AsyncUDPPacket packet) {
         }
         case PKT_APLIST_REQ: {
             APlist APitem;
-            APitem.src = wm.localIP();
+            APitem.src = wifiUtils.localIP();
             strncpy(APitem.alias, config.alias, sizeof(APitem.alias) - 1);
             APitem.alias[sizeof(APitem.alias) - 1] = '\0';  // Ensure null termination
             APitem.channelId = curChannel.channel;
@@ -159,7 +159,7 @@ void autoselect(void* pvParameters) {
 
 void UDPcomm::getAPList() {
     APlist APitem;
-    APitem.src = wm.localIP();
+    APitem.src = wifiUtils.localIP();
     strncpy(APitem.alias, config.alias, sizeof(APitem.alias) - 1);
     APitem.alias[sizeof(APitem.alias) - 1] = '\0';  // Ensure null termination
     APitem.channelId = curChannel.channel;

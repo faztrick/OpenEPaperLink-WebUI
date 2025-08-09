@@ -7,14 +7,14 @@
 
 #include "storage.h"
 #include "tag_db.h"
-#include "wifimanager.h"
+#include "wifi_utils.h"
 
 void timeSyncCallback(struct timeval* tv) {
     Serial.println("time succesfully synced");
 }
 
 void initTime(void* parameter) {
-    if (!(WiFi.status() == WL_CONNECTED || wm.wifiStatus == ETHERNET)) {
+    if (!(WiFi.status() == WL_CONNECTED || wifiUtils.getWifiStatus() == ETHERNET)) {
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
     sntp_set_time_sync_notification_cb(timeSyncCallback);
