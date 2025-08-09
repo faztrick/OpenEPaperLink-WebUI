@@ -61,8 +61,8 @@ function Test-ComPort {
 }
 
 function Get-AvailableComPorts {
-    Get-WmiObject -Class Win32_PnPEntity | Where-Object { $_.Caption -match "COM\d+" } | 
-        ForEach-Object { 
+    Get-WmiObject -Class Win32_PnPEntity | Where-Object { $_.Caption -match "COM\d+" } |
+        ForEach-Object {
             if ($_.Caption -match "(COM\d+)") { $Matches[1] }
         }
 }
@@ -122,23 +122,23 @@ if ($Clean) {
 if (-not $SkipBuild) {
     Write-ColorOutput "WEB Checking web files..." "Progress"
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
-    
+
     # Check if web files need recompression
     $webFilesNeedUpdate = $false
     $gzipScript = "gzip_wwwfiles.py"
     $dataWwwPath = "data\www"
-    
+
     if (Test-Path $dataWwwPath) {
         $lastGzipTime = if (Test-Path $gzipScript) { (Get-Item $gzipScript).LastWriteTime } else { [DateTime]::MinValue }
         $newestWebFile = Get-ChildItem $dataWwwPath -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        
+
         if ($newestWebFile -and $newestWebFile.LastWriteTime -gt $lastGzipTime) {
             $webFilesNeedUpdate = $true
         }
     } else {
         $webFilesNeedUpdate = $true
     }
-    
+
     if ($webFilesNeedUpdate -or $Clean) {
         Write-ColorOutput "  ├─ Compressing web files..." "Progress"
         try {
@@ -159,18 +159,18 @@ if (-not $SkipBuild) {
     if ($FilesystemOnly) {
         Write-ColorOutput "BUILD Building filesystem only for $Environment..." "Progress"
         $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        
+
         $pioPath = Join-Path $env:USERPROFILE '\.platformio\penv\Scripts\pio'
         if (-not (Test-Path $pioPath)) {
             $pioPath = "pio"  # Try global installation
         }
-        
+
         try {
             # Build filesystem only with optimizations
             Write-ColorOutput "  ├─ Building filesystem..." "Progress"
             & $pioPath run --target buildfs --environment $Environment --jobs 8
             if ($LASTEXITCODE -ne 0) { throw "Filesystem build failed" }
-            
+
             $buildTimer.Stop()
             Write-ColorOutput "✅ Filesystem build completed in $([math]::Round($buildTimer.ElapsedMilliseconds/1000, 1))s" "Success"
         }
@@ -181,25 +181,25 @@ if (-not $SkipBuild) {
     } else {
         Write-ColorOutput "BUILD Building firmware for $Environment..." "Progress"
         $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        
+
         $pioPath = Join-Path $env:USERPROFILE '\.platformio\penv\Scripts\pio'
         if (-not (Test-Path $pioPath)) {
             $pioPath = "pio"  # Try global installation
         }
-        
+
         # Get CPU core count for optimal parallel jobs
         $jobCount = $Jobs
-        
+
         try {
             # Build main firmware with parallel compilation
             Write-ColorOutput "  ├─ Compiling firmware (${jobCount} parallel jobs)..." "Progress"
-            
+
             # Build with optimized parallel compilation
             $buildArgs = @("run", "--environment", $Environment, "--jobs", $jobCount)
-            
+
             & $pioPath @buildArgs
             if ($LASTEXITCODE -ne 0) { throw "Firmware build failed" }
-            
+
             # Build filesystem in parallel if possible
             Write-ColorOutput "  ├─ Building filesystem..." "Progress"
             $filesystemJob = Start-Job -ScriptBlock {
@@ -207,14 +207,14 @@ if (-not $SkipBuild) {
                 $fsArgs = @("run", "--target", "buildfs", "--environment", $Environment, "--jobs", "4")
                 & $pioPath @fsArgs
             } -ArgumentList $pioPath, $Environment
-            
+
             # Wait for filesystem build to complete
             $filesystemJob | Wait-Job | Out-Null
             $filesystemResult = $filesystemJob | Receive-Job
             $filesystemJob | Remove-Job
-            
+
             if ($LASTEXITCODE -ne 0) { throw "Filesystem build failed" }
-            
+
             $buildTimer.Stop()
             Write-ColorOutput "✅ Build completed in $([math]::Round($buildTimer.ElapsedMilliseconds/1000, 1))s" "Success"
         }
@@ -244,6 +244,7 @@ $files = @{
     "bootloader.bin" = "$buildPath\bootloader.bin"
     "partitions.bin" = "$buildPath\partitions.bin"
     "littlefs.bin" = "$buildPath\littlefs.bin"
+    "firmware.elf" = "$buildPath\firmware.elf"
 }
 
 # Copy files with verification (parallel where possible)
@@ -278,7 +279,7 @@ Push-Location $outputDir
 try {
     # Determine flash configuration based on environment
     $flashConfig = switch ($Environment) {
-        "OutdoorAP" { 
+        "OutdoorAP" {
             @{
                 chip = "esp32-s3"
                 mode = "qio"
@@ -293,7 +294,7 @@ try {
                 }
             }
         }
-        default { 
+        default {
             @{
                 chip = "esp32-s3"
                 mode = "qio"
@@ -309,7 +310,7 @@ try {
             }
         }
     }
-    
+
     # Build merge command
     $mergeArgs = @(
         "--chip", $flashConfig.chip
@@ -319,15 +320,15 @@ try {
         "--flash_freq", $flashConfig.freq
         "--flash_size", $flashConfig.size
     )
-    
+
     foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
         if (Test-Path $addr.Value) {
             $mergeArgs += $addr.Key, $addr.Value
         }
     }
-    
+
     python -m esptool @mergeArgs
-    
+
     if (Test-Path "merged-firmware.bin") {
         $mergedSize = [math]::Round((Get-Item "merged-firmware.bin").Length / 1MB, 1)
         Write-ColorOutput "✅ Merged firmware created: ${mergedSize}MB" "Success"
@@ -356,22 +357,22 @@ if (-not $SkipUpload) {
     if ($FilesystemOnly) {
         Write-ColorOutput "📤 Erasing and uploading filesystem only to $ComPort..." "Progress"
         $uploadTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        
+
         try {
             # Get filesystem partition address based on environment
             $filesystemAddress = switch ($Environment) {
                 "OutdoorAP" { "0x00910000" }
                 default { "0x00910000" }
             }
-            
+
             $littlefsPath = Join-Path $outputDir "littlefs.bin"
             if (-not (Test-Path $littlefsPath)) {
                 throw "Filesystem binary not found: $littlefsPath"
             }
-            
+
             Write-ColorOutput "  ├─ Connecting to device..." "Progress"
             Write-ColorOutput "  ├─ Erasing filesystem partition..." "Progress"
-            
+
             # Erase filesystem partition first
             $eraseArgs = @(
                 "-p", $ComPort
@@ -383,12 +384,12 @@ if (-not $SkipUpload) {
                 $filesystemAddress
                 "0x6F0000"  # Size of filesystem partition (7MB)
             )
-            
+
             python -m esptool @eraseArgs
             if ($LASTEXITCODE -ne 0) { throw "Filesystem erase failed" }
-            
+
             Write-ColorOutput "  ├─ Uploading filesystem..." "Progress"
-            
+
             # Upload filesystem
             $uploadArgs = @(
                 "-p", $ComPort
@@ -401,13 +402,13 @@ if (-not $SkipUpload) {
                 "--flash_size", "detect"
                 $filesystemAddress, $littlefsPath
             )
-            
+
             python -m esptool @uploadArgs
             if ($LASTEXITCODE -ne 0) { throw "Filesystem upload failed" }
-            
+
             $uploadTimer.Stop()
             Write-ColorOutput "✅ Filesystem erase and upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
-            
+
             # Monitor if requested
             if ($Monitor) {
                 Write-ColorOutput "� Starting serial monitor..." "Info"
@@ -426,7 +427,7 @@ if (-not $SkipUpload) {
     } else {
         Write-ColorOutput "�📤 Uploading firmware to $ComPort..." "Progress"
         $uploadTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        
+
         try {
             # Build upload arguments
             $uploadArgs = @(
@@ -439,7 +440,7 @@ if (-not $SkipUpload) {
                 "--flash_mode", $flashConfig.mode
                 "--flash_size", "detect"
             )
-            
+
             # Add file addresses
             foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
                 $filePath = Join-Path $outputDir $addr.Value
@@ -447,13 +448,13 @@ if (-not $SkipUpload) {
                     $uploadArgs += $addr.Key, $filePath
                 }
             }
-            
+
             Write-ColorOutput "  ├─ Connecting to device..." "Progress"
             python -m esptool @uploadArgs
-            
+
             $uploadTimer.Stop()
             Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
-            
+
             # Monitor if requested
             if ($Monitor) {
                 Write-ColorOutput "📺 Starting serial monitor..." "Info"

@@ -11,7 +11,7 @@ def gzip_files(source_folder, destination_folder):
     for root, dirs, files in os.walk(source_folder):
         # Calculate relative path from source folder
         rel_path = os.path.relpath(root, source_folder)
-        
+
         # Create corresponding directory structure in destination
         if rel_path != '.':
             dest_dir = os.path.join(destination_folder, rel_path)
@@ -23,9 +23,9 @@ def gzip_files(source_folder, destination_folder):
             # Skip hidden files
             if file.startswith('.'):
                 continue
-                
+
             source_file_path = os.path.join(root, file)
-            
+
             # Build destination path maintaining directory structure
             if rel_path != '.':
                 destination_file_path = os.path.join(destination_folder, rel_path, file + ".gz")
@@ -33,9 +33,9 @@ def gzip_files(source_folder, destination_folder):
             else:
                 destination_file_path = os.path.join(destination_folder, file + ".gz")
                 display_path = file
-            
+
             print(f"Gzipping: {display_path}")
-            
+
             try:
                 with open(source_file_path, 'rb') as f_in, gzip.GzipFile(destination_file_path, 'wb', mtime=0) as f_out:
                     shutil.copyfileobj(f_in, f_out)
@@ -43,7 +43,8 @@ def gzip_files(source_folder, destination_folder):
                 print(f"Error compressing {display_path}: {e}")
 
 if __name__ == "__main__":
-    source_folder = "wwwroot"  # Replace with the path of the source folder
-    destination_folder = "data/www"  # Replace with the path of the destination folder
-
-    gzip_files(source_folder, destination_folder)
+    # Process essential firmware files from wwwroot
+    print("=== Processing essential firmware files from wwwroot ===")
+    firmware_source = "wwwroot"
+    firmware_dest = "data/www"
+    gzip_files(firmware_source, firmware_dest)

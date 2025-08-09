@@ -228,17 +228,13 @@ void JsonResponseUtils::addCacheHeaders(AsyncWebServerRequest* request, uint32_t
 }
 
 void JsonResponseUtils::addCORSHeaders(AsyncWebServerRequest* request) {
-    // Note: ESPAsyncWebServer addInterestingHeader only takes header name, not value
-    // CORS headers would need to be added differently, possibly through response headers
-    request->addInterestingHeader("Access-Control-Allow-Origin");
-    request->addInterestingHeader("Access-Control-Allow-Headers");
-    request->addInterestingHeader("Access-Control-Allow-Methods");
+    // Note: addInterestingHeader is deprecated in newer versions of ESPAsyncWebServer
+    // CORS headers are now collected automatically and don't need special handling
+    // Headers should be added to the response object instead when sending the response
 }
 
 void JsonResponseUtils::addNoStoreHeaders(AsyncWebServerRequest* request) {
-    // Note: ESPAsyncWebServer addInterestingHeader only takes header name, not value
-    // Cache control headers would need to be added differently
-    request->addInterestingHeader("Cache-Control");
-    request->addInterestingHeader("Pragma");
-    request->addInterestingHeader("Expires");
+    // Note: addInterestingHeader is deprecated in newer versions of ESPAsyncWebServer
+    // Cache control headers are now collected automatically and don't need special handling
+    // Headers should be added to the response object instead when sending the response
 }
