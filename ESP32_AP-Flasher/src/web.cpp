@@ -66,6 +66,8 @@ static const size_t JSON_BUFFER_SIZE = 2048;
 static const size_t LARGE_JSON_BUFFER_SIZE = 4096;
 static const uint32_t WEBSOCKET_SEND_TIMEOUT_MS = 1000;
 
+// Use macros from web_response_utils.h instead of local definitions
+/*
 // Enhanced parameter validation macros for robust endpoint handling
 #define VALIDATE_PARAMS(request, required_params, post_only)              \
     do {                                                                  \
@@ -89,6 +91,11 @@ static const uint32_t WEBSOCKET_SEND_TIMEOUT_MS = 1000;
 
 #define SEND_SUCCESS(request, message) \
     WebResponseUtils::sendSuccessResponse(request, message)
+*/
+
+// Helper macro for integer parameters
+#define GET_PARAM_INT(request, name, default_val, post_only) \
+    (request->hasParam(name, post_only) ? request->getParam(name, post_only)->value().toInt() : (default_val))
 
 // Forward declarations for endpoint setup functions
 void setupSystemEndpoints(AsyncWebServer &server);
@@ -2491,7 +2498,7 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
     // System Information Endpoints
     server.on("/sysinfo", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleSysinfoRequest) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "system information");
+            SEND_SERVICE_UNAVAILABLE(request, "System information not available");
             return;
         }
         handleSysinfoRequest(request);
@@ -2500,7 +2507,7 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
     // Add alias for JavaScript compatibility
     server.on("/sysinfo.json", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleSysinfoRequest) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "system information");
+            SEND_SERVICE_UNAVAILABLE(request, "System information not available");
             return;
         }
         handleSysinfoRequest(request);
@@ -2509,7 +2516,7 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
     // File and Update Management
     server.on("/check_file", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleCheckFile) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "file checking");
+            SEND_SERVICE_UNAVAILABLE(request, "File checking not available");
             return;
         }
         handleCheckFile(request);
@@ -2517,7 +2524,7 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
 
     server.on("/rollback", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleRollback) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "rollback");
+            SEND_SERVICE_UNAVAILABLE(request, "Rollback not available");
             return;
         }
         handleRollback(request);
@@ -2525,7 +2532,7 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
 
     server.on("/update_actions", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleUpdateActions) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "update actions");
+            SEND_SERVICE_UNAVAILABLE(request, "Update actions not available");
             return;
         }
         handleUpdateActions(request);
@@ -2533,21 +2540,11 @@ void setupOTAUpdateEndpoints(AsyncWebServer &server) {
 
     // Enhanced OTA endpoint with better error handling
     server.on("/update_ota", HTTP_POST, [](AsyncWebServerRequest *request) {
-        try {
-            if (!handleUpdateOTA) {
-                WebResponseUtils::sendFeatureNotAvailableError(request, "OTA update");
-                return;
-            }
-            handleUpdateOTA(request);
-        } catch (const std::exception &e) {
-            DynamicJsonDocument doc(JSON_BUFFER_SIZE);
-            doc["success"] = false;
-            doc["error"] = "OTA update failed: " + String(e.what());
-
-            String response;
-            serializeJson(doc, response);
-            request->send(500, "application/json", response);
+        if (!handleUpdateOTA) {
+            SEND_SERVICE_UNAVAILABLE(request, "OTA update not available");
+            return;
         }
+        handleUpdateOTA(request);
     });
 
     Serial.println("[WEB] OTA/Update endpoints configured successfully");
@@ -2568,7 +2565,7 @@ void setupHardwareFeatureEndpoints(AsyncWebServer &server) {
         });
 
         // GET request for detailed feature info
-        server.on(endpoint, HTTP_GET, [available, featureName](AsyncWebServerRequest *request) {
+        server.on(endpoint, HTTP_GET, [available, featureName, endpoint](AsyncWebServerRequest *request) {
             DynamicJsonDocument doc(JSON_BUFFER_SIZE);
             doc["feature"] = featureName;
             doc["available"] = available;
@@ -2607,46 +2604,41 @@ void setupHardwareFeatureEndpoints(AsyncWebServer &server) {
         doc["success"] = true;
         doc["action"] = action;
 
-        try {
-            if (action == "setBrightness") {
-                int brightness = GET_PARAM_INT(request, "brightness", 128, true);
-                brightness = constrain(brightness, 0, 255);
-                setBrightness(brightness);
-                doc["brightness"] = brightness;
-                doc["message"] = "Brightness set to " + String(brightness);
-            } else if (action == "setColor") {
-                String color = GET_PARAM(request, "color", "#FFFFFF", true);
-                if (color.startsWith("#") && color.length() == 7) {
-                    long colorValue = strtol(color.substring(1).c_str(), NULL, 16);
-                    CRGB rgbColor = CRGB((colorValue >> 16) & 0xFF, (colorValue >> 8) & 0xFF, colorValue & 0xFF);
-                    shortBlink(rgbColor);
-                    doc["color"] = color;
-                    doc["message"] = "Color set to " + color;
-                } else {
-                    doc["success"] = false;
-                    doc["error"] = "Invalid color format. Use #RRGGBB";
-                }
-            } else if (action == "blink") {
-                int duration = GET_PARAM_INT(request, "duration", 1500, true);
-                int repeat = duration / 500;
-                repeat = constrain(repeat, 1, 10);
-                quickBlink(repeat);
-                doc["duration"] = duration;
-                doc["repeats"] = repeat;
-                doc["message"] = "Blinking " + String(repeat) + " times";
-            } else if (action == "off") {
-                setBrightness(0);
-                doc["message"] = "LEDs turned off";
-            } else if (action == "rainbow") {
-                showColorPattern(CRGB::Red, CRGB::Green, CRGB::Blue);
-                doc["message"] = "Rainbow pattern activated";
+        if (action == "setBrightness") {
+            int brightness = GET_PARAM_INT(request, "brightness", 128, true);
+            brightness = constrain(brightness, 0, 255);
+            setBrightness(brightness);
+            doc["brightness"] = brightness;
+            doc["message"] = "Brightness set to " + String(brightness);
+        } else if (action == "setColor") {
+            String color = GET_PARAM(request, "color", "#FFFFFF", true);
+            if (color.startsWith("#") && color.length() == 7) {
+                long colorValue = strtol(color.substring(1).c_str(), NULL, 16);
+                CRGB rgbColor = CRGB((colorValue >> 16) & 0xFF, (colorValue >> 8) & 0xFF, colorValue & 0xFF);
+                shortBlink(rgbColor);
+                doc["color"] = color;
+                doc["message"] = "Color set to " + color;
             } else {
                 doc["success"] = false;
-                doc["error"] = "Unknown LED action: " + action;
+                doc["error"] = "Invalid color format. Use #RRGGBB";
             }
-        } catch (const std::exception &e) {
+        } else if (action == "blink") {
+            int duration = GET_PARAM_INT(request, "duration", 1500, true);
+            int repeat = duration / 500;
+            repeat = constrain(repeat, 1, 10);
+            quickBlink(repeat);
+            doc["duration"] = duration;
+            doc["repeats"] = repeat;
+            doc["message"] = "Blinking " + String(repeat) + " times";
+        } else if (action == "off") {
+            setBrightness(0);
+            doc["message"] = "LEDs turned off";
+        } else if (action == "rainbow") {
+            showColorPattern(CRGB::Red, CRGB::Green, CRGB::Blue);
+            doc["message"] = "Rainbow pattern activated";
+        } else {
             doc["success"] = false;
-            doc["error"] = "LED control failed: " + String(e.what());
+            doc["error"] = "Unknown LED action: " + action;
         }
 
         String response;
@@ -2708,22 +2700,22 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // C6 Configuration Endpoints
     server.on("/get_c6_settings", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleGetC6Settings) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 settings");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 settings not available");
             return;
         }
         handleGetC6Settings(request);
     });
 
-    server.on("/save_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) { WebResponseUtils::sendSuccessResponse(request, "Settings saved"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    server.on("/save_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) { SEND_SUCCESS(request, "Settings saved"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             if (!handleSaveC6SettingsBody) {
-                WebResponseUtils::sendFeatureNotAvailableError(request, "C6 settings save");
+                SEND_SERVICE_UNAVAILABLE(request, "C6 settings save not available");
                 return;
             }
             handleSaveC6SettingsBody(request, data, len, index, total); });
 
     server.on("/reset_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleResetC6Settings) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 settings reset");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 settings reset not available");
             return;
         }
         handleResetC6Settings(request);
@@ -2732,7 +2724,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // C6 Testing and Control Endpoints
     server.on("/test_c6_connection", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleTestC6Connection) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 connection test");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 connection test not available");
             return;
         }
         handleTestC6Connection(request);
@@ -2740,7 +2732,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/test_c6_radio", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleTestC6Radio) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 radio test");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 radio test not available");
             return;
         }
         handleTestC6Radio(request);
@@ -2748,7 +2740,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/restart_c6", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleRestartC6) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 restart");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 restart not available");
             return;
         }
         handleRestartC6(request);
@@ -2757,7 +2749,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // C6 Configuration Management
     server.on("/backup_c6_config", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleBackupC6Config) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 config backup");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 config backup not available");
             return;
         }
         handleBackupC6Config(request);
@@ -2765,7 +2757,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/reset_c6_config", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleResetC6Config) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 config reset");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 config reset not available");
             return;
         }
         handleResetC6Config(request);
@@ -2774,7 +2766,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // C6 Firmware Management (Consolidated endpoints)
     server.on("/c6_update_status", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleC6UpdateStatus) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 update status");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 update status not available");
             return;
         }
         handleC6UpdateStatus(request);
@@ -2782,7 +2774,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/backup_c6_firmware", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleBackupC6Firmware) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 firmware backup");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 firmware backup not available");
             return;
         }
         handleBackupC6Firmware(request);
@@ -2790,13 +2782,13 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     // Consolidated firmware upload endpoints - both use the same handler
     auto c6FirmwareUploadWrapper = [](AsyncWebServerRequest *request) {
-        WebResponseUtils::sendSuccessResponse(request, "Upload complete");
+        SEND_SUCCESS(request, "Upload complete");
     };
 
     auto c6FirmwareUploadHandler = [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
         if (!handleC6FirmwareUpload) {
             if (final) {
-                WebResponseUtils::sendFeatureNotAvailableError(request, "C6 firmware upload");
+                SEND_SERVICE_UNAVAILABLE(request, "C6 firmware upload not available");
             }
             return;
         }
@@ -2809,7 +2801,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // AP and Network Management
     server.on("/ap_list", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleAPList) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "AP list");
+            SEND_SERVICE_UNAVAILABLE(request, "AP list not available");
             return;
         }
         handleAPList(request);
@@ -2819,7 +2811,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
     // Hardware-specific endpoints
     server.on("/list_drives", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleListDrives) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "Drive listing");
+            SEND_SERVICE_UNAVAILABLE(request, "Drive listing not available");
             return;
         }
         handleListDrives(request);
@@ -2827,7 +2819,7 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/list_serial_ports", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!handleListSerialPorts) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "Serial port listing");
+            SEND_SERVICE_UNAVAILABLE(request, "Serial port listing not available");
             return;
         }
         handleListSerialPorts(request);
@@ -2835,12 +2827,85 @@ void setupC6ModuleEndpoints(AsyncWebServer &server) {
 
     server.on("/flash_c6_ota", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!handleFlashC6OTA) {
-            WebResponseUtils::sendFeatureNotAvailableError(request, "C6 OTA flashing");
+            SEND_SERVICE_UNAVAILABLE(request, "C6 OTA flashing not available");
             return;
         }
         handleFlashC6OTA(request);
     });
 #endif
+
+    // Backward compatibility aliases for removed endpoints from c6_module.cpp
+    server.on("/c6_settings", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!handleGetC6Settings) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 settings not available");
+            return;
+        }
+        handleGetC6Settings(request);
+    });
+
+    server.on("/c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) { SEND_SUCCESS(request, "Settings saved"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            if (!handleSaveC6SettingsBody) {
+                SEND_SERVICE_UNAVAILABLE(request, "C6 settings save not available");
+                return;
+            }
+            handleSaveC6SettingsBody(request, data, len, index, total); });
+
+    server.on("/c6_settings_reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!handleResetC6Settings) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 settings reset not available");
+            return;
+        }
+        handleResetC6Settings(request);
+    });
+
+    server.on("/c6_test_connection", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!handleTestC6Connection) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 connection test not available");
+            return;
+        }
+        handleTestC6Connection(request);
+    });
+
+    server.on("/c6_test_radio", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!handleTestC6Radio) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 radio test not available");
+            return;
+        }
+        handleTestC6Radio(request);
+    });
+
+    server.on("/c6_restart", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!handleRestartC6) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 restart not available");
+            return;
+        }
+        handleRestartC6(request);
+    });
+
+    server.on("/c6_backup_config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!handleBackupC6Config) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 config backup not available");
+            return;
+        }
+        handleBackupC6Config(request);
+    });
+
+    server.on("/c6_reset_config", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!handleResetC6Config) {
+            SEND_SERVICE_UNAVAILABLE(request, "C6 config reset not available");
+            return;
+        }
+        handleResetC6Config(request);
+    });
+
+    server.on("/c6_firmware_upload", HTTP_POST, [](AsyncWebServerRequest *request) { SEND_SUCCESS(request, "Upload complete"); }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!handleC6FirmwareUpload) {
+            if (final) {
+                SEND_SERVICE_UNAVAILABLE(request, "C6 firmware upload not available");
+            }
+            return;
+        }
+        handleC6FirmwareUpload(request, filename, index, data, len, final); });
 
     Serial.println("[WEB] C6 module endpoints configured successfully");
 #else

@@ -72,20 +72,73 @@ void SerialCommandHandler::setDefaultWiFiCredentials() {
 void SerialCommandHandler::processSerialInput() {
     if (!initialized) return;
 
+    // Only process serial commands when AP task is not actively communicating
+    // Check if there's a command prefix or if we're in command mode
+    static bool commandMode = false;
+    static unsigned long lastCommandTime = 0;
+    
     while (Serial.available() > 0) {
         char c = Serial.read();
 
-        if (c == '\r' || c == '\n') {
-            if (inputBuffer.length() > 0) {
-                handleCommand(inputBuffer);
-                inputBuffer = "";
-            }
-        } else if (c == '\b' || c == 127) {  // Backspace
-            if (inputBuffer.length() > 0) {
-                inputBuffer.remove(inputBuffer.length() - 1);
-            }
-        } else if (isPrintable(c)) {
+        // Look for command prefix "CMD:" to enter command mode
+        if (!commandMode && inputBuffer.length() == 0 && c == 'C') {
             inputBuffer += c;
+            continue;
+        }
+        
+        // Check for "CMD:" prefix
+        if (!commandMode && inputBuffer.length() > 0 && inputBuffer.length() < 4) {
+            inputBuffer += c;
+            if (inputBuffer == "CMD:") {
+                commandMode = true;
+                inputBuffer = "";
+                Serial.println("\n=== Command Mode Activated ===");
+                Serial.println("Type commands (wifi.status, help, etc.)");
+                Serial.print("CMD> ");
+                lastCommandTime = millis();
+                continue;
+            } else if (!String("CMD:").startsWith(inputBuffer)) {
+                // Not a command prefix, clear buffer and let AP task handle it
+                inputBuffer = "";
+                return;
+            }
+            continue;
+        }
+        
+        // Exit command mode after 30 seconds of inactivity
+        if (commandMode && (millis() - lastCommandTime > 30000)) {
+            commandMode = false;
+            Serial.println("\n=== Command Mode Deactivated ===");
+            inputBuffer = "";
+            return;
+        }
+
+        if (commandMode) {
+            lastCommandTime = millis();
+            
+            if (c == '\r' || c == '\n') {
+                if (inputBuffer.length() > 0) {
+                    String trimmedInput = inputBuffer;
+                    trimmedInput.trim();
+                    if (trimmedInput.equalsIgnoreCase("exit")) {
+                        commandMode = false;
+                        Serial.println("=== Command Mode Deactivated ===");
+                        inputBuffer = "";
+                        return;
+                    }
+                    handleCommand(inputBuffer);
+                    inputBuffer = "";
+                    Serial.print("CMD> ");
+                }
+            } else if (c == '\b' || c == 127) {  // Backspace
+                if (inputBuffer.length() > 0) {
+                    inputBuffer.remove(inputBuffer.length() - 1);
+                    Serial.print("\b \b");  // Echo backspace
+                }
+            } else if (isPrintable(c)) {
+                inputBuffer += c;
+                Serial.print(c);  // Echo character
+            }
         }
     }
 }
@@ -158,6 +211,8 @@ void SerialCommandHandler::handleWiFiCommand(const String& subCommand, const Str
         handleWiFiSetDNS(params);
     } else if (subCommand == "save") {
         handleWiFiSave();
+    } else if (subCommand == "clearconfig") {
+        handleWiFiClearConfig();
     } else {
         sendErrorResponse("Unknown WiFi command: wifi." + subCommand);
     }
@@ -461,6 +516,15 @@ void SerialCommandHandler::handleWiFiSetDNS(const String& dns) {
 void SerialCommandHandler::handleWiFiSave() {
     wifiUtils.save();
     sendResponse("WiFi configuration saved");
+}
+
+void SerialCommandHandler::handleWiFiClearConfig() {
+    if (wifiUtils.factoryReset()) {
+        sendResponse("✅ WiFi configuration cleared successfully. Device will restart in AP mode.");
+        ESP.restart();
+    } else {
+        sendErrorResponse("❌ Failed to clear WiFi configuration");
+    }
 }
 
 // Author/Endpoint Command Implementations

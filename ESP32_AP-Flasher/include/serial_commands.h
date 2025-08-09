@@ -56,6 +56,7 @@ class SerialCommandHandler {
     void handleWiFiSetSubnet(const String& subnet);
     void handleWiFiSetDNS(const String& dns);
     void handleWiFiSave();
+    void handleWiFiClearConfig();
 
     // Author/endpoint handlers
     void handleAuthorGet();
