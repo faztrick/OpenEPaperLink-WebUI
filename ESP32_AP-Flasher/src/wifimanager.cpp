@@ -53,6 +53,9 @@ uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
 uint8_t x_position = 0;
 
+// Global WifiManager instance
+WifiManager wm;
+
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
 static bool eth_init = false;
 static bool eth_connected = false;

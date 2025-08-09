@@ -164,4 +164,19 @@ IRProtocolType stringToIRProtocolType(const String& str);
 
 #endif  // HAS_IR_REMOTE
 
+#ifndef HAS_IR_REMOTE
+// Stub class when IR is not enabled
+class IRInterface {
+   public:
+    IRInterface() {}
+    ~IRInterface() {}
+    bool begin() { return false; }
+    void end() {}
+    bool isEnabled() const { return false; }
+};
+
+// Global IR interface instance (stub)
+extern IRInterface irInterface;
+#endif  // HAS_IR_REMOTE
+
 #endif  // IR_INTERFACE_H

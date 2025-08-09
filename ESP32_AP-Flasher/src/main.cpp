@@ -9,6 +9,7 @@
 
 #include "contentmanager.h"
 #include "flasher.h"
+#include "serial_commands.h"  // Include serial command handler
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
@@ -255,6 +256,11 @@ void setup() {
 
     xTaskCreate(delayedStart, "delaystart", 5000, NULL, 2, NULL);
 
+    // Initialize serial command handler
+    SerialCommandHandler& serialCmdHandler = SerialCommandHandler::getInstance();
+    serialCmdHandler.initialize();
+    Serial.println("✅ Serial command handler initialized");
+
     wsSendSysteminfo();
     util::printHeap();
 }
@@ -262,6 +268,10 @@ void setup() {
 void loop() {
     ws.cleanupClients();
     wm.poll();
+
+    // Process serial commands
+    SerialCommandHandler& serialCmdHandler = SerialCommandHandler::getInstance();
+    serialCmdHandler.processSerialInput();
 
     if (intervalSysinfo.doRun()) {
         wsSendSysteminfo();

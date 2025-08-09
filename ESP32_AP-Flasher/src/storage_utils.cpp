@@ -332,6 +332,28 @@ class StorageUtils {
  * @brief WiFi Storage Manager - Provides WiFi-specific storage with validation
  */
 class WiFiStorageManager {
+   private:
+    static constexpr const char* NAMESPACE = "wifi_config";
+
+    // Validation functions
+    bool isValidSSID(const String& ssid) const {
+        return ssid.length() > 0 && ssid.length() <= 32;
+    }
+
+    bool isValidHostname(const String& hostname) const {
+        if (hostname.isEmpty() || hostname.length() > 63) return false;
+        for (char c : hostname) {
+            if (!isalnum(c) && c != '-' && c != '_') return false;
+        }
+        return true;
+    }
+
+    bool isValidIP(const String& ip) const {
+        if (ip.isEmpty()) return true;  // Empty IP is valid (means DHCP)
+        IPAddress addr;
+        return addr.fromString(ip);
+    }
+
    public:
     struct WiFiConfig {
         String ssid;
@@ -358,11 +380,11 @@ class WiFiStorageManager {
 
         // Validate inputs
         if (!isValidSSID(config.ssid) && !config.ssid.isEmpty()) {
-            return StorageUtils::VALIDATION_ERROR;
+            return StorageUtils::Result::VALIDATION_ERROR;
         }
 
         if (!isValidHostname(config.hostname)) {
-            return StorageUtils::VALIDATION_ERROR;
+            return StorageUtils::Result::VALIDATION_ERROR;
         }
 
         // Save all config items
@@ -371,7 +393,7 @@ class WiFiStorageManager {
                                  config.gateway, config.dns, config.hostname};
 
         StorageUtils::Result result = storage.setMultipleStrings(NAMESPACE, keys, values, 7);
-        if (result != StorageUtils::SUCCESS) {
+        if (result != StorageUtils::Result::SUCCESS) {
             return result;
         }
 
@@ -380,7 +402,7 @@ class WiFiStorageManager {
         storage.setBool(NAMESPACE, "powerSave", config.powerSave);
         storage.setInt(NAMESPACE, "channel", config.channel);
 
-        return StorageUtils::SUCCESS;
+        return StorageUtils::Result::SUCCESS;
     }
 
     WiFiConfig loadConfig() {
@@ -408,7 +430,7 @@ class WiFiStorageManager {
     // Individual setters
     StorageUtils::Result setSSID(const String& ssid) {
         if (!isValidSSID(ssid) && !ssid.isEmpty()) {
-            return StorageUtils::VALIDATION_ERROR;
+            return StorageUtils::Result::VALIDATION_ERROR;
         }
         return StorageUtils::getInstance().setString(NAMESPACE, "ssid", ssid);
     }
@@ -419,14 +441,14 @@ class WiFiStorageManager {
 
     StorageUtils::Result setHostname(const String& hostname) {
         if (!isValidHostname(hostname)) {
-            return StorageUtils::VALIDATION_ERROR;
+            return StorageUtils::Result::VALIDATION_ERROR;
         }
         return StorageUtils::getInstance().setString(NAMESPACE, "hostname", hostname);
     }
 
     StorageUtils::Result setIP(const String& ip) {
         if (!ip.isEmpty() && !isValidIP(ip)) {
-            return StorageUtils::VALIDATION_ERROR;
+            return StorageUtils::Result::VALIDATION_ERROR;
         }
         return StorageUtils::getInstance().setString(NAMESPACE, "ip", ip);
     }
@@ -442,7 +464,7 @@ class WiFiStorageManager {
         if (!gateway.isEmpty() && !isValidIP(gateway)) {
             return StorageUtils::VALIDATION_ERROR;
         }
-        return StorageUtils::getInstance().setString(NAMESPACE, "gw", gateway);
+        return StorageUtils::getInstance().setString(NAMESPACE, "gateway", gateway);
     }
 
     StorageUtils::Result setDNS(const String& dns) {
@@ -452,6 +474,21 @@ class WiFiStorageManager {
         return StorageUtils::getInstance().setString(NAMESPACE, "dns", dns);
     }
 
+    // Additional setter methods for serial command compatibility
+    StorageUtils::Result setStaticIP(const String& ip) {
+        return setIP(ip);
+    }
+
+    StorageUtils::Result setSubnetMask(const String& mask) {
+        return setMask(mask);
+    }
+
+    StorageUtils::Result save() {
+        // For NVS, data is automatically saved when set
+        // This method exists for compatibility
+        return StorageUtils::Result::SUCCESS;
+    }
+
     // Individual getters
     String getSSID() const {
         return StorageUtils::getInstance().getString(NAMESPACE, "ssid", "");
@@ -459,6 +496,22 @@ class WiFiStorageManager {
 
     String getPassword() const {
         return StorageUtils::getInstance().getString(NAMESPACE, "password", "");
+    }
+
+    String getIP() const {
+        return StorageUtils::getInstance().getString(NAMESPACE, "ip", "");
+    }
+
+    String getMask() const {
+        return StorageUtils::getInstance().getString(NAMESPACE, "mask", "");
+    }
+
+    String getGateway() const {
+        return StorageUtils::getInstance().getString(NAMESPACE, "gateway", "");
+    }
+
+    String getDNS() const {
+        return StorageUtils::getInstance().getString(NAMESPACE, "dns", "");
     }
 
     String getHostname() const {
@@ -568,26 +621,6 @@ class WiFiStorageManager {
 
    private:
     WiFiStorageManager() = default;
-
-    bool isValidSSID(const String& ssid) const {
-        return ssid.length() > 0 && ssid.length() <= 32;
-    }
-
-    bool isValidHostname(const String& hostname) const {
-        return hostname.length() > 0 && hostname.length() <= 63 &&
-               hostname.indexOf('.') == -1 && hostname.indexOf(' ') == -1;
-    }
-
-    bool isValidIP(const String& ip) const {
-        // Simple IP validation - should have 3 dots and 4 numbers
-        int dotCount = 0;
-        for (int i = 0; i < ip.length(); i++) {
-            if (ip.charAt(i) == '.') dotCount++;
-        }
-        return dotCount == 3 && ip.length() >= 7 && ip.length() <= 15;
-    }
-
-    static constexpr const char* NAMESPACE = "wifi";
 };
 
 // Convenience macros

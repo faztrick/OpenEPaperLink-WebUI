@@ -1,460 +1,1154 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE HTML>
+<html>
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 OutdoorAP Development UI</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="styles.css" rel="stylesheet">
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+
+    <title>OpenEPL ESP32 - Advanced Control Center</title>
+    <!-- Core JavaScript modules (only load files that exist) -->
+    <script src="shared-utils.js?3.2" defer></script>
+    <script src="api-manager.js?3.2" defer></script>
+    <script src="main-app.js?3.2" defer></script>
+    <script src="endpoint-fix.js?3.2" defer></script>
+    <script src="g5decoder.js?3.2" defer></script>
+    <script src="universal-menu.js?3.2" defer></script>
+    <link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+    <!--<link rel="icon" type="image/vnd.icon" href="favicon.ico">-->
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- All styles now consolidated in merged-styles.css -->
 </head>
 
 <body>
-    <div id="app">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <i class="fas fa-microchip"></i>
-                    <h1>ESP32 OutdoorAP Development UI</h1>
-                </div>
-                <div class="status-indicator">
-                    <span id="connection-status" class="status-dot connected"></span>
-                    <span id="status-text">Connected</span>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <div class="main-container">
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <div class="project-info">
-                    <h3><i class="fas fa-project-diagram"></i> Project Info</h3>
-                    <div class="info-item">
-                        <span class="label">Target:</span>
-                        <span class="value">ESP32-S3 DevKit C-1</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Environment:</span>
-                        <span class="value" id="current-env">OutdoorAP</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Last Build:</span>
-                        <span class="value" id="last-build">Never</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Firmware Size:</span>
-                        <span class="value" id="firmware-size">-</span>
+    <!-- Compact Single-Line Header: Logo + Navigation + Status -->
+    <header class="advanced-header compact-header">
+        <div class="compact-header-content">
+            <!-- Single Line: Logo + Menu + Status -->
+            <div class="header-single-line">
+                <!-- Left: Logo -->
+                <div class="header-left">
+                    <div class="logo-section">
+                        <div class="logo-icon">📱</div>
+                        <div class="logo-text">
+                            <h1>OpenEPL ESP32</h1>
+                            <span class="version">v3.1</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Configuration Panel -->
-                <div class="config-panel">
-                    <h3><i class="fas fa-cog"></i> Configuration</h3>
+                <!-- Center: Navigation Menu -->
+                <div class="header-center">
+                    <div id="menu-container" class="menu-container"></div>
+                </div>
 
-                    <div class="form-group">
-                        <label for="environment">Environment</label>
-                        <select id="environment">
-                            <option value="OutdoorAP">OutdoorAP</option>
-                            <option value="IndoorAP">IndoorAP</option>
-                            <option value="Debug">Debug</option>
-                        </select>
+                <!-- Right: Compact Status -->
+                <div class="header-right">
+                    <div class="compact-status">
+                        <div class="status-group">
+                            <div class="status-dot" id="systemDot"></div>
+                            <span id="systemStatus">Ready</span>
+                        </div>
+                        <div class="status-separator">|</div>
+                        <div class="status-group">
+                            <span class="material-symbols-outlined">devices</span>
+                            <span id="tagCount">0</span>
+                        </div>
+                        <div class="status-separator">|</div>
+                        <div class="status-group">
+                            <span class="material-symbols-outlined">wifi</span>
+                            <span id="wifiStatus">WiFi</span>
+                        </div>
+                        <div class="status-separator">|</div>
+                        <div class="status-group">
+                            <span class="material-symbols-outlined">schedule</span>
+                            <span id="uptimeDisplay">--:--</span>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="com-port">COM Port</label>
-                        <select id="com-port">
-                            <option value="COM10">COM10</option>
-                        </select>
-                        <button id="refresh-ports" class="btn btn-small">
-                            <i class="fas fa-sync"></i>
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <button class="action-btn" onclick="refreshData()" title="Refresh Data">
+                            <span class="material-symbols-outlined">refresh</span>
+                        </button>
+                        <button class="action-btn" onclick="findAllTags()" title="Find All Tags">
+                            <span class="material-symbols-outlined">search</span>
+                        </button>
+                        <button class="action-btn" onclick="window.open('settings.html')" title="Settings">
+                            <span class="material-symbols-outlined">settings</span>
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </header>
 
-                    <div class="form-group">
-                        <label for="baud-rate">Baud Rate</label>
-                        <select id="baud-rate">
-                            <option value="115200">115200</option>
-                            <option value="460800">460800</option>
-                            <option value="921600" selected>921600</option>
-                            <option value="1500000">1500000</option>
-                        </select>
+    <div class="container">
+        <!-- Enhanced Dashboard -->
+        <div class="dashboard-grid">
+            <!-- System Overview Card -->
+            <div class="dashboard-card overview-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">dashboard</span>
+                    <h3>System Overview</h3>
+                    <div class="card-actions">
+                        <button onclick="refreshData()" class="icon-btn" title="Refresh">
+                            <span class="material-symbols-outlined">refresh</span>
+                        </button>
                     </div>
-
-                    <div class="form-group">
-                        <label for="jobs">Parallel Jobs</label>
-                        <select id="jobs">
-                            <option value="0" selected>Auto</option>
-                            <option value="4">4</option>
-                            <option value="8">8</option>
-                            <option value="12">12</option>
-                            <option value="16">16</option>
-                            <option value="24">24</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="fast-build" checked>
-                            <span class="checkmark"></span>
-                            Fast Build (Caching)
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="clean-build">
-                            <span class="checkmark"></span>
-                            Clean Build
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="verbose">
-                            <span class="checkmark"></span>
-                            Verbose Output
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="filesystem-only">
-                            <span class="checkmark"></span>
-                            Filesystem Only
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="skip-upload">
-                            <span class="checkmark"></span>
-                            Skip Upload
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="monitor">
-                            <span class="checkmark"></span>
-                            Auto Monitor
-                        </label>
-                    </div>
-
-                    <!-- Remote Server Section -->
-                    <div class="section-group">
-                        <h3><i class="fas fa-server"></i> Remote Server</h3>
-
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="use-remote">
-                                <span class="checkmark"></span>
-                                Use Remote Linux Server
-                            </label>
+                </div>
+                <div class="card-content">
+                    <div class="overview-grid">
+                        <div class="overview-item">
+                            <div class="overview-icon">📱</div>
+                            <div class="overview-data">
+                                <span class="overview-value" id="dash-total-tags">0</span>
+                                <span class="overview-label">Total Tags</span>
+                            </div>
                         </div>
-
-                        <div class="form-group" id="remote-options" style="display: none;">
-                            <label for="remote-host">Host:</label>
-                            <input type="text" id="remote-host" value="94.200.149.94" class="form-input">
-
-                            <label for="remote-port">Port:</label>
-                            <input type="number" id="remote-port" value="22" class="form-input">
-
-                            <label for="remote-user">User:</label>
-                            <input type="text" id="remote-user" value="root" class="form-input">
-
-                            <button class="btn btn-sm btn-info" id="test-connection">
-                                <i class="fas fa-plug"></i> Test Connection
-                            </button>
-
-                            <div id="remote-status" class="status-indicator">
-                                <span class="status-text">Not Connected</span>
+                        <div class="overview-item" onclick="showOnlineTagsDetails()" style="cursor: pointer;"
+                            title="Click for detailed information">
+                            <div class="overview-icon online">✅</div>
+                            <div class="overview-data">
+                                <span class="overview-value" id="dash-online-tags">0</span>
+                                <span class="overview-label">Online</span>
+                                <span class="overview-sublabel" id="dash-online-details"
+                                    style="font-size: 0.8em; color: rgba(255,255,255,0.7);">Click for details</span>
+                            </div>
+                        </div>
+                        <div class="overview-item">
+                            <div class="overview-icon offline">❌</div>
+                            <div class="overview-data">
+                                <span class="overview-value" id="dash-offline-tags">0</span>
+                                <span class="overview-label">Offline</span>
+                            </div>
+                        </div>
+                        <div class="overview-item">
+                            <div class="overview-icon">🔋</div>
+                            <div class="overview-data">
+                                <span class="overview-value" id="dash-avg-battery">0%</span>
+                                <span class="overview-label">Avg Battery</span>
                             </div>
                         </div>
                     </div>
                 </div>
-            </aside>
+            </div>
 
-            <!-- Main Content Area -->
-            <main class="main-content">
-                <!-- Action Buttons -->
-                <div class="action-panel">
-                    <h2><i class="fas fa-tools"></i> Build & Flash Actions</h2>
-
-                    <div class="button-grid">
-                        <button class="btn btn-primary" data-action="build">
-                            <i class="fas fa-hammer"></i>
-                            Build Only
-                        </button>
-
-                        <button class="btn btn-secondary" data-action="upload">
-                            <i class="fas fa-upload"></i>
-                            Upload Only
-                        </button>
-
-                        <button class="btn btn-success" data-action="build-upload">
-                            <i class="fas fa-rocket"></i>
-                            Build + Upload
-                        </button>
-
-                        <button class="btn btn-warning" data-action="fast-build">
-                            <i class="fas fa-bolt"></i>
-                            Turbo Build
-                        </button>
-
-                        <button class="btn btn-info" data-action="monitor">
-                            <i class="fas fa-tv"></i>
-                            Serial Monitor
-                        </button>
-
-                        <button class="btn btn-danger" data-action="clean">
-                            <i class="fas fa-broom"></i>
-                            Clean Build
-                        </button>
-                    </div>
-
-                    <h3><i class="fas fa-cogs"></i> Project Tools</h3>
-
-                    <div class="button-grid">
-                        <button class="btn btn-outline" data-action="configure-wifi">
-                            <i class="fas fa-wifi"></i>
-                            Configure WiFi
-                        </button>
-
-                        <button class="btn btn-outline" data-action="configure-newton">
-                            <i class="fas fa-cog"></i>
-                            Configure Newton M3
-                        </button>
-
-                        <button class="btn btn-outline" data-action="validate-config">
-                            <i class="fas fa-check-circle"></i>
-                            Validate Config
-                        </button>
-
-                        <button class="btn btn-outline" data-action="test-endpoints">
-                            <i class="fas fa-flask"></i>
-                            Test API
-                        </button>
-
-                        <button class="btn btn-outline" id="wokwi-config-btn">
-                            <i class="fas fa-microchip"></i>
-                            Wokwi Configuration
-                        </button>
-
-                        <button class="btn btn-outline" onclick="window.open('http://192.168.4.1', '_blank')">
-                            <i class="fas fa-globe"></i>
-                            Open Web UI
-                        </button>
-
-                        <button class="btn btn-outline" onclick="openBuildFolder()">
-                            <i class="fas fa-folder-open"></i>
-                            Build Folder
-                        </button>
-                    </div>
-
-                    <h3><i class="fas fa-robot"></i> AI Assistant</h3>
-
-                    <div class="button-grid">
-                        <button class="btn btn-info" id="ai-analyze-project">
-                            <i class="fas fa-search"></i>
-                            Analyze Project
-                        </button>
-
-                        <button class="btn btn-info" id="ai-chat-toggle">
-                            <i class="fas fa-comments"></i>
-                            AI Chat
-                        </button>
-
-                        <button class="btn btn-outline" id="ai-suggestions">
-                            <i class="fas fa-lightbulb"></i>
-                            Get Suggestions
-                        </button>
-
-                        <button class="btn btn-outline" id="ai-config">
-                            <i class="fas fa-robot"></i>
-                            AI Config
-                        </button>
-                    </div>
+            <!-- Real-time Analytics Card -->
+            <div class="dashboard-card analytics-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">analytics</span>
+                    <h3>Real-time Analytics</h3>
                 </div>
-
-                <!-- Console Output -->
-                <div class="console-panel">
-                    <div class="console-header">
-                        <h3><i class="fas fa-terminal"></i> Console Output</h3>
-                        <div class="console-controls">
-                            <button id="clear-console" class="btn btn-small">
-                                <i class="fas fa-eraser"></i> Clear
-                            </button>
-                            <button id="save-log" class="btn btn-small">
-                                <i class="fas fa-save"></i> Save Log
-                            </button>
-                            <button id="kill-process" class="btn btn-danger btn-small" disabled>
-                                <i class="fas fa-stop"></i> Stop
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="console" class="console">
-                        <div class="console-line info">ESP32 Development UI Ready...</div>
-                        <div class="console-line info">Select configuration and click an action to begin.</div>
-                    </div>
-                </div>
-            </main>
-        </div>
-
-        <!-- Progress Modal -->
-        <div id="progress-modal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 id="progress-title">Processing...</h3>
-                </div>
-                <div class="modal-body">
-                    <div class="progress-bar">
-                        <div id="progress-fill" class="progress-fill"></div>
-                    </div>
-                    <div id="progress-text">Starting...</div>
+                <div class="card-content">
+                    <canvas id="batteryChart" width="300" height="200"></canvas>
                 </div>
             </div>
-        </div>
 
-        <!-- AI Chat Modal -->
-        <div id="ai-chat-modal" class="modal">
-            <div class="modal-content ai-modal">
-                <div class="modal-header">
-                    <h3><i class="fas fa-robot"></i> AI Assistant</h3>
-                    <button class="modal-close" onclick="closeAIChat()">&times;</button>
+            <!-- Quick Actions Card -->
+            <div class="dashboard-card actions-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">flash_on</span>
+                    <h3>Quick Actions</h3>
                 </div>
-                <div class="modal-body">
-                    <div id="ai-chat-messages" class="ai-chat-messages"></div>
-                    <div class="ai-chat-input">
-                        <input type="text" id="ai-input"
-                            placeholder="Ask about ESP32 development, errors, optimization..." />
-                        <button id="ai-send" class="btn btn-primary btn-small">
-                            <i class="fas fa-paper-plane"></i>
+                <div class="card-content">
+                    <div class="actions-grid">
+                        <button class="action-card" onclick="findAllTags()">
+                            <span class="material-symbols-outlined">search</span>
+                            <span>Find All Tags</span>
+                        </button>
+                        <button class="action-card" onclick="blinkAllTags()">
+                            <span class="material-symbols-outlined">visibility</span>
+                            <span>Blink All</span>
+                        </button>
+                        <button class="action-card" onclick="refreshAllTags()">
+                            <span class="material-symbols-outlined">refresh</span>
+                            <span>Refresh All</span>
+                        </button>
+                        <button class="action-card" onclick="openAdvancedControl()">
+                            <span class="material-symbols-outlined">tune</span>
+                            <span>Advanced Control</span>
                         </button>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- AI Config Modal -->
-        <div id="ai-config-modal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><i class="fas fa-robot"></i> AI Configuration</h3>
-                    <button class="modal-close" onclick="closeAIConfig()">&times;</button>
+            <!-- System Control Card -->
+            <div class="dashboard-card system-control-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">settings</span>
+                    <h3>System Control</h3>
                 </div>
-                <div class="modal-body">
-                    <div class="ai-config-form">
-                        <h4>OpenAI Configuration</h4>
-                        <div class="form-group">
-                            <label for="openai-key">API Key</label>
-                            <input type="password" id="openai-key" placeholder="sk-..." />
+                <div class="card-content">
+                    <div class="control-section">
+                        <div class="status-display">
+                            <div class="status-item">
+                                <span class="status-label">Content Generation:</span>
+                                <span id="content-gen-status" class="status-value">Loading...</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">AP Status:</span>
+                                <span id="ap-status" class="status-value">Loading...</span>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="openai-model">Model</label>
-                            <select id="openai-model">
-                                <option value="gpt-4o">GPT-4o</option>
-                                <option value="gpt-4o-mini">GPT-4o Mini</option>
-                                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="openai-enabled">
-                                <span class="checkmark"></span>
-                                Enable OpenAI
-                            </label>
-                        </div>
-
-                        <h4>Anthropic Configuration</h4>
-                        <div class="form-group">
-                            <label for="anthropic-key">API Key</label>
-                            <input type="password" id="anthropic-key" placeholder="sk-ant-..." />
-                        </div>
-                        <div class="form-group">
-                            <label for="anthropic-model">Model</label>
-                            <select id="anthropic-model">
-                                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                                <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-                                <option value="claude-3-opus-20240229">Claude 3 Opus</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="anthropic-enabled">
-                                <span class="checkmark"></span>
-                                Enable Anthropic
-                            </label>
-                        </div>
-
-                        <h4>Features</h4>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="feature-error-diagnosis" checked>
-                                <span class="checkmark"></span>
-                                Auto Error Diagnosis
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="feature-code-analysis" checked>
-                                <span class="checkmark"></span>
-                                Code Analysis
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="feature-optimization" checked>
-                                <span class="checkmark"></span>
-                                Build Optimization
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="feature-suggestions" checked>
-                                <span class="checkmark"></span>
-                                Auto Suggestions
-                            </label>
-                        </div>
-
-                        <div class="ai-config-buttons">
-                            <button id="save-ai-config" class="btn btn-success">
-                                <i class="fas fa-save"></i> Save Configuration
+                        <div class="control-buttons">
+                            <button id="start-content-btn" class="control-btn start-btn"
+                                onclick="startContentGeneration()">
+                                <span class="material-symbols-outlined">play_arrow</span>
+                                <span>Start Content Generation</span>
                             </button>
-                            <button id="test-ai-connection" class="btn btn-info">
-                                <i class="fas fa-plug"></i> Test Connection
+                            <button id="pause-content-btn" class="control-btn pause-btn"
+                                onclick="pauseContentGeneration()">
+                                <span class="material-symbols-outlined">pause</span>
+                                <span>Pause Content Generation</span>
+                            </button>
+                            <button id="stop-content-btn" class="control-btn stop-btn"
+                                onclick="stopContentGeneration()">
+                                <span class="material-symbols-outlined">stop</span>
+                                <span>Stop Content Generation</span>
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Wokwi Configuration Modal -->
-        <div id="wokwi-config-modal" class="modal">
-            <div class="modal-content wokwi-modal">
-                <div class="modal-header">
-                    <h3><i class="fas fa-microchip"></i> Wokwi Configuration</h3>
-                    <button class="modal-close" onclick="closeWokwiConfig()">&times;</button>
+            <!-- Recent Activity Card -->
+            <div class="dashboard-card activity-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">history</span>
+                    <h3>Recent Activity</h3>
                 </div>
-                <div class="modal-body">
-                    <div id="wokwi-tool-container">
-                        <div class="loading-spinner">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <p>Loading Wokwi Configuration Tool...</p>
+                <div class="card-content">
+                    <div id="activity-feed" class="activity-feed">
+                        <div class="activity-item">
+                            <span class="activity-icon">📡</span>
+                            <span class="activity-text">System started</span>
+                            <span class="activity-time">Ready</span>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network Status Card -->
+            <div class="dashboard-card network-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">wifi</span>
+                    <h3>Network Status</h3>
+                </div>
+                <div class="card-content">
+                    <div class="network-stats">
+                        <div class="network-item">
+                            <span class="network-label">AP Status:</span>
+                            <span id="network-ap-status" class="network-value">Active</span>
+                        </div>
+                        <div class="network-item">
+                            <span class="network-label">Clients:</span>
+                            <span id="network-clients" class="network-value">0</span>
+                        </div>
+                        <div class="network-item">
+                            <span class="network-label">Signal:</span>
+                            <span id="network-signal" class="network-value">Strong</span>
+                        </div>
+                        <div class="network-item">
+                            <span class="network-label">Uptime:</span>
+                            <span id="network-uptime" class="network-value">0h 0m</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Performance Card -->
+            <div class="dashboard-card performance-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">memory</span>
+                    <h3>System Performance</h3>
+                    <div class="card-actions">
+                        <button onclick="refreshPerformanceData()" class="icon-btn" title="Refresh">
+                            <span class="material-symbols-outlined">refresh</span>
+                        </button>
+                        <button onclick="togglePerformanceDetails()" class="icon-btn" title="Details">
+                            <span class="material-symbols-outlined">info</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div class="performance-metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">Memory</div>
+                            <div class="metric-bar">
+                                <div id="memory-usage" class="metric-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="metric-value" id="memory-text">0%</div>
+                            <div class="metric-details hide-mobile" id="memory-details">
+                                <span id="memory-used">0</span> / <span id="memory-total">0</span> KB
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">CPU Load</div>
+                            <div class="metric-bar">
+                                <div id="cpu-usage" class="metric-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="metric-value" id="cpu-text">0%</div>
+                            <div class="metric-details hide-mobile" id="cpu-details">
+                                <span id="cpu-freq">0</span> MHz
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Storage</div>
+                            <div class="metric-bar">
+                                <div id="storage-usage" class="metric-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="metric-value" id="storage-text">0%</div>
+                            <div class="metric-details hide-mobile" id="storage-details">
+                                <span id="storage-used">0</span> / <span id="storage-total">0</span> KB
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">WiFi Signal</div>
+                            <div class="metric-bar">
+                                <div id="wifi-signal" class="metric-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="metric-value" id="wifi-text">0 dBm</div>
+                            <div class="metric-details hide-mobile" id="wifi-details">
+                                <span id="wifi-ssid">Not connected</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="performance-details" class="performance-details collapsed">
+                        <div class="detail-row">
+                            <span>Uptime:</span>
+                            <span id="system-uptime">0h 0m</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Free Heap:</span>
+                            <span id="free-heap">0 KB</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Largest Block:</span>
+                            <span id="largest-block">0 KB</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Flash Size:</span>
+                            <span id="flash-size">0 MB</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>Chip Model:</span>
+                            <span id="chip-model">ESP32</span>
+                        </div>
+                        <div class="detail-row">
+                            <span>SDK Version:</span>
+                            <span id="sdk-version">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- All Modules Quick Access Card -->
+            <div class="dashboard-card modules-card">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">apps</span>
+                    <h3>All Modules</h3>
+                </div>
+                <div class="card-content">
+                    <div class="modules-grid">
+                        <a href="tag_control_panel.html" class="module-card">
+                            <span class="material-symbols-outlined">settings_remote</span>
+                            <span>Tag Control</span>
+                        </a>
+                        <a href="dashboard.html" class="module-card">
+                            <span class="material-symbols-outlined">analytics</span>
+                            <span>Analytics</span>
+                        </a>
+                        <a href="tags.html" class="module-card">
+                            <span class="material-symbols-outlined">sell</span>
+                            <span>Tags</span>
+                        </a>
+                        <a href="flasher.html" class="module-card">
+                            <span class="material-symbols-outlined">flash_on</span>
+                            <span>Flasher</span>
+                        </a>
+                        <a href="nrf52_swd.html" class="module-card">
+                            <span class="material-symbols-outlined">memory</span>
+                            <span>nRF52 SWD</span>
+                        </a>
+                        <a href="c6_module.html" class="module-card">
+                            <span class="material-symbols-outlined">developer_board</span>
+                            <span>C6 Module</span>
+                        </a>
+                        <a href="ai-agent.html" class="module-card">
+                            <span class="material-symbols-outlined">smart_toy</span>
+                            <span>AI Assistant</span>
+                        </a>
+                        <a href="updates.html" class="module-card">
+                            <span class="material-symbols-outlined">system_update</span>
+                            <span>Updates</span>
+                        </a>
+                        <a href="settings.html" class="module-card">
+                            <span class="material-symbols-outlined">settings</span>
+                            <span>Settings</span>
+                        </a>
+                        <a href="logs.html" class="module-card">
+                            <span class="material-symbols-outlined">text_snippet</span>
+                            <span>Logs</span>
+                        </a>
+                        <a href="edit.html" class="module-card">
+                            <span class="material-symbols-outlined">edit</span>
+                            <span>File Editor</span>
+                        </a>
+                        <a href="jsontemplate-demo-v2.html" class="module-card">
+                            <span class="material-symbols-outlined">design_services</span>
+                            <span>Templates</span>
+                        </a>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="wokwi_integration.js"></script>
-    <script src="app.js"></script>
+    <!-- Footer Status Line -->
+    <div class="footer-status">
+        <div class="footer-left">
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
+                <span id="footerSystemInfo">System Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
+                <span id="footerMemoryInfo">Memory OK</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
+                <span id="footerWifiInfo">WiFi Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
+                <span id="footerTagInfo">Tags Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
+                <span id="footerPerformance">Performance OK</span>
+            </div>
+        </div>
+        <div class="footer-right">
+            <span id="footerTimestamp">Ready</span>
+        </div>
+    </div>
+
+    <script>
+        // Application initialization with proper script loading wait
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('Index page: DOM loaded, initializing...');
+
+            // Wait for all essential classes to be loaded
+            const waitForClasses = () => {
+                const requiredClasses = ['OptimizedApp'];
+                const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
+
+                if (allLoaded) {
+                    // Initialize the optimized application
+                    try {
+                        console.log('Index page: Initializing OptimizedApp...');
+                        window.app = new OptimizedApp();
+                        console.log('Index page: OptimizedApp initialized successfully');
+                    } catch (error) {
+                        console.error('Failed to initialize OptimizedApp:', error);
+                        // Fallback to legacy initialization
+                        if (typeof loadTags === 'function') {
+                            console.log('Index page: Using fallback loadTags initialization');
+                            loadTags(0);
+                        }
+                    }
+                } else {
+                    // Check again in 100ms
+                    setTimeout(waitForClasses, 100);
+                }
+            };
+
+            // Also wait for menu to load
+            const waitForMenu = () => {
+                if (window.universalMenu && (window.universalMenu.menuLoaded || document.getElementById('universal-menu'))) {
+                    console.log('Index page: Menu is ready');
+                    return true;
+                }
+                return false;
+            };
+
+            // Start both checks
+            waitForClasses();
+
+            // Menu check with timeout
+            let menuCheckCount = 0;
+            const checkMenu = () => {
+                menuCheckCount++;
+                if (waitForMenu() || menuCheckCount > 50) { // 5 second timeout
+                    if (menuCheckCount > 50) {
+                        console.warn('Index page: Menu loading timed out');
+                    }
+                    return;
+                }
+                setTimeout(checkMenu, 100);
+            };
+            checkMenu();
+        });
+
+        // Enhanced Dashboard Functionality
+        function initializeEnhancements() {
+            // Initialize dashboard with real data
+            updateCompactHeaderStatus();
+            updateFooterStatus();
+            updateSystemControlStatus();
+            updateDashboardStats();
+
+            // Set up periodic updates
+            setInterval(updateCompactHeaderStatus, 5000);
+            setInterval(updateFooterStatus, 10000);
+            setInterval(updateHeaderUptime, 60000);
+            setInterval(updateSystemControlStatus, 15000);
+            setInterval(updateDashboardStats, 30000);
+
+            // Enhanced status updates with animations
+            const originalUpdateStatus = window.updateStatus;
+            if (originalUpdateStatus) {
+                window.updateStatus = function () {
+                    // Add loading state
+                    const cards = document.querySelectorAll('.glass-card, .dashboard-card');
+                    cards.forEach(card => card.classList.add('loading'));
+
+                    // Call original function
+                    const result = originalUpdateStatus.apply(this, arguments);
+
+                    // Remove loading state after delay
+                    setTimeout(() => {
+                        cards.forEach(card => card.classList.remove('loading'));
+                        // Update our enhanced dashboard after original update
+                        updateDashboardStats();
+                        updateCompactHeaderStatus();
+                    }, 500);
+
+                    return result;
+                };
+            }
+
+            // Hook into the existing processTags function if available
+            const originalProcessTags = window.processTags;
+            if (originalProcessTags) {
+                window.processTags = function (tagArray) {
+                    // Call original function first
+                    const result = originalProcessTags.apply(this, arguments);
+
+                    // Update our dashboard stats after processing tags
+                    setTimeout(() => {
+                        updateDashboardStats();
+                        updateCompactHeaderStatus();
+                    }, 100);
+
+                    return result;
+                };
+            }
+
+            // Signal strength visualization
+            updateSignalBars();
+
+            // Memory usage animation
+            animateProgressBars();
+
+            // Add interactive tooltips
+            addTooltips();
+        }
+
+        // Update compact header status
+        function updateCompactHeaderStatus() {
+            // Fetch current system status
+            fetch('get_ap_config')
+                .then(response => response.json())
+                .then(data => {
+                    const systemDot = document.getElementById('systemDot');
+                    const systemStatus = document.getElementById('systemStatus');
+                    const tagCount = document.getElementById('tagCount');
+                    const wifiStatus = document.getElementById('wifiStatus');
+
+                    if (systemDot && systemStatus && data.apstate !== undefined) {
+                        // Update system status based on AP state
+                        if (data.apstate === 1) { // online
+                            systemDot.className = 'status-dot online';
+                            systemStatus.textContent = 'Online';
+                        } else if (data.apstate === 2) { // flashing
+                            systemDot.className = 'status-dot warning';
+                            systemStatus.textContent = 'Flashing';
+                        } else if (data.apstate === 5) { // failed
+                            systemDot.className = 'status-dot offline';
+                            systemStatus.textContent = 'Failed';
+                        } else {
+                            systemDot.className = 'status-dot warning';
+                            systemStatus.textContent = 'Starting';
+                        }
+                    }
+
+                    // Update tag count
+                    if (tagCount) {
+                        const totalTags = Object.keys(window.tagDB || {}).length;
+                        tagCount.textContent = `${totalTags} Tags`;
+                    }
+
+                    // Update WiFi status
+                    if (wifiStatus) {
+                        wifiStatus.textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
+                    }
+                })
+                .catch(error => {
+                    console.error('Status update error:', error);
+                    const systemDot = document.getElementById('systemDot');
+                    const systemStatus = document.getElementById('systemStatus');
+                    if (systemDot && systemStatus) {
+                        systemDot.className = 'status-dot offline';
+                        systemStatus.textContent = 'Error';
+                    }
+                });
+        }
+
+        // Update footer status
+        function updateFooterStatus() {
+            const timestamp = new Date().toLocaleTimeString();
+            const footerTimestamp = document.getElementById('footerTimestamp');
+
+            if (footerTimestamp) footerTimestamp.textContent = `Last updated: ${timestamp}`;
+
+            // Fetch system information
+            fetch('get_ap_config')
+                .then(response => response.json())
+                .then(data => {
+                    const footerSystemInfo = document.getElementById('footerSystemInfo');
+                    const footerMemoryInfo = document.getElementById('footerMemoryInfo');
+                    const footerWifiInfo = document.getElementById('footerWifiInfo');
+                    const footerTagInfo = document.getElementById('footerTagInfo');
+                    const footerPerformance = document.getElementById('footerPerformance');
+
+                    if (footerSystemInfo) {
+                        footerSystemInfo.textContent = data.version ? `ESP32 v${data.version}` : 'ESP32 Ready';
+                    }
+
+                    if (footerMemoryInfo) {
+                        const freeHeap = data.freeHeap ? Math.round(data.freeHeap / 1024) : 0;
+                        footerMemoryInfo.textContent = freeHeap > 0 ? `${freeHeap} KB Free` : 'Memory OK';
+                    }
+
+                    if (footerWifiInfo) {
+                        footerWifiInfo.textContent = data.wifiConnected ? 'WiFi Connected' : 'WiFi Ready';
+                    }
+
+                    if (footerTagInfo) {
+                        const tagCount = Object.keys(window.tagDB || {}).length;
+                        const activeCount = Object.values(window.tagDB || {}).filter(tag =>
+                            tag.lastseen && (Date.now() - tag.lastseen * 1000) < 300000 // 5 minutes
+                        ).length;
+                        footerTagInfo.textContent = `${activeCount}/${tagCount} Tags Active`;
+                    }
+
+                    if (footerPerformance) {
+                        const cpuLoad = data.cpuLoad || 0;
+                        if (cpuLoad > 80) footerPerformance.textContent = 'High Load';
+                        else if (cpuLoad > 50) footerPerformance.textContent = 'Medium Load';
+                        else footerPerformance.textContent = 'Performance OK';
+                    }
+                })
+                .catch(error => {
+                    console.error('Footer status error:', error);
+                });
+        }
+
+        // Update header uptime
+        function updateHeaderUptime() {
+            const now = new Date();
+            const uptime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const uptimeDisplay = document.getElementById('uptimeDisplay');
+            if (uptimeDisplay) {
+                uptimeDisplay.textContent = uptime;
+            }
+        }
+
+        // Update system control panel status
+        function updateSystemControlStatus() {
+            fetch('get_ap_config')
+                .then(response => response.json())
+                .then(data => {
+                    const contentGenStatus = document.getElementById('content-gen-status');
+                    const apStatus = document.getElementById('ap-status');
+
+                    if (contentGenStatus) {
+                        // Map runstate to content generation status
+                        const runStates = ['Stopped', 'Paused', 'Running', 'Initializing'];
+                        const currentState = data.runstate !== undefined ? runStates[data.runstate] || 'Unknown' : 'Ready';
+                        contentGenStatus.textContent = currentState;
+                    }
+
+                    if (apStatus) {
+                        // Map apstate to AP status
+                        const apStates = ['Offline', 'Online', 'Flashing', 'Wait for Reset', 'Requires Reboot', 'Failed', 'Coming Online', 'No Radio'];
+                        const currentApState = data.apstate !== undefined ? apStates[data.apstate] || 'Unknown' : 'Ready';
+                        apStatus.textContent = currentApState;
+                    }
+                })
+                .catch(error => {
+                    console.error('System control status error:', error);
+                });
+        }
+
+        // Update dashboard statistics
+        function updateDashboardStats() {
+            const tags = Object.values(window.tagDB || {});
+            const currentTime = Date.now();
+
+            // Calculate statistics
+            const totalTags = tags.length;
+            const onlineTags = tags.filter(tag =>
+                tag.lastseen && (currentTime - tag.lastseen * 1000) < 300000 // 5 minutes
+            );
+            const onlineTagsCount = onlineTags.length;
+            const offlineTags = totalTags - onlineTagsCount;
+
+            // Calculate more detailed online tag stats
+            const recentlySeenTags = tags.filter(tag =>
+                tag.lastseen && (currentTime - tag.lastseen * 1000) < 60000 // 1 minute
+            ).length;
+
+            const onlineTagTypes = [...new Set(onlineTags.map(tag => tag.tagType || 'Unknown'))];
+
+            // Calculate average battery level
+            const tagsWithBattery = tags.filter(tag => tag.batteryMv && tag.batteryMv > 0);
+            const avgBattery = tagsWithBattery.length > 0
+                ? Math.round(tagsWithBattery.reduce((sum, tag) => sum + (tag.batteryMv || 0), 0) / tagsWithBattery.length / 30) // Rough battery percentage
+                : 0;
+
+            // Update dashboard elements
+            const dashTotalTags = document.getElementById('dash-total-tags');
+            const dashOnlineTags = document.getElementById('dash-online-tags');
+            const dashOfflineTags = document.getElementById('dash-offline-tags');
+            const dashAvgBattery = document.getElementById('dash-avg-battery');
+            const dashOnlineDetails = document.getElementById('dash-online-details');
+
+            if (dashTotalTags) dashTotalTags.textContent = totalTags;
+            if (dashOnlineTags) dashOnlineTags.textContent = onlineTagsCount;
+            if (dashOfflineTags) dashOfflineTags.textContent = offlineTags;
+            if (dashAvgBattery) dashAvgBattery.textContent = `${avgBattery}%`;
+            if (dashOnlineDetails) {
+                if (recentlySeenTags > 0) {
+                    dashOnlineDetails.textContent = `${recentlySeenTags} active, ${onlineTagTypes.length} types`;
+                } else {
+                    dashOnlineDetails.textContent = 'Click for details';
+                }
+            }
+
+            // Store detailed info for the modal
+            window.onlineTagsInfo = {
+                total: onlineTagsCount,
+                recent: recentlySeenTags,
+                types: onlineTagTypes,
+                tags: onlineTags
+            };
+
+            console.log(`Index page: Dashboard stats updated - ${totalTags} total, ${onlineTagsCount} online`);
+        }
+
+        // Enhanced refresh function with visual feedback and real data
+        function refreshData() {
+            console.log('Index page: Refreshing data...');
+            const refreshBtn = document.querySelector('[onclick="refreshData()"]');
+            if (refreshBtn) {
+                const icon = refreshBtn.querySelector('.material-symbols-outlined');
+                if (icon) {
+                    icon.style.animation = 'spin 1s linear infinite';
+                }
+            }
+
+            // Use API manager for consistent error handling
+            Promise.all([
+                // Refresh AP config using API manager
+                window.apiManager.fetch('config').catch(error => {
+                    console.warn('AP config fetch failed:', error);
+                    return null;
+                }),
+                // Refresh tag database using API manager
+                window.apiManager.getTagDB(0, 50).catch(error => {
+                    console.warn('Tag DB fetch failed:', error);
+                    return null;
+                })
+            ])
+                .then(([apData, tagData]) => {
+                    console.log('Index page: Data fetched, updating...');
+                    // Update AP configuration
+                    if (apData) {
+                        window.apConfig = apData;
+                        console.log('Index page: AP config updated');
+                    }
+
+                    // Update tag database
+                    if (tagData && tagData.tags) {
+                        if (!window.tagDB) window.tagDB = {};
+                        tagData.tags.forEach(tag => {
+                            window.tagDB[tag.mac] = tag;
+                        });
+                        console.log(`Index page: Updated ${tagData.tags.length} tags`);
+
+                        // Continue loading if there are more tags
+                        if (tagData.continu) {
+                            return window.apiManager.getTagDB(tagData.continu, 50)
+                                .then(moreData => {
+                                    if (moreData && moreData.tags) {
+                                        moreData.tags.forEach(tag => {
+                                            window.tagDB[tag.mac] = tag;
+                                        });
+                                        console.log(`Index page: Loaded ${moreData.tags.length} additional tags`);
+                                    }
+                                })
+                                .catch(error => {
+                                    console.warn('Additional tags fetch failed:', error);
+                                });
+                        }
+                    }
+                })
+                .then(() => {
+                    // Update all dashboard components
+                    updateCompactHeaderStatus();
+                    updateFooterStatus();
+                    updateSystemControlStatus();
+                    updateDashboardStats();
+
+                    console.log('Index page: Data refresh completed successfully');
+                })
+                .catch(error => {
+                    console.error('Index page: Refresh error:', error);
+                    // Report error to backend
+                    window.apiManager.reportError(error, window.location.href, null, 'refreshData');
+                })
+                .finally(() => {
+                    // Stop loading animation
+                    if (refreshBtn) {
+                        const icon = refreshBtn.querySelector('.material-symbols-outlined');
+                        if (icon) {
+                            setTimeout(() => {
+                                icon.style.animation = '';
+                            }, 2000);
+                        }
+                    }
+                });
+        }
+
+        // Quick action functions for dashboard
+        function findAllTags() {
+            console.log('Index page: Finding all tags...');
+            // Send LED flash command to all active tags to help locate them
+            const tagMacs = Object.keys(window.tagDB || {});
+            let successCount = 0;
+            let errorCount = 0;
+
+            if (tagMacs.length === 0) {
+                console.log('No tags found in database');
+                return;
+            }
+
+            tagMacs.forEach(async (mac) => {
+                try {
+                    const result = await window.apiManager.ledFlash(mac);
+                    if (result.success) {
+                        successCount++;
+                        console.log(`Find tag LED flash sent to ${mac}`);
+                    } else {
+                        errorCount++;
+                        console.error(`Find tag error for ${mac}:`, result.error);
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Find tag error for ${mac}:`, error);
+                }
+            });
+
+            // Update dashboard components
+            updateCompactHeaderStatus();
+            updateDashboardStats();
+
+            console.log(`Find all tags completed: ${successCount} success, ${errorCount} errors`);
+        }
+
+        function blinkAllTags() {
+            console.log('Index page: Blinking all tags...');
+            // Send LED flash command to all active tags
+            const tagMacs = Object.keys(window.tagDB || {});
+            let successCount = 0;
+            let errorCount = 0;
+
+            if (tagMacs.length === 0) {
+                console.log('No tags found in database');
+                return;
+            }
+
+            tagMacs.forEach(async (mac) => {
+                try {
+                    const result = await window.apiManager.sendTagCommand(mac, 'ledflash');
+                    if (result.success) {
+                        successCount++;
+                        console.log(`LED flash command sent to ${mac}`);
+                    } else {
+                        errorCount++;
+                        console.error(`LED flash error for ${mac}:`, result.error);
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`LED flash error for ${mac}:`, error);
+                }
+            });
+
+            console.log(`Blink all tags completed: ${successCount} success, ${errorCount} errors`);
+        }
+
+        function refreshAllTags() {
+            console.log('Index page: Refreshing all tags...');
+            // Refresh all tag data from the server
+            if (typeof loadTags === 'function') {
+                loadTags(0);
+            } else {
+                // Fallback: reload the page data
+                fetch('get_db?pos=0')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.tags) {
+                            // Initialize tagDB if it doesn't exist
+                            if (!window.tagDB) window.tagDB = {};
+                            // Update tagDB with fresh data
+                            data.tags.forEach(tag => {
+                                window.tagDB[tag.mac] = tag;
+                            });
+                            updateDashboardStats();
+                            updateCompactHeaderStatus();
+                            console.log('Index page: Tag refresh completed');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Refresh error:', error);
+                    });
+            }
+        }
+
+        function openAdvancedControl() {
+            // Open advanced control interface
+            window.location.href = 'tag_control_panel.html';
+        }
+
+        // System control functions using API manager
+        function startContentGeneration() {
+            window.apiManager.fetch('startContent', {
+                method: 'POST'
+            })
+                .then(response => {
+                    console.log('Content generation started:', response);
+                    updateSystemControlStatus();
+                })
+                .catch(error => {
+                    console.error('Start content generation error:', error);
+                    window.apiManager.reportError(error, window.location.href, null, 'startContentGeneration');
+                });
+        }
+
+        function pauseContentGeneration() {
+            window.apiManager.fetch('pauseContent', {
+                method: 'POST'
+            })
+                .then(response => {
+                    console.log('Content generation paused:', response);
+                    updateSystemControlStatus();
+                })
+                .catch(error => {
+                    console.error('Pause content generation error:', error);
+                    window.apiManager.reportError(error, window.location.href, null, 'pauseContentGeneration');
+                });
+        }
+
+        function stopContentGeneration() {
+            window.apiManager.fetch('stopContent', {
+                method: 'POST'
+            })
+                .then(response => {
+                    console.log('Content generation stopped:', response);
+                    updateSystemControlStatus();
+                })
+                .catch(error => {
+                    console.error('Stop content generation error:', error);
+                    window.apiManager.reportError(error, window.location.href, null, 'stopContentGeneration');
+                });
+        }
+
+        // Show detailed online tags information
+        function showOnlineTagsDetails() {
+            const info = window.onlineTagsInfo;
+            if (!info) {
+                alert('No online tags information available');
+                return;
+            }
+
+            let modalContent = `
+				<div style="max-width: 500px; background: rgba(20, 20, 30, 0.95); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
+					<h3 style="color: #4facfe; margin-bottom: 15px;">📡 Online Tags Details</h3>
+					<div style="margin-bottom: 15px;">
+						<strong>Total Online:</strong> ${info.total} tags<br>
+						<strong>Recently Active:</strong> ${info.recent} tags (last minute)<br>
+						<strong>Tag Types:</strong> ${info.types.join(', ') || 'Unknown'}
+					</div>
+					<div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+						<h4 style="color: #6bcf7f; font-size: 14px;">Online Tags List:</h4>
+						${info.tags.map(tag => {
+                const lastSeen = new Date(tag.lastseen * 1000).toLocaleTimeString();
+                const batteryMv = tag.batteryMv || 0;
+                const batteryPercent = Math.round(batteryMv / 30);
+                return `<div style="padding: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px;">
+								<strong>${tag.mac || 'Unknown MAC'}</strong> - ${tag.tagType || 'Unknown Type'}<br>
+								Last seen: ${lastSeen} | Battery: ${batteryPercent}% (${batteryMv}mV)
+							</div>`;
+            }).join('')}
+					</div>
+					<div style="text-align: center;">
+						<button onclick="closeModal()" style="background: #4facfe; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Close</button>
+						<button onclick="refreshAllTags(); closeModal();" style="background: #6bcf7f; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-left: 10px;">Refresh Tags</button>
+					</div>
+				</div>
+			`;
+
+            showModal(modalContent);
+        }
+
+        // Simple modal display function
+        function showModal(content) {
+            const modal = document.createElement('div');
+            modal.id = 'detailsModal';
+            modal.style.cssText = `
+				position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+				background: rgba(0,0,0,0.8); display: flex; align-items: center;
+				justify-content: center; z-index: 10000;
+			`;
+            modal.innerHTML = content;
+            modal.onclick = function (e) {
+                if (e.target === modal) closeModal();
+            };
+            document.body.appendChild(modal);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('detailsModal');
+            if (modal) modal.remove();
+        }
+
+        // Helper functions
+        function updateSignalBars() {
+            // Signal strength visualization would go here
+        }
+
+        function animateProgressBars() {
+            // Progress bar animations would go here
+        }
+
+        function addTooltips() {
+            // Tooltip enhancements would go here
+        }
+
+        // Enhanced Overview Card Interactions
+        document.addEventListener('DOMContentLoaded', function () {
+            // Add hover effects for overview items
+            const style = document.createElement('style');
+            style.textContent = `
+				.overview-item {
+					transition: all 0.3s ease;
+					border-radius: 8px;
+					padding: 5px;
+				}
+				.overview-item:hover {
+					background: rgba(79, 172, 254, 0.1);
+					transform: translateY(-2px);
+					box-shadow: 0 4px 15px rgba(79, 172, 254, 0.2);
+				}
+				.overview-item.clickable {
+					cursor: pointer;
+				}
+				.overview-sublabel {
+					display: block;
+					font-size: 0.8em;
+					color: rgba(255,255,255,0.7);
+					margin-top: 2px;
+					transition: color 0.3s ease;
+				}
+				.overview-item:hover .overview-sublabel {
+					color: rgba(255,255,255,0.9);
+				}
+				@keyframes pulse {
+					0% { opacity: 1; }
+					50% { opacity: 0.7; }
+					100% { opacity: 1; }
+				}
+				.overview-value.updating {
+					animation: pulse 1s infinite;
+				}
+			`;
+            document.head.appendChild(style);
+        });
+
+        // Initialize all enhancements when DOM is ready
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('Index page: Setting up initialization...');
+
+            // Initialize global variables if they don't exist
+            if (typeof window.tagDB === 'undefined') {
+                window.tagDB = {};
+                console.log('Index page: Initialized empty tagDB');
+            }
+            if (typeof window.apConfig === 'undefined') {
+                window.apConfig = {};
+                console.log('Index page: Initialized empty apConfig');
+            }
+
+            // Wait for main.js to load and initialize
+            const initializeWhenReady = () => {
+                const hasTagDB = typeof window.tagDB !== 'undefined';
+                const hasLoadTags = typeof loadTags === 'function';
+                const hasClasses = typeof window.OptimizedApp !== 'undefined';
+
+                console.log(`Index page: Readiness check - tagDB: ${hasTagDB}, loadTags: ${hasLoadTags}, classes: ${hasClasses}`);
+
+                if (hasTagDB && (hasLoadTags || hasClasses)) {
+                    console.log('Index page: Core functionality ready, initializing enhancements');
+                    initializeEnhancements();
+                    updateHeaderUptime();
+
+                    // Connect to existing WebSocket if available
+                    if (typeof socket !== 'undefined' && socket) {
+                        const originalOnMessage = socket.onmessage;
+                        socket.onmessage = function (event) {
+                            // Call original handler first
+                            if (originalOnMessage) {
+                                originalOnMessage.call(this, event);
+                            }
+
+                            // Update our enhanced components
+                            setTimeout(() => {
+                                updateDashboardStats();
+                                updateCompactHeaderStatus();
+                            }, 100);
+                        };
+                        console.log('Index page: WebSocket event handler attached');
+                    }
+                } else {
+                    // Retry in 200ms if main.js isn't ready yet
+                    setTimeout(initializeWhenReady, 200);
+                }
+            };
+
+            initializeWhenReady();
+        });
+    </script>
+
 </body>
 
 </html>

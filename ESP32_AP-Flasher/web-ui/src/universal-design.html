@@ -1,0 +1,116 @@
+<!-- Universal Design Template for OpenEPL ESP32 Pages
+     This template provides a consistent structure and styling across all pages
+     Usage: Copy this structure to standardize page layouts
+-->
+
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+
+    <!-- Page-specific title will be set by individual pages -->
+    <title>OpenEPL ESP32 - [PAGE_TITLE]</title>
+
+    <!-- Core Stylesheets -->
+    <link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+    <link rel="icon" type="image/vnd.icon" href="favicon.ico">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Core JavaScript Modules (Common to all pages) -->
+    <script src="api-manager.js?3.2" defer></script>
+    <script src="endpoint-fix.js?3.2" defer></script>
+    <script src="universal-menu.js?3.2" defer></script>
+
+    <!-- All styles now consolidated in merged-styles.css -->
+</head>
+
+<body>
+    <!-- Universal Header (will be included by each page) -->
+    <div id="universal-header-placeholder"></div>
+
+    <!-- Navigation Back Button -->
+    <button class="nav-back" onclick="window.location.href='index.html'">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Back to Dashboard
+    </button>
+
+    <!-- Main Content Container -->
+    <div class="universal-container">
+        <!-- Page Header -->
+        <div class="glass-card page-header">
+            <h1 id="page-main-title">[PAGE_TITLE]</h1>
+            <div class="subtitle" id="page-subtitle">[PAGE_DESCRIPTION]</div>
+        </div>
+
+        <!-- Content Area (to be customized by each page) -->
+        <div class="content-area">
+            <!-- Page-specific content goes here -->
+        </div>
+
+        <!-- Universal Status Message -->
+        <div id="universal-status" class="status-message"></div>
+    </div>
+
+    <!-- Universal Scripts -->
+    <script>
+        // Universal helper functions
+        function showStatus(message, type = 'info', duration = 5000) {
+            const statusEl = document.getElementById('universal-status');
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.className = `status-message ${type}`;
+                statusEl.style.display = 'block';
+
+                if (duration > 0) {
+                    setTimeout(() => {
+                        statusEl.style.display = 'none';
+                    }, duration);
+                }
+            }
+        }
+
+        function hideStatus() {
+            const statusEl = document.getElementById('universal-status');
+            if (statusEl) {
+                statusEl.style.display = 'none';
+            }
+        }
+
+        function setLoading(element, loading = true) {
+            if (loading) {
+                element.classList.add('loading');
+            } else {
+                element.classList.remove('loading');
+            }
+        }
+
+        // Load universal header
+        function loadUniversalHeader() {
+            fetch('universal-header.html')
+                .then(response => response.text())
+                .then(html => {
+                    const placeholder = document.getElementById('universal-header-placeholder');
+                    if (placeholder) {
+                        placeholder.innerHTML = html;
+                    }
+                })
+                .catch(error => {
+                    console.warn('Could not load universal header:', error);
+                });
+        }
+
+        // Initialize on DOM ready
+        document.addEventListener('DOMContentLoaded', function () {
+            loadUniversalHeader();
+        });
+    </script>
+</body>
+
+</html>

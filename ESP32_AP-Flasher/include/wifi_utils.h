@@ -67,6 +67,7 @@ class WiFiUtils {
 
     // Utility functions
     static String getEncryptionString(wifi_auth_mode_t encryption);
+    static int getEncryptionType(wifi_auth_mode_t encryption);  // Numeric value for frontend compatibility
     static int calculateSignalQuality(int rssi);
 
     // Cleanup

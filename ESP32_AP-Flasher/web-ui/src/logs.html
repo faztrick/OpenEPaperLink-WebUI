@@ -5,279 +5,320 @@
 	<meta http-equiv="content-type" content="text/html; charset=utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
-	<title>OpenEPL ESP32 - System Logs</title>
-	<!-- Core JavaScript modules -->
-	<script src="constants.js?3.0" defer></script>
-	<script src="utils.js?3.0" defer></script>
-	<script src="app-core.js?3.0" defer></script>
-	<script src="ui-components.js?3.0" defer></script>
-	<script src="main.js?3.0" defer></script>
-	<!-- Feature-specific modules -->
-	<script src="compact-ui.js?2.75" defer></script>
-	<script src="universal-menu.js" defer></script>
-	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
+	<title>System Logs - OpenEPL ESP32</title>
 
+	<!-- Core Stylesheets -->
+	<link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+	<link rel="icon" type="image/vnd.icon" href="favicon.ico">
 	<link rel="stylesheet"
-		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-	<style>
-		/* Logs page specific styles */
-		.tabheader {
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			margin-bottom: 20px;
-			padding: 15px;
-			background: rgba(255, 255, 255, 0.1);
-			border-radius: 8px;
-			border: 1px solid rgba(255, 255, 255, 0.2);
-		}
-		
-		.tabheader img {
-			cursor: pointer;
-			width: 16px;
-			height: 16px;
-			filter: invert(1);
-			opacity: 0.8;
-			transition: opacity 0.3s ease;
-		}
-		
-		.tabheader img:hover {
-			opacity: 1;
-		}
-		
-		.messages {
-			background: rgba(0, 0, 0, 0.8);
-			border: 1px solid rgba(255, 255, 255, 0.2);
-			border-radius: 8px;
-			padding: 15px;
-			font-family: 'Courier New', monospace;
-			font-size: 12px;
-			color: #00ff00;
-			height: 500px;
-			overflow-y: auto;
-			white-space: pre-wrap;
-			word-wrap: break-word;
-			list-style: none;
-			margin: 0;
-		}
-		
-		.messages li {
-			margin: 2px 0;
-			line-height: 1.4;
-			padding: 2px 0;
-		}
-		
-		.messages li.error {
-			color: #ff6b6b;
-		}
-		
-		.messages li.warning {
-			color: #ffd93d;
-		}
-		
-		.messages li.info {
-			color: #6bcf7f;
-		}
-		
-		.messages li.debug {
-			color: #74b9ff;
-			opacity: 0.7;
-		}
-		
-		input[type="checkbox"] {
-			margin-right: 8px;
-		}
-		
-		label {
-			color: rgba(255, 255, 255, 0.9);
-			font-size: 14px;
-		}
-	</style>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+		rel="stylesheet">
+
+	<!-- Core JavaScript modules -->
+	<script src="constants.js?3.2" defer></script>
+	<script src="utils.js?3.2" defer></script>
+	<script src="api-manager.js?3.2" defer></script>
+	<script src="endpoint-fix.js?3.2" defer></script>
+	<script src="universal-menu.js?3.2" defer></script>
+	<script src="app-core.js?3.2" defer></script>
+	<script src="ui-components.js?3.2" defer></script>
+	<script src="main.js?3.2" defer></script>
+	<script src="compact-ui.js?3.2" defer></script>
 </head>
 
 <body>
-	<!-- Enhanced Compact Header with Menu and Status -->
-	<header class="advanced-header">
-		<div class="compact-header-content">
-			<div class="header-left">
-				<div class="logo-section">
-					<div class="logo-icon">📋</div>
-					<div class="logo-text">
-						<h1>OpenEPL ESP32 Logs</h1>
+	<!-- Universal Header -->
+	<div id="universal-header-placeholder"></div>
+
+	<!-- Navigation Back Button -->
+	<button class="nav-back" onclick="window.location.href='index.html'">
+		<span class="material-symbols-outlined">arrow_back</span>
+		Back to Dashboard
+	</button>
+
+	<!-- Main Content -->
+	<div class="universal-container">
+		<!-- Page Header -->
+		<div class="glass-card page-header">
+			<h1>System Logs</h1>
+			<div class="subtitle">Monitor system activity and debug information</div>
+		</div>
+
+		<!-- Log Controls -->
+		<div class="glass-card">
+			<div class="log-controls">
+				<div class="left-controls">
+					<div class="checkbox-group">
+						<input type="checkbox" id="autoscroll" checked>
+						<label for="autoscroll">Auto-scroll</label>
+					</div>
+					<div class="checkbox-group">
+						<input type="checkbox" id="timestamps" checked>
+						<label for="timestamps">Show timestamps</label>
 					</div>
 				</div>
-			</div>
-			
-			<div class="header-status">
-				<div class="status-item">
-					<div class="status-dot" id="systemDot"></div>
-					<span id="systemStatus">Ready</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
-					<span id="tagCount">Tags</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
-					<span id="wifiStatus">WiFi</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
-					<span id="uptimeDisplay">--:--</span>
+				<div class="right-controls">
+					<button onclick="clearLogs()">
+						<span class="material-symbols-outlined">clear_all</span>
+						Clear
+					</button>
+					<button onclick="refreshLogs()">
+						<span class="material-symbols-outlined">refresh</span>
+						Refresh
+					</button>
+					<button onclick="downloadLogs()">
+						<span class="material-symbols-outlined">download</span>
+						Download
+					</button>
 				</div>
 			</div>
-			
-			<!-- Universal Menu Container -->
-			<div id="menu-container" class="menu-container"></div>
-		</div>
-	</header>
 
-	<div class="container">
-		<div class="window">
-			<!-- Logs Tab Content -->
-			<div id="logtab" class="tabcontent active">
-				<div class="tabheader">
-					<div><img id="clearlog" src="data:image/gif;base64,R0lGODlhEAAQAPMAANXV1e3t7d/f39HR0dvb2/Hx8dTU1OLi4urq6mZmZpmZmf///wAAAAAAAAAAAAAAACH5BAEAAAwALAAAAAAQABAAAARBkMlJq71Yrp3ZXkr4WWCYnOZSgQVyEMYwJCq1nHhe20qgCAoA7QLyAYU7njE4JPV+zOSkCEUSFbmTVPPpbjvgTAQAOw==
-				"></div>
-					<div><input type="checkbox" id="showdebug" value="1"><label for="showdebug">Show all websocket traffic</label></div>
-				</div>
-				<ul id="messages" class="messages">
-				</ul>
-			</div>
+			<!-- Log Display -->
+			<ul id="messages" class="log-display">
+				<li class="info">System logs will appear here...</li>
+			</ul>
 		</div>
 	</div>
 
-	<!-- Footer Status Line -->
-	<div class="footer-status">
-		<div class="footer-left">
-			<div class="footer-item">
-				<span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
-				<span id="footerSystemInfo">System Ready</span>
-			</div>
-			<div class="footer-item">
-				<span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
-				<span id="footerMemoryInfo">Memory OK</span>
-			</div>
-			<div class="footer-item">
-				<span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
-				<span id="footerWifiInfo">WiFi Ready</span>
-			</div>
-			<div class="footer-item">
-				<span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
-				<span id="footerTagInfo">Tags Ready</span>
-			</div>
-			<div class="footer-item">
-				<span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
-				<span id="footerPerformance">Performance OK</span>
-			</div>
-		</div>
-		<div class="footer-right">
-			<span id="footerTimestamp">Ready</span>
-		</div>
-	</div>
-
+	<!-- Universal Scripts -->
 	<script>
-		// Application initialization with proper script loading wait
-		document.addEventListener('DOMContentLoaded', function() {
-			// Wait for essential classes to be loaded
-			const waitForClasses = () => {
-				const requiredClasses = ['tagDB', 'loadTags'];
-				const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
-				
-				if (allLoaded) {
-					// Initialize logs functionality
-					try {
-						if (typeof loadTags === 'function') {
-							loadTags(0);
-						}
-						
-						// Initialize logs-specific functionality
-						if (typeof window.initLogsPage === 'function') {
-							window.initLogsPage();
-						}
-					} catch (error) {
-						console.error('Failed to initialize logs page:', error);
-					}
-				} else {
-					// Check again in 100ms
-					setTimeout(waitForClasses, 100);
-				}
-			};
-			
-			waitForClasses();
-		});
-		
-		// Update status functions
-		function updateCompactHeaderStatus() {
-			fetch('get_ap_config')
-				.then(response => response.json())
-				.then(data => {
-					const systemDot = document.getElementById('systemDot');
-					const systemStatus = document.getElementById('systemStatus');
-					const tagCount = document.getElementById('tagCount');
-					const wifiStatus = document.getElementById('wifiStatus');
-					
-					if (systemDot && systemStatus && data.apstate !== undefined) {
-						if (data.apstate === 1) {
-							systemDot.className = 'status-dot online';
-							systemStatus.textContent = 'Online';
-						} else if (data.apstate === 2) {
-							systemDot.className = 'status-dot warning';
-							systemStatus.textContent = 'Flashing';
-						} else if (data.apstate === 5) {
-							systemDot.className = 'status-dot offline';
-							systemStatus.textContent = 'Failed';
-						} else {
-							systemDot.className = 'status-dot warning';
-							systemStatus.textContent = 'Starting';
-						}
-					}
-					
-					if (tagCount) {
-						const totalTags = Object.keys(tagDB || {}).length;
-						tagCount.textContent = `${totalTags} Tags`;
-					}
-					
-					if (wifiStatus) {
-						wifiStatus.textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
+		// Load universal header
+		function loadUniversalHeader() {
+			fetch('universal-header.html')
+				.then(response => response.text())
+				.then(html => {
+					const placeholder = document.getElementById('universal-header-placeholder');
+					if (placeholder) {
+						placeholder.innerHTML = html;
 					}
 				})
 				.catch(error => {
-					console.error('Status update error:', error);
+					console.warn('Could not load universal header:', error);
 				});
 		}
-		
-		function updateFooterStatus() {
-			const timestamp = new Date().toLocaleTimeString();
-			const footerTimestamp = document.getElementById('footerTimestamp');
-			if (footerTimestamp) footerTimestamp.textContent = `Last updated: ${timestamp}`;
-		}
-		
-		function updateHeaderUptime() {
-			const now = new Date();
-			const uptime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-			const uptimeDisplay = document.getElementById('uptimeDisplay');
-			if (uptimeDisplay) {
-				uptimeDisplay.textContent = uptime;
+
+		// Log management functions
+		function clearLogs() {
+			const messages = document.getElementById('messages');
+			if (messages) {
+				messages.innerHTML = '<li class="info">Logs cleared</li>';
 			}
 		}
-		
-		// Set up periodic updates
-		document.addEventListener('DOMContentLoaded', function() {
-			setTimeout(() => {
-				updateCompactHeaderStatus();
-				updateFooterStatus();
-				updateHeaderUptime();
-				
-				setInterval(updateCompactHeaderStatus, 5000);
-				setInterval(updateFooterStatus, 10000);
-				setInterval(updateHeaderUptime, 60000);
-			}, 1000);
+
+		function refreshLogs() {
+			// Trigger log refresh
+			if (typeof window.refreshLogData === 'function') {
+				window.refreshLogData();
+			}
+		}
+
+		function downloadLogs() {
+			const messages = document.getElementById('messages');
+			if (messages) {
+				const logText = messages.innerText;
+				const blob = new Blob([logText], { type: 'text/plain' });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `esp32-logs-${new Date().toISOString().split('T')[0]}.txt`;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+			}
+		}
+
+		// Initialize on DOM ready
+		document.addEventListener('DOMContentLoaded', function () {
+			loadUniversalHeader();
 		});
 	</script>
+</body>
+
+</html>
+<!-- Enhanced Compact Header with Menu and Status -->
+<header class="advanced-header">
+	<div class="compact-header-content">
+		<div class="header-left">
+			<div class="logo-section">
+				<div class="logo-icon">📋</div>
+				<div class="logo-text">
+					<h1>OpenEPL ESP32 Logs</h1>
+				</div>
+			</div>
+		</div>
+
+		<div class="header-status">
+			<div class="status-item">
+				<div class="status-dot" id="systemDot"></div>
+				<span id="systemStatus">Ready</span>
+			</div>
+			<div class="status-item">
+				<span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
+				<span id="tagCount">Tags</span>
+			</div>
+			<div class="status-item">
+				<span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
+				<span id="wifiStatus">WiFi</span>
+			</div>
+			<div class="status-item">
+				<span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
+				<span id="uptimeDisplay">--:--</span>
+			</div>
+		</div>
+
+		<!-- Universal Menu Container -->
+		<div id="menu-container" class="menu-container"></div>
+	</div>
+</header>
+
+<div class="container">
+	<div class="window">
+		<!-- Logs Tab Content -->
+		<div id="logtab" class="tabcontent active">
+			<div class="tabheader">
+				<div><img id="clearlog" src="data:image/gif;base64,R0lGODlhEAAQAPMAANXV1e3t7d/f39HR0dvb2/Hx8dTU1OLi4urq6mZmZpmZmf///wAAAAAAAAAAAAAAACH5BAEAAAwALAAAAAAQABAAAARBkMlJq71Yrp3ZXkr4WWCYnOZSgQVyEMYwJCq1nHhe20qgCAoA7QLyAYU7njE4JPV+zOSkCEUSFbmTVPPpbjvgTAQAOw==
+				"></div>
+				<div><input type="checkbox" id="showdebug" value="1"><label for="showdebug">Show all websocket
+						traffic</label></div>
+			</div>
+			<ul id="messages" class="messages">
+			</ul>
+		</div>
+	</div>
+</div>
+
+<!-- Footer Status Line -->
+<div class="footer-status">
+	<div class="footer-left">
+		<div class="footer-item">
+			<span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
+			<span id="footerSystemInfo">System Ready</span>
+		</div>
+		<div class="footer-item">
+			<span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
+			<span id="footerMemoryInfo">Memory OK</span>
+		</div>
+		<div class="footer-item">
+			<span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
+			<span id="footerWifiInfo">WiFi Ready</span>
+		</div>
+		<div class="footer-item">
+			<span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
+			<span id="footerTagInfo">Tags Ready</span>
+		</div>
+		<div class="footer-item">
+			<span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
+			<span id="footerPerformance">Performance OK</span>
+		</div>
+	</div>
+	<div class="footer-right">
+		<span id="footerTimestamp">Ready</span>
+	</div>
+</div>
+
+<script>
+	// Application initialization with proper script loading wait
+	document.addEventListener('DOMContentLoaded', function () {
+		// Wait for essential classes to be loaded
+		const waitForClasses = () => {
+			const requiredClasses = ['tagDB', 'loadTags'];
+			const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
+
+			if (allLoaded) {
+				// Initialize logs functionality
+				try {
+					if (typeof loadTags === 'function') {
+						loadTags(0);
+					}
+
+					// Initialize logs-specific functionality
+					if (typeof window.initLogsPage === 'function') {
+						window.initLogsPage();
+					}
+				} catch (error) {
+					console.error('Failed to initialize logs page:', error);
+				}
+			} else {
+				// Check again in 100ms
+				setTimeout(waitForClasses, 100);
+			}
+		};
+
+		waitForClasses();
+	});
+
+	// Update status functions
+	function updateCompactHeaderStatus() {
+		fetch('get_ap_config')
+			.then(response => response.json())
+			.then(data => {
+				const systemDot = document.getElementById('systemDot');
+				const systemStatus = document.getElementById('systemStatus');
+				const tagCount = document.getElementById('tagCount');
+				const wifiStatus = document.getElementById('wifiStatus');
+
+				if (systemDot && systemStatus && data.apstate !== undefined) {
+					if (data.apstate === 1) {
+						systemDot.className = 'status-dot online';
+						systemStatus.textContent = 'Online';
+					} else if (data.apstate === 2) {
+						systemDot.className = 'status-dot warning';
+						systemStatus.textContent = 'Flashing';
+					} else if (data.apstate === 5) {
+						systemDot.className = 'status-dot offline';
+						systemStatus.textContent = 'Failed';
+					} else {
+						systemDot.className = 'status-dot warning';
+						systemStatus.textContent = 'Starting';
+					}
+				}
+
+				if (tagCount) {
+					const totalTags = Object.keys(tagDB || {}).length;
+					tagCount.textContent = `${totalTags} Tags`;
+				}
+
+				if (wifiStatus) {
+					wifiStatus.textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
+				}
+			})
+			.catch(error => {
+				console.error('Status update error:', error);
+			});
+	}
+
+	function updateFooterStatus() {
+		const timestamp = new Date().toLocaleTimeString();
+		const footerTimestamp = document.getElementById('footerTimestamp');
+		if (footerTimestamp) footerTimestamp.textContent = `Last updated: ${timestamp}`;
+	}
+
+	function updateHeaderUptime() {
+		const now = new Date();
+		const uptime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+		const uptimeDisplay = document.getElementById('uptimeDisplay');
+		if (uptimeDisplay) {
+			uptimeDisplay.textContent = uptime;
+		}
+	}
+
+	// Set up periodic updates
+	document.addEventListener('DOMContentLoaded', function () {
+		setTimeout(() => {
+			updateCompactHeaderStatus();
+			updateFooterStatus();
+			updateHeaderUptime();
+
+			setInterval(updateCompactHeaderStatus, 5000);
+			setInterval(updateFooterStatus, 10000);
+			setInterval(updateHeaderUptime, 60000);
+		}, 1000);
+	});
+</script>
 
 </body>
 

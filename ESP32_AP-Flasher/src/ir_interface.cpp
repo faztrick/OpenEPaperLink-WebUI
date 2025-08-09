@@ -8,6 +8,9 @@
 #include "settings.h"
 #include "storage.h"
 
+// Global IRInterface instance
+IRInterface irInterface;
+
 // IR Command Type String Converter
 static const EnumStringConverter<IRCommandType>::EnumMapping irCommandMappings[] = {
     {IR_CMD_POWER, "Power"},
@@ -46,32 +49,6 @@ static const EnumStringConverter<IRProtocolType> irProtocolConverter(
     irProtocolMappings,
     sizeof(irProtocolMappings) / sizeof(irProtocolMappings[0]),
     IR_PROTOCOL_UNKNOWN);
-
-#endif  // HAS_IR_REMOTE
-
-#ifdef HAS_IR_REMOTE
-
-#include <ArduinoJson.h>
-
-#include "settings.h"
-#include "storage.h"
-
-bool IRInterface::sendRaw(uint16_t* rawData, uint16_t length, uint16_t frequency) {
-    if (!enabled || !irSender) return false;
-
-    if (debugMode) {
-        Serial.printf("📡 Sending raw IR: %d samples @ %dHz\n", length, frequency);
-    }
-
-    irSender->sendRaw(rawData, length, frequency);
-    return true;
-}
-
-bool IRInterface::hasReceivedCommand() {
-    if (!enabled || !receiverEnabled || !irReceiver) return false;
-
-    return irReceiver->decode(&results);
-}
 
 IRInterface::IRInterface() : enabled(false),
                              receiverEnabled(false),
@@ -202,6 +179,23 @@ bool IRInterface::sendCommand(IRProtocolType protocol, uint32_t code, uint16_t b
 
 bool IRInterface::sendCommand(const IRCommand& command) {
     return sendCommand(command.protocol, command.code, command.bits);
+}
+
+bool IRInterface::sendRaw(uint16_t* rawData, uint16_t length, uint16_t frequency) {
+    if (!enabled || !irSender) return false;
+
+    if (debugMode) {
+        Serial.printf("📡 Sending raw IR: %d samples @ %dHz\n", length, frequency);
+    }
+
+    irSender->sendRaw(rawData, length, frequency);
+    return true;
+}
+
+bool IRInterface::hasReceivedCommand() {
+    if (!enabled || !receiverEnabled || !irReceiver) return false;
+
+    return irReceiver->decode(&results);
 }
 
 IRCommand IRInterface::getLastCommand() {
@@ -581,4 +575,7 @@ IRProtocolType stringToIRProtocolType(const String& str) {
     return irProtocolConverter.fromString(str);
 }
 
+#else
+// Global IRInterface instance (stub when IR is not enabled)
+IRInterface irInterface;
 #endif  // HAS_IR_REMOTE

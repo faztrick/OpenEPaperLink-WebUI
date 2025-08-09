@@ -1,93 +1,152 @@
 <!DOCTYPE HTML>
-<html>
+<h <!-- Core JavaScript modules -->
+    <script src="api-manager.js?3.2" defer></script>
+    <script src="endpoint-fix.js?3.2" defer></script>
+    <script src="universal-menu.js?3.2" defer></script>
+    <script src="setup.js?3.2" defer></script>
 
-<head>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
-    <title>setup page - Open EPaper Link Access Point</title>
-    <link rel="stylesheet" href="merged-styles.css" type="text/css" />
-    <link rel="icon" type="image/vnd.icon" href="favicon.ico">
-    <style>
-        .window {
-            margin-left: 10px;
-        }
-        p {
-            margin-bottom: 10px;
-        }
-        .window input {
-            width: 120px;
-        }
-        h1 {
-            padding-top: 20px;
-        }
-        option, select {
-            font-family: monospace, 'lucida console', 'Courier New', Courier;
-        }
-        .status-message {
-            margin-left: 10px;
-            padding: 5px;
-            border-radius: 3px;
-            font-weight: bold;
-        }
-        .status-success {
-            color: #4CAF50;
-            background-color: rgba(76, 175, 80, 0.1);
-        }
-        .status-error {
-            color: #f44336;
-            background-color: rgba(244, 67, 54, 0.1);
-        }
-        .status-info {
-            color: #2196F3;
-            background-color: rgba(33, 150, 243, 0.1);
-        }
-        #listssid:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .wifi-info {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: rgba(255, 255, 255, 0.05);
-            border-radius: 5px;
-            border-left: 3px solid #4facfe;
-        }
-    </style>
-</head>
+        <title>WiFi Setup - OpenEPL ESP32 Access Point</title>
 
-<body>
-    <header>
-        <div class="logo">Open EPaper Link Access Point</div>
-    </header>
+        <!-- Core Stylesheets -->
+        <link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+        <link rel="icon" type="image/vnd.icon" href="favicon.ico">
+        <link rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+            rel="stylesheet">
 
-    <div class="container">
-        <div class="window">
-            <h1>WiFi config</h1>
-            <p>WiFi mac address: <span id="mac">-</span></p>
-            <div id="wifi_status" class="wifi-info" style="display: none;">
-                <strong>WiFi Status:</strong> <span id="wifi_status_text">Checking...</span>
+        <!-- Core JavaScript Modules -->
+        <script src="shared-utils.js?3.2" defer></script>
+        <script src="constants.js?3.2" defer></script>
+        <script src="utils.js?3.2" defer></script>
+        <script src="api-manager.js?3.2" defer></script>
+        <script src="endpoint-fix.js?3.2" defer></script>
+        <script src="universal-menu.js?3.2" defer></script>
+        <script src="setup.js?3.2" defer></script>
+    </head>
+
+    <body>
+        <!-- Universal Header -->
+        <div id="universal-header-placeholder"></div>
+
+        <!-- Navigation Back Button -->
+        <button class="nav-back" onclick="window.location.href='index.html'">
+            <span class="material-symbols-outlined">arrow_back</span>
+            Back to Dashboard
+        </button>
+
+        <!-- Main Content -->
+        <div class="universal-container" style="max-width: 800px;">
+            <!-- Page Header -->
+            <div class="glass-card page-header">
+                <h1>WiFi Configuration</h1>
+                <div class="subtitle">Configure your ESP32's WiFi connection settings</div>
             </div>
-            <pre>
-SSID            <input type="text" id="ssid"> <button id="listssid">find SSID</button>
-Password        <input type="password" id="pw">
-            </pre>
-            <div id="scan_status"></div>
-            <p>Fill in fields below for static IP. Otherwise, leave empty.<br></p>
-            <pre>
-Static IP       <input type="text" id="ip">
-Subnet mask     <input type="text" id="mask">
-Gateway         <input type="text" id="gw">
-DNS             <input type="text" id="dns">
-            </pre>
-            <button id="connect">Save WiFi settings and reboot</button><br>
-            <div id="save_status"></div>
 
+            <!-- WiFi Configuration Card -->
+            <div class="glass-card">
+                <!-- MAC Address Display -->
+                <div class="form-group">
+                    <label>WiFi MAC Address:</label>
+                    <div style="font-family: monospace; color: var(--accent-color); font-weight: 600;" id="mac">
+                        Loading...
+                    </div>
+                </div>
+
+                <!-- WiFi Status -->
+                <div id="wifi_status" class="wifi-info" style="display: none;">
+                    <strong>WiFi Status:</strong> <span id="wifi_status_text">Checking...</span>
+                </div>
+
+                <!-- WiFi Credentials -->
+                <div class="form-row">
+                    <label for="ssid">SSID:</label>
+                    <input type="text" id="ssid" placeholder="Enter WiFi network name">
+                    <button id="listssid" class="btn secondary">
+                        <span class="material-symbols-outlined">search</span>
+                        Find Networks
+                    </button>
+                </div>
+
+                <div class="form-row">
+                    <label for="pw">Password:</label>
+                    <input type="password" id="pw" placeholder="Enter WiFi password">
+                </div>
+
+                <!-- Scan Status -->
+                <div id="scan_status"></div>
+
+                <!-- Static IP Configuration -->
+                <div style="margin-top: var(--spacing-lg);">
+                    <h3 style="color: var(--text-secondary); margin-bottom: var(--spacing-md);">
+                        Static IP Configuration (Optional)
+                    </h3>
+                    <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+                        Fill in the fields below for static IP configuration. Leave empty for DHCP.
+                    </p>
+
+                    <div class="form-row">
+                        <label for="ip">Static IP:</label>
+                        <input type="text" id="ip" placeholder="192.168.1.100">
+                    </div>
+
+                    <div class="form-row">
+                        <label for="mask">Subnet Mask:</label>
+                        <input type="text" id="mask" placeholder="255.255.255.0">
+                    </div>
+
+                    <div class="form-row">
+                        <label for="gw">Gateway:</label>
+                        <input type="text" id="gw" placeholder="192.168.1.1">
+                    </div>
+
+                    <div class="form-row">
+                        <label for="dns">DNS:</label>
+                        <input type="text" id="dns" placeholder="8.8.8.8">
+                    </div>
+                </div>
+
+                <!-- Save Button -->
+                <div style="margin-top: var(--spacing-lg); text-align: center;">
+                    <button id="connect" class="btn success">
+                        <span class="material-symbols-outlined">save</span>
+                        Save WiFi Settings and Reboot
+                    </button>
+                </div>
+
+                <!-- Save Status -->
+                <div id="save_status"></div>
+            </div>
         </div>
-    </div>
-    <script src="constants.js"></script>
-    <script src="main.js"></script>
 
-</body>
+        <!-- Universal Scripts -->
+        <script>
+            // Load universal header
+            function loadUniversalHeader() {
+                fetch('universal-header.html')
+                    .then(response => response.text())
+                    .then(html => {
+                        const placeholder = document.getElementById('universal-header-placeholder');
+                        if (placeholder) {
+                            placeholder.innerHTML = html;
+                        }
+                    })
+                    .catch(error => {
+                        console.warn('Could not load universal header:', error);
+                    });
+            }
 
-</html>
+            // Initialize on DOM ready
+            document.addEventListener('DOMContentLoaded', function () {
+                loadUniversalHeader();
+            });
+        </script>
+    </body>
+
+    </html>

@@ -3,10 +3,10 @@ Write-Host "🔧 Configuring WiFi Settings..." -ForegroundColor Cyan
 
 # WiFi Configuration Parameters
 $esp32IP = "192.168.4.1"  # Default AP IP, change this if connecting to existing ESP32
-$wifiSSID = "Faztrick"
-$wifiPassword = "faztrick123"
-$staticIP = "192.168.26.201"
-$gateway = "192.168.26.1"
+$wifiSSID = "faztrick"
+$wifiPassword = "faztrick1234"
+$staticIP = "192.168.1.200"
+$gateway = "192.168.1.1"
 $subnetMask = "255.255.255.0"
 $dns = "8.8.8.8"  # Using Google DNS as default
 
@@ -19,11 +19,11 @@ Write-Host "🔧 Subnet Mask: $subnetMask" -ForegroundColor Yellow
 # Create JSON payload for WiFi configuration
 $wifiConfig = @{
     ssid = $wifiSSID
-    pw = $wifiPassword
-    ip = $staticIP
+    pw   = $wifiPassword
+    ip   = $staticIP
     mask = $subnetMask
-    gw = $gateway
-    dns = $dns
+    gw   = $gateway
+    dns  = $dns
 } | ConvertTo-Json
 
 Write-Host "`n📤 Sending WiFi configuration..." -ForegroundColor White
@@ -33,19 +33,19 @@ try {
     Write-Host "🔍 Checking current WiFi configuration..." -ForegroundColor Gray
     $currentConfig = Invoke-WebRequest -Uri "http://$esp32IP/get_wifi_config" -Method GET -TimeoutSec 10
     Write-Host "   ✅ Connected to ESP32 successfully" -ForegroundColor Green
-    
+
     # Send the new WiFi configuration
     $response = Invoke-WebRequest -Uri "http://$esp32IP/save_wifi_config" -Method POST -Body $wifiConfig -ContentType "application/json" -TimeoutSec 10
-    
+
     if ($response.StatusCode -eq 200) {
         Write-Host "   ✅ WiFi configuration saved successfully!" -ForegroundColor Green
         Write-Host "   📱 The ESP32 will now reboot and connect to '$wifiSSID'" -ForegroundColor Green
         Write-Host "   🔄 After reboot, the device should be available at: $staticIP" -ForegroundColor Yellow
         Write-Host "`n⏳ Waiting for ESP32 to reboot and connect..." -ForegroundColor Cyan
-        
+
         # Wait a bit for reboot
         Start-Sleep -Seconds 10
-        
+
         # Try to ping the new IP address
         Write-Host "🏓 Testing connectivity to new IP address..." -ForegroundColor Gray
         for ($i = 1; $i -le 6; $i++) {
@@ -62,10 +62,11 @@ try {
                 Start-Sleep -Seconds 10
             }
         }
-    } else {
+    }
+    else {
         Write-Host "   ❌ Failed to save WiFi configuration: $($response.StatusCode)" -ForegroundColor Red
     }
-} 
+}
 catch {
     Write-Host "   ❌ Error connecting to ESP32: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "" -ForegroundColor White

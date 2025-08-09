@@ -157,11 +157,16 @@ class WiFiStorageManager {
     // Individual Setting Management
     StorageUtils::Result setSSID(const String& ssid);
     StorageUtils::Result setPassword(const String& password);
+    StorageUtils::Result setStaticIP(const String& ip);
     StorageUtils::Result setStaticIP(const String& ip, const String& mask, const String& gateway, const String& dns);
+    StorageUtils::Result setGateway(const String& gateway);
+    StorageUtils::Result setSubnetMask(const String& mask);
+    StorageUtils::Result setDNS(const String& dns);
     StorageUtils::Result setHostname(const String& hostname);
     StorageUtils::Result setAutoReconnect(bool enable);
     StorageUtils::Result setPowerSave(bool enable);
     StorageUtils::Result setChannel(int channel);
+    StorageUtils::Result save();  // Save current configuration
 
     // Getters with validation
     String getSSID() const;

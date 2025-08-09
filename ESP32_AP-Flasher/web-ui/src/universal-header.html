@@ -3,6 +3,16 @@
      Usage: Include this file in all HTML pages for consistent header layout
 -->
 
+<!-- Load universal menu script if not already loaded -->
+<script>
+    if (!document.querySelector('script[src*="universal-menu.js"]')) {
+        const script = document.createElement('script');
+        script.src = 'universal-menu.js';
+        script.defer = true;
+        document.head.appendChild(script);
+    }
+</script>
+
 <!-- Compact Single-Line Header: Logo + Navigation + Status -->
 <header class="advanced-header compact-header">
     <div class="compact-header-content">
@@ -76,26 +86,6 @@
                 title: 'OpenEPL ESP32',
                 version: 'v3.1'
             },
-            'dashboard.html': {
-                icon: '📊',
-                title: 'OpenEPL ESP32 Dashboard',
-                version: 'v3.1'
-            },
-            'tags.html': {
-                icon: '🏷️',
-                title: 'OpenEPL Tag Manager',
-                version: 'v3.1'
-            },
-            'flasher.html': {
-                icon: '⚡',
-                title: 'OpenEPL ESP32 Flasher',
-                version: 'v3.1'
-            },
-            'ai-agent.html': {
-                icon: '🤖',
-                title: 'OpenEPL AI Assistant',
-                version: 'v3.1'
-            },
             'settings.html': {
                 icon: '⚙️',
                 title: 'OpenEPL Settings',
@@ -106,34 +96,19 @@
                 title: 'OpenEPL System Logs',
                 version: 'v3.1'
             },
-            'updates.html': {
-                icon: '🔄',
-                title: 'OpenEPL Updates',
+            'setup.html': {
+                icon: '�',
+                title: 'OpenEPL WiFi Setup',
                 version: 'v3.1'
             },
-            'nrf52_swd.html': {
-                icon: '🔌',
-                title: 'OpenEPL nRF52 SWD',
+            'esp32_endpoint_checker.html': {
+                icon: '�',
+                title: 'ESP32 Endpoint Checker',
                 version: 'v3.1'
             },
-            'c6_module.html': {
-                icon: '💻',
-                title: 'OpenEPL C6 Module',
-                version: 'v3.1'
-            },
-            'ir_remote.html': {
-                icon: '📡',
-                title: 'OpenEPL IR Remote',
-                version: 'v3.1'
-            },
-            'rfid_control.html': {
-                icon: '💳',
-                title: 'OpenEPL RFID Control',
-                version: 'v3.1'
-            },
-            'tag_control_panel.html': {
-                icon: '🎛️',
-                title: 'OpenEPL Tag Control',
+            'network-test.html': {
+                icon: '🌐',
+                title: 'Network Connection Test',
                 version: 'v3.1'
             }
         };
@@ -162,6 +137,16 @@
             // Initialize universal menu if not already loaded
             if (typeof initializeUniversalMenu === 'function') {
                 initializeUniversalMenu();
+            } else {
+                // If universal-menu.js hasn't loaded yet, wait for it
+                const checkForMenu = () => {
+                    if (typeof initializeUniversalMenu === 'function') {
+                        initializeUniversalMenu();
+                    } else {
+                        setTimeout(checkForMenu, 50);
+                    }
+                };
+                checkForMenu();
             }
 
             // Mark current page as active in menu

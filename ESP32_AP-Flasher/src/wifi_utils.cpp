@@ -116,6 +116,9 @@ String WiFiUtils::buildScanResultsJson(bool clearAfter) {
     doc["networksFound"] = scanResult.networksFound;
     doc["lastScanTime"] = lastScanTime;
 
+    // Add scanstatus for frontend compatibility (-1 = scanning, 0+ = complete)
+    doc["scanstatus"] = scanResult.scanInProgress ? -1 : scanResult.networksFound;
+
     if (!scanResult.errorMessage.isEmpty()) {
         doc["error"] = scanResult.errorMessage;
     }
@@ -127,6 +130,7 @@ String WiFiUtils::buildScanResultsJson(bool clearAfter) {
         net["rssi"] = network.rssi;
         net["channel"] = network.channel;
         net["encryption"] = getEncryptionString(network.encryption);
+        net["enc"] = getEncryptionType(network.encryption);  // Numeric for frontend compatibility
         net["bssid"] = network.bssid;
         net["quality"] = calculateSignalQuality(network.rssi);
     }
@@ -158,6 +162,32 @@ String WiFiUtils::getEncryptionString(wifi_auth_mode_t encryption) {
             return "WAPI";
         default:
             return "Unknown";
+    }
+}
+
+int WiFiUtils::getEncryptionType(wifi_auth_mode_t encryption) {
+    // Return numeric values expected by frontend
+    switch (encryption) {
+        case WIFI_AUTH_OPEN:
+            return 0;
+        case WIFI_AUTH_WEP:
+            return 1;
+        case WIFI_AUTH_WPA_PSK:
+            return 2;
+        case WIFI_AUTH_WPA2_PSK:
+            return 3;
+        case WIFI_AUTH_WPA_WPA2_PSK:
+            return 4;
+        case WIFI_AUTH_WPA2_ENTERPRISE:
+            return 5;
+        case WIFI_AUTH_WPA3_PSK:
+            return 6;
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+            return 7;
+        case WIFI_AUTH_WAPI_PSK:
+            return 8;
+        default:
+            return 0;  // Default to open
     }
 }
 
