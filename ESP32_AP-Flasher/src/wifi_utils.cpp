@@ -18,7 +18,6 @@
 
 #include <ArduinoJson.h>
 #include <ETH.h>
-#include <Preferences.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
@@ -639,70 +638,52 @@ IPAddress WiFiUtils::localIP() {
 
 WiFiConfig WiFiUtils::loadConfig() {
     WiFiConfig config;
-    Preferences prefs;
-
-    if (prefs.begin("wifi", true)) {
-        config.ssid = prefs.getString("ssid", "");
-        config.password = prefs.getString("password", "");
-        config.hostname = prefs.getString("hostname", "OpenEPaperLink-AP");
-        config.ip = prefs.getString("ip", "");
-        config.mask = prefs.getString("mask", "255.255.255.0");
-        config.gateway = prefs.getString("gateway", "");
-        config.dns = prefs.getString("dns", "8.8.8.8");
-        config.hasStaticIP = !config.ip.isEmpty();
-        prefs.end();
-    }
+    
+    // Use centralized storage utilities for consistent configuration management
+    config.ssid = WIFI_STORAGE.getString("ssid", "");
+    config.password = WIFI_STORAGE.getString("password", "");
+    config.hostname = WIFI_STORAGE.getString("hostname", "OpenEPaperLink-AP");
+    config.ip = WIFI_STORAGE.getString("ip", "");
+    config.mask = WIFI_STORAGE.getString("mask", "255.255.255.0");
+    config.gateway = WIFI_STORAGE.getString("gateway", "");
+    config.dns = WIFI_STORAGE.getString("dns", "8.8.8.8");
+    config.hasStaticIP = !config.ip.isEmpty();
 
     return config;
 }
 
 bool WiFiUtils::saveConfig(const WiFiConfig& config) {
-    Preferences prefs;
+    // Use centralized storage utilities for consistent configuration management
+    bool result = true;
+    
+    result &= WIFI_STORAGE.putString("ssid", config.ssid);
+    result &= WIFI_STORAGE.putString("password", config.password);
+    result &= WIFI_STORAGE.putString("hostname", config.hostname);
 
-    if (prefs.begin("wifi", false)) {
-        prefs.putString("ssid", config.ssid);
-        prefs.putString("password", config.password);
-        prefs.putString("hostname", config.hostname);
-
-        if (config.hasStaticIP && !config.ip.isEmpty()) {
-            prefs.putString("ip", config.ip);
-            prefs.putString("mask", config.mask);
-            prefs.putString("gateway", config.gateway);
-            prefs.putString("dns", config.dns);
-        } else {
-            prefs.remove("ip");
-            prefs.remove("mask");
-            prefs.remove("gateway");
-            prefs.remove("dns");
-        }
-
-        prefs.end();
-        return true;
+    if (config.hasStaticIP && !config.ip.isEmpty()) {
+        result &= WIFI_STORAGE.putString("ip", config.ip);
+        result &= WIFI_STORAGE.putString("mask", config.mask);
+        result &= WIFI_STORAGE.putString("gateway", config.gateway);
+        result &= WIFI_STORAGE.putString("dns", config.dns);
+    } else {
+        WIFI_STORAGE.remove("ip");
+        WIFI_STORAGE.remove("mask");
+        WIFI_STORAGE.remove("gateway");
+        WIFI_STORAGE.remove("dns");
     }
 
-    return false;
+    return result;
 }
 
 bool WiFiUtils::factoryReset() {
-    Preferences prefs;
-
-    if (prefs.begin("wifi", false)) {
-        prefs.clear();
-        prefs.end();
-        return true;
-    }
-
-    return false;
+    // Use centralized storage utilities for factory reset
+    return WIFI_STORAGE.clear();
 }
 
 bool WiFiUtils::hasStaticIP() {
-    Preferences prefs;
-    bool hasStatic = false;
-    if (prefs.begin("wifi", true)) {
-        hasStatic = prefs.getBool("hasStaticIP", false);
-        prefs.end();
-    }
-    return hasStatic;
+    // Check if static IP is configured using centralized storage
+    String ip = WIFI_STORAGE.getString("ip", "");
+    return !ip.isEmpty();
 }
 
 bool WiFiUtils::save() {
