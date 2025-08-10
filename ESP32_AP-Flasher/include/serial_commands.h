@@ -5,8 +5,12 @@
 
 #include <functional>
 
+#include "common_utils.h"
+#include "wifi_utils.h"
+
 // Serial Command Handler for ESP32_AP-Flasher
 // Provides custom serial commands for WiFi management and author endpoints
+// Uses WiFiUtils for all WiFi operations to avoid code duplication
 
 class SerialCommandHandler {
    public:
@@ -29,6 +33,12 @@ class SerialCommandHandler {
     String inputBuffer;
     ResponseCallback responseCallback;
     bool initialized = false;
+    bool commandMode = false;
+    unsigned long lastCommandTime = 0;
+    unsigned long lastApCheck = 0;
+
+    // WiFi utilities reference
+    WiFiUtils& wifiUtils = WiFiUtils::getInstance();
 
     // Initialization helper
     void setDefaultWiFiCredentials();
@@ -38,10 +48,11 @@ class SerialCommandHandler {
     void handleWiFiCommand(const String& subCommand, const String& params);
     void handleAuthorCommand(const String& subCommand, const String& params);
     void handleSystemCommand(const String& subCommand, const String& params);
+    void handleWebCommand(const String& subCommand, const String& params);
     void handleHelpCommand();
     void handleVersionCommand();
 
-    // WiFi-specific handlers
+    // WiFi-specific handlers (using WiFiUtils)
     void handleWiFiStatus();
     void handleWiFiScan();
     void handleWiFiConnect(const String& params);
@@ -57,6 +68,7 @@ class SerialCommandHandler {
     void handleWiFiSetDNS(const String& dns);
     void handleWiFiSave();
     void handleWiFiClearConfig();
+    void handleWiFiAPStatus();
 
     // Author/endpoint handlers
     void handleAuthorGet();
@@ -70,12 +82,16 @@ class SerialCommandHandler {
     void handleSystemReboot();
     void handleSystemReset();
 
+    // Web server handlers
+    void handleWebStart();
+    void handleWebStatus();
+    void handleWebRestart();
+    void handleWebInfo();
+
     // Utility functions
     void sendResponse(const String& response);
     void sendErrorResponse(const String& error);
     void sendJsonResponse(const String& json);
-    String parseQuotedString(const String& input);
-    String extractParameter(const String& params, const String& paramName);
 };
 
 #endif  // SERIAL_COMMANDS_H

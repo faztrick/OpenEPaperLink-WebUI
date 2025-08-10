@@ -1,66 +1,65 @@
-/**
- * Universal Menu System for OpenEPaperLink ESP32
- * Provides consistent navigation across all pages
- * Version: 3.2
- */
-
+/**;
+ * Universal Menu System for OpenEPaperLink ESP32;
+ * Provides consistent navigation across all pages;
+ * Version: 3.2;
+ */;
 (function () {
     'use strict';
 
-    // Navigation menu configuration
-    const menuItems = [
+    // Navigation menu configuration;
+    const menuItems = [;
         {
-            id: 'dashboard',
-            label: 'Dashboard',
-            icon: '📱',
-            url: 'index.html',
-            description: 'Main control center and tag management'
-        },
+            id: 'dashboard',;
+            label: 'Dashboard',;
+            icon: '📱',;
+            url: 'index.html',;
+            description: 'Main control center and tag management';
+        },;
         {
-            id: 'settings',
-            label: 'Settings',
-            icon: '⚙️',
-            url: 'settings.html',
-            description: 'System configuration and preferences'
-        },
+            id: 'settings',;
+            label: 'Settings',;
+            icon: '⚙️',;
+            url: 'settings.html',;
+            description: 'System configuration and preferences';
+        },;
         {
-            id: 'setup',
-            label: 'WiFi Setup',
-            icon: '🔧',
-            url: 'setup.html',
-            description: 'Configure WiFi connection settings'
-        },
+            id: 'setup',;
+            label: 'WiFi Setup',;
+            icon: '🔧',;
+            url: 'setup.html',;
+            description: 'Configure WiFi connection settings';
+        },;
         {
-            id: 'logs',
-            label: 'System Logs',
-            icon: '📋',
-            url: 'logs.html',
-            description: 'View system logs and debug information'
-        },
+            id: 'logs',;
+            label: 'System Logs',;
+            icon: '📋',;
+            url: 'logs.html',;
+            description: 'View system logs and debug information';
+        },;
         {
-            id: 'network-test',
-            label: 'Network Test',
-            icon: '🌐',
-            url: 'network-test.html',
-            description: 'Test network connectivity and performance'
-        },
+            id: 'network-test',;
+            label: 'Network Test',;
+            icon: '🌐',;
+            url: 'network-test.html',;
+            description: 'Test network connectivity and performance';
+        },;
         {
-            id: 'endpoint-checker',
-            label: 'Endpoint Checker',
-            icon: '🔍',
-            url: 'esp32_endpoint_checker.html',
-            description: 'Verify API endpoints and system status'
+            id: 'endpoint-checker',;
+            label: 'Endpoint Checker',;
+            icon: '🔍',;
+            url: 'esp32_endpoint_checker.html',;
+            description: 'Verify API endpoints and system status';
         }
     ];
 
-    // Universal menu state
+    // Universal menu state;
     window.universalMenu = {
-        menuLoaded: false,
-        currentPage: '',
-        items: menuItems
+        menuLoaded: false,;
+        currentPage: '',;
+        items: menuItems;
     };
 
-    // Initialize the universal menu
+    // Initialize the universal menu;
     function initializeUniversalMenu() {
         console.log('Universal Menu: Initializing...');
 
@@ -71,52 +70,52 @@
             return;
         }
 
-        // Get current page
+        // Get current page;
         const currentPath = window.location.pathname;
         const currentPage = currentPath.split('/').pop() || 'index.html';
         window.universalMenu.currentPage = currentPage;
 
-        // Create menu HTML
+        // Create menu HTML;
         const menuHTML = createMenuHTML();
         container.innerHTML = menuHTML;
 
-        // Add event listeners
+        // Add event listeners;
         attachEventListeners();
 
-        // Mark current page as active
+        // Mark current page as active;
         updateActiveMenuItem();
 
-        // Set menu as loaded
+        // Set menu as loaded;
         window.universalMenu.menuLoaded = true;
         console.log('Universal Menu: Loaded successfully');
 
-        // Dispatch custom event for other scripts
+        // Dispatch custom event for other scripts;
         window.dispatchEvent(new CustomEvent('universalMenuLoaded', {
             detail: { currentPage, menuItems }
         }));
     }
 
-    // Create the menu HTML structure
+    // Create the menu HTML structure;
     function createMenuHTML() {
         return menuItems.map(item => {
             const isActive = isCurrentPage(item.url) ? 'active' : '';
-            return `
-                <button class="menu-btn ${isActive}"
-                        data-page="${item.id}"
-                        data-url="${item.url}"
-                        title="${item.description}">
-                    <span class="menu-icon">${item.icon}</span>
-                    <span class="menu-label">${item.label}</span>
-                </button>
+            return `;
+                <button class="menu-btn ${isActive}";
+                        data-page="${item.id}";
+                        data-url="${item.url}";
+                        title="${item.description}">;
+                    <span class="menu-icon">${item.icon}</span>;
+                    <span class="menu-label">${item.label}</span>;
+                </button>;
             `;
         }).join('');
     }
 
-    // Check if the given URL matches the current page
+    // Check if the given URL matches the current page;
     function isCurrentPage(url) {
         const currentPage = window.universalMenu.currentPage;
 
-        // Handle index.html as default
+        // Handle index.html as default;
         if ((currentPage === '' || currentPage === 'index.html') && url === 'index.html') {
             return true;
         }
@@ -124,7 +123,7 @@
         return currentPage === url || currentPage.endsWith(url);
     }
 
-    // Attach event listeners to menu buttons
+    // Attach event listeners to menu buttons;
     function attachEventListeners() {
         const menuButtons = document.querySelectorAll('.menu-btn');
 
@@ -137,14 +136,14 @@
 
                 console.log(`Universal Menu: Navigating to ${url} (${page})`);
 
-                // Add loading state
+                // Add loading state;
                 this.classList.add('loading');
 
-                // Navigate to the page
+                // Navigate to the page;
                 navigateToPage(url);
             });
 
-            // Add hover effects
+            // Add hover effects;
             button.addEventListener('mouseenter', function () {
                 this.classList.add('hover');
             });
@@ -155,19 +154,19 @@
         });
     }
 
-    // Navigate to a specific page
+    // Navigate to a specific page;
     function navigateToPage(url) {
-        // Handle special cases
+        // Handle special cases;
         if (url === 'index.html' && window.location.pathname.endsWith('/')) {
             window.location.href = url;
             return;
         }
 
-        // Standard navigation
+        // Standard navigation;
         window.location.href = url;
     }
 
-    // Update the active menu item
+    // Update the active menu item;
     function updateActiveMenuItem() {
         const menuButtons = document.querySelectorAll('.menu-btn');
 
@@ -182,83 +181,83 @@
         });
     }
 
-    // Add a new menu item dynamically
+    // Add a new menu item dynamically;
     function addMenuItem(item) {
         menuItems.push(item);
 
         if (window.universalMenu.menuLoaded) {
-            // Refresh the menu
+            // Refresh the menu;
             initializeUniversalMenu();
         }
     }
 
-    // Remove a menu item
+    // Remove a menu item;
     function removeMenuItem(id) {
         const index = menuItems.findIndex(item => item.id === id);
         if (index > -1) {
             menuItems.splice(index, 1);
 
             if (window.universalMenu.menuLoaded) {
-                // Refresh the menu
+                // Refresh the menu;
                 initializeUniversalMenu();
             }
         }
     }
 
-    // Get menu item by ID
+    // Get menu item by ID;
     function getMenuItem(id) {
         return menuItems.find(item => item.id === id);
     }
 
-    // Update menu item
+    // Update menu item;
     function updateMenuItem(id, updates) {
         const item = getMenuItem(id);
         if (item) {
             Object.assign(item, updates);
 
             if (window.universalMenu.menuLoaded) {
-                // Refresh the menu
+                // Refresh the menu;
                 initializeUniversalMenu();
             }
         }
     }
 
-    // Expose public API
+    // Expose public API;
     window.universalMenu = {
-        ...window.universalMenu,
-        initialize: initializeUniversalMenu,
-        addItem: addMenuItem,
-        removeItem: removeMenuItem,
-        getItem: getMenuItem,
-        updateItem: updateMenuItem,
-        refresh: initializeUniversalMenu,
-        updateActive: updateActiveMenuItem
+        ...window.universalMenu,;
+        initialize: initializeUniversalMenu,;
+        addItem: addMenuItem,;
+        removeItem: removeMenuItem,;
+        getItem: getMenuItem,;
+        updateItem: updateMenuItem,;
+        refresh: initializeUniversalMenu,;
+        updateActive: updateActiveMenuItem;
     };
 
-    // Auto-initialize when DOM is ready
+    // Auto-initialize when DOM is ready;
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeUniversalMenu);
     } else {
-        // DOM is already ready
+        // DOM is already ready;
         setTimeout(initializeUniversalMenu, 0);
     }
 
-    // Also expose the initialization function globally
+    // Also expose the initialization function globally;
     window.initializeUniversalMenu = initializeUniversalMenu;
 
     console.log('Universal Menu: Script loaded');
 
 })();
 
-// CSS injection for menu styling (in case merged-styles.css is not available)
+// CSS injection for menu styling (in case merged-styles.css is not available);
 (function injectMenuStyles() {
-    // Check if styles are already present
+    // Check if styles are already present;
     if (document.querySelector('.menu-container')) {
-        return; // Styles likely already loaded
+        return; // Styles likely already loaded;
     }
 
     const style = document.createElement('style');
-    style.textContent = `
+    style.textContent = `;
         .menu-container {
             display: flex;
             gap: 8px;
@@ -284,7 +283,7 @@
             backdrop-filter: blur(10px);
         }
 
-        .menu-btn:hover,
+        .menu-btn:hover,;
         .menu-btn.hover {
             background: rgba(255, 255, 255, 0.2);
             border-color: rgba(255, 255, 255, 0.4);

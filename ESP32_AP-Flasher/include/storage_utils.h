@@ -1,6 +1,8 @@
 #ifndef STORAGE_UTILS_H
 #define STORAGE_UTILS_H
 
+#ifdef __cplusplus
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -154,14 +156,7 @@ class WiFiStorageManager {
     WiFiConfig loadConfig();
     StorageUtils::Result clearConfig();
 
-    // Individual Setting Management
-    StorageUtils::Result setSSID(const String& ssid);
-    StorageUtils::Result setPassword(const String& password);
-    StorageUtils::Result setStaticIP(const String& ip);
-    StorageUtils::Result setStaticIP(const String& ip, const String& mask, const String& gateway, const String& dns);
-    StorageUtils::Result setGateway(const String& gateway);
-    StorageUtils::Result setSubnetMask(const String& mask);
-    StorageUtils::Result setDNS(const String& dns);
+    // Configuration Management
     StorageUtils::Result setHostname(const String& hostname);
     StorageUtils::Result setAutoReconnect(bool enable);
     StorageUtils::Result setPowerSave(bool enable);
@@ -191,6 +186,15 @@ class WiFiStorageManager {
 
    private:
     WiFiStorageManager() = default;
+
+    // Individual Setting Management (private - used internally)
+    StorageUtils::Result setSSID(const String& ssid);
+    StorageUtils::Result setPassword(const String& password);
+    StorageUtils::Result setStaticIP(const String& ip);
+    StorageUtils::Result setStaticIP(const String& ip, const String& mask, const String& gateway, const String& dns);
+    StorageUtils::Result setGateway(const String& gateway);
+    StorageUtils::Result setSubnetMask(const String& mask);
+    StorageUtils::Result setDNS(const String& dns);
 
     // Validation helpers
     bool isValidSSID(const String& ssid) const;
@@ -228,7 +232,7 @@ class SystemStorageManager {
 
     // System Configuration Management
     StorageUtils::Result saveConfig(const SystemConfig& config);
-    SystemConfig loadConfig();
+    SystemConfig loadConfig();  // fixed: was `SystemConfig();`
     StorageUtils::Result incrementBootCount();
     StorageUtils::Result updateUptime(uint32_t uptime);
     StorageUtils::Result setFirstBoot(bool isFirst);
@@ -275,5 +279,7 @@ class SystemStorageManager {
 // WiFi-specific convenience macros
 #define WIFI_STORAGE WiFiStorageManager::getInstance()
 #define SYSTEM_STORAGE SystemStorageManager::getInstance()
+
+#endif  // __cplusplus
 
 #endif  // STORAGE_UTILS_H

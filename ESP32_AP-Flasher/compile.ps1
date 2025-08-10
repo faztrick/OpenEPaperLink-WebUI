@@ -1,4 +1,3 @@
-
 #!/usr/bin/env pwsh
 # ========================================================================
 # Enhanced OutdoorAP Automated Build & Upload Script
@@ -49,6 +48,7 @@ if ($FastBuild) {
     # Use environment variables for faster builds (these are supported)
     $env:PLATFORMIO_BUILD_FLAGS = ""
     Write-ColorOutput "FastBuild mode enabled - using parallel compilation" "Info"
+    Write-ColorOutput "FastBuild: skipping filesystem upload" "Info"
 }
 
 function Test-ComPort {
@@ -442,7 +442,9 @@ if (-not $SkipUpload) {
             )
 
             # Add file addresses
+            if ($FastBuild) { Write-ColorOutput "  ├─ FastBuild: skipping filesystem (littlefs.bin) upload" "Info" }
             foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
+                if ($FastBuild -and $addr.Value -eq "littlefs.bin") { continue }
                 $filePath = Join-Path $outputDir $addr.Value
                 if (Test-Path $filePath) {
                     $uploadArgs += $addr.Key, $filePath

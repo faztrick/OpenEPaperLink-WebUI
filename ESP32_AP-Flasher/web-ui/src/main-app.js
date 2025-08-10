@@ -1,20 +1,19 @@
-/**
- * Main Application Class for OpenEPaperLink ESP32
- * Provides core functionality for tag management and system control
- */
-
+/**;
+ * Main Application Class for OpenEPaperLink ESP32;
+ * Provides core functionality for tag management and system control;
+ */;
 class OptimizedApp {
     constructor() {
         console.log('OptimizedApp: Initializing...');
 
-        // Initialize application state
+        // Initialize application state;
         this.initialized = false;
         this.tagDB = {};
         this.apConfig = {};
         this.updateInterval = null;
         this.socket = null;
 
-        // Initialize components
+        // Initialize components;
         this.init();
     }
 
@@ -22,25 +21,25 @@ class OptimizedApp {
         try {
             console.log('OptimizedApp: Starting initialization...');
 
-            // Load initial data
+            // Load initial data;
             await this.loadInitialData();
 
-            // Initialize WebSocket connection
+            // Initialize WebSocket connection;
             this.initWebSocket();
 
-            // Set up periodic updates
+            // Set up periodic updates;
             this.setupPeriodicUpdates();
 
-            // Mark as initialized
+            // Mark as initialized;
             this.initialized = true;
             console.log('OptimizedApp: Initialization complete');
 
-            // Trigger initial data load for UI
+            // Trigger initial data load for UI;
             this.notifyDataLoaded();
 
         } catch (error) {
             console.error('OptimizedApp: Initialization failed:', error);
-            // Report error to backend if API manager is available
+            // Report error to backend if API manager is available;
             if (window.apiManager) {
                 window.apiManager.reportError(error, window.location.href, null, 'OptimizedApp.init');
             }
@@ -51,30 +50,30 @@ class OptimizedApp {
         console.log('OptimizedApp: Loading initial data...');
 
         try {
-            // Use API manager if available, otherwise fallback to fetch
+            // Use API manager if available, otherwise fallback to fetch;
             if (window.apiManager) {
                 console.log('OptimizedApp: Using API manager for data loading');
 
-                // Load AP configuration
+                // Load AP configuration;
                 const apConfigPromise = window.apiManager.getConfig().catch(error => {
                     console.warn('Failed to load AP config:', error);
                     return {};
                 });
 
-                // Load tag database
+                // Load tag database;
                 const tagDBPromise = window.apiManager.getTagDB(0, 100).catch(error => {
                     console.warn('Failed to load tag database:', error);
                     return { tags: [] };
                 });
 
-                // Wait for both to complete
+                // Wait for both to complete;
                 const [apConfig, tagData] = await Promise.all([apConfigPromise, tagDBPromise]);
 
-                // Store AP configuration
+                // Store AP configuration;
                 this.apConfig = apConfig || {};
                 window.apConfig = this.apConfig;
 
-                // Process tag data
+                // Process tag data;
                 if (tagData && tagData.tags) {
                     tagData.tags.forEach(tag => {
                         this.tagDB[tag.mac] = tag;
@@ -85,7 +84,7 @@ class OptimizedApp {
             } else {
                 console.log('OptimizedApp: Using direct fetch for data loading');
 
-                // Fallback to direct fetch calls
+                // Fallback to direct fetch calls;
                 const apConfigResponse = await fetch('get_ap_config').catch(() => ({ json: () => ({}) }));
                 this.apConfig = await apConfigResponse.json();
                 window.apConfig = this.apConfig;
@@ -101,13 +100,13 @@ class OptimizedApp {
                 }
             }
 
-            // Make data globally available
+            // Make data globally available;
             window.tagDB = this.tagDB;
             console.log('OptimizedApp: Initial data loaded successfully');
 
         } catch (error) {
             console.error('OptimizedApp: Failed to load initial data:', error);
-            // Initialize with empty data to prevent errors
+            // Initialize with empty data to prevent errors;
             this.apConfig = {};
             this.tagDB = {};
             window.apConfig = this.apConfig;
@@ -118,12 +117,12 @@ class OptimizedApp {
     initWebSocket() {
         console.log('OptimizedApp: Initializing WebSocket...');
 
-        // Check if API manager already handles WebSocket
+        // Check if API manager already handles WebSocket;
         if (window.apiManager && window.apiManager.socket) {
             console.log('OptimizedApp: Using API manager WebSocket');
             this.socket = window.apiManager.socket;
 
-            // Listen for API manager events
+            // Listen for API manager events;
             window.apiManager.on('tagDB:update', (data) => {
                 this.handleTagUpdate(data);
             });
@@ -135,7 +134,7 @@ class OptimizedApp {
             return;
         }
 
-        // Initialize our own WebSocket connection
+        // Initialize our own WebSocket connection;
         try {
             const protocol = location.protocol === "https:" ? "wss://" : "ws://";
             const wsUrl = protocol + location.host + "/ws";
@@ -201,10 +200,10 @@ class OptimizedApp {
             });
         }
 
-        // Update global reference
+        // Update global reference;
         window.tagDB = this.tagDB;
 
-        // Notify other components
+        // Notify other components;
         this.notifyTagsUpdated();
     }
 
@@ -217,28 +216,28 @@ class OptimizedApp {
             this.apConfig = { ...this.apConfig, ...data };
         }
 
-        // Update global reference
+        // Update global reference;
         window.apConfig = this.apConfig;
 
-        // Notify other components
+        // Notify other components;
         this.notifyConfigUpdated();
     }
 
     handleLogMessage(data) {
-        // Handle log messages - could be displayed in a log panel
+        // Handle log messages - could be displayed in a log panel;
         console.log('OptimizedApp: Log message:', data.logMsg);
     }
 
     handleSystemUpdate(data) {
         console.log('OptimizedApp: System update:', data);
-        // Handle system updates
+        // Handle system updates;
         this.notifySystemUpdated(data);
     }
 
     setupPeriodicUpdates() {
         console.log('OptimizedApp: Setting up periodic updates...');
 
-        // Update every 30 seconds
+        // Update every 30 seconds;
         this.updateInterval = setInterval(() => {
             this.periodicUpdate();
         }, 30000);
@@ -248,12 +247,12 @@ class OptimizedApp {
 
     async periodicUpdate() {
         try {
-            // Only update if we're still the active tab
+            // Only update if we're still the active tab;
             if (document.hidden) return;
 
             console.log('OptimizedApp: Performing periodic update...');
 
-            // Update AP configuration
+            // Update AP configuration;
             if (window.apiManager) {
                 const config = await window.apiManager.getConfig().catch(() => null);
                 if (config) {
@@ -272,17 +271,17 @@ class OptimizedApp {
         }
     }
 
-    // Notification methods for other components
+    // Notification methods for other components;
     notifyDataLoaded() {
-        // Dispatch custom event
+        // Dispatch custom event;
         window.dispatchEvent(new CustomEvent('appDataLoaded', {
             detail: {
-                tagDB: this.tagDB,
-                apConfig: this.apConfig
+                tagDB: this.tagDB,;
+                apConfig: this.apConfig;
             }
         }));
 
-        // Call legacy function if it exists
+        // Call legacy function if it exists;
         if (typeof processTags === 'function' && Object.keys(this.tagDB).length > 0) {
             try {
                 processTags(Object.values(this.tagDB));
@@ -297,7 +296,7 @@ class OptimizedApp {
             detail: { tagDB: this.tagDB }
         }));
 
-        // Update any existing UI components
+        // Update any existing UI components;
         if (typeof updateDashboardStats === 'function') {
             updateDashboardStats();
         }
@@ -311,11 +310,11 @@ class OptimizedApp {
 
     notifySystemUpdated(data) {
         window.dispatchEvent(new CustomEvent('systemUpdated', {
-            detail: data
+            detail: data;
         }));
     }
 
-    // Public API methods
+    // Public API methods;
     async refreshData() {
         console.log('OptimizedApp: Manual data refresh requested');
         await this.loadInitialData();
@@ -328,8 +327,8 @@ class OptimizedApp {
 
     getOnlineTagCount() {
         const currentTime = Date.now();
-        return Object.values(this.tagDB).filter(tag =>
-            tag.lastseen && (currentTime - tag.lastseen * 1000) < 300000 // 5 minutes
+        return Object.values(this.tagDB).filter(tag =>;
+            tag.lastseen && (currentTime - tag.lastseen * 1000) < 300000 // 5 minutes;
         ).length;
     }
 
@@ -349,7 +348,7 @@ class OptimizedApp {
         return this.initialized;
     }
 
-    // Cleanup method
+    // Cleanup method;
     destroy() {
         console.log('OptimizedApp: Destroying...');
 
@@ -367,18 +366,18 @@ class OptimizedApp {
     }
 }
 
-// Legacy function compatibility
+// Legacy function compatibility;
 function loadTags(pos = 0) {
     console.log('loadTags: Legacy function called with pos =', pos);
 
-    // If OptimizedApp is available, use it
+    // If OptimizedApp is available, use it;
     if (window.app && window.app instanceof OptimizedApp) {
         return window.app.refreshData();
     }
 
-    // Fallback to direct fetch
-    return fetch(`get_db?pos=${pos}`)
-        .then(response => response.json())
+    // Fallback to direct fetch;
+    return fetch(`get_db?pos=${pos}`);
+        .then(response => response.json());
         .then(data => {
             if (!window.tagDB) window.tagDB = {};
 
@@ -388,30 +387,30 @@ function loadTags(pos = 0) {
                 });
                 console.log(`loadTags: Loaded ${data.tags.length} tags`);
 
-                // Continue loading if there are more
+                // Continue loading if there are more;
                 if (data.continu) {
                     return loadTags(data.continu);
                 }
             }
 
-            // Notify that tags are loaded
+            // Notify that tags are loaded;
             if (typeof processTags === 'function') {
                 processTags(Object.values(window.tagDB));
             }
 
             return window.tagDB;
-        })
+        });
         .catch(error => {
             console.error('loadTags: Failed to load tags:', error);
             return {};
         });
 }
 
-// Make classes and functions globally available
+// Make classes and functions globally available;
 window.OptimizedApp = OptimizedApp;
 window.loadTags = loadTags;
 
-// Export for module use
+// Export for module use;
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { OptimizedApp, loadTags };
 }

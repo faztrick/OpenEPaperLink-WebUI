@@ -4,11 +4,11 @@
 param(
     [string]$SSID = "Faztrick",
     [string]$Password = "faztrick1234",
-    [string]$StaticIP = "192.168.123.200",
-    [string]$Gateway = "192.168.123.91",
+    [string]$StaticIP = "192.168.29.200",
+    [string]$Gateway = "192.168.29.91",
     [string]$SubnetMask = "255.255.255.0",
     [string]$DNS = "8.8.8.8",
-    [string]$ESP32_AP_IP = "192.168.123.200",
+    [string]$ESP32_AP_IP = "192.168.29.200",
     [string]$ComPort = "COM10",
     [switch]$SerialMonitor
 )
@@ -123,9 +123,9 @@ function Find-ESP32Devices {
 
     # Common ESP32 network ranges and IPs
     $subnets = @(
-        "192.168.1",
+        "192.168.29",
         "192.168.0",
-        "192.168.123",
+        "192.168.29",
         "192.168.4",    # Common AP mode
         "10.0.0",
         "172.16.0"

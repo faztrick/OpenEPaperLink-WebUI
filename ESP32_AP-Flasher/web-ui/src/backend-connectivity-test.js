@@ -1,82 +1,72 @@
-/**
- * ESP32 Backend-Frontend Connectivity Checker
- * Validates all API endpoints between wwwroot frontend and C++ backend
- */
-
+/**;
+ * ESP32 Backend-Frontend Connectivity Checker;
+ * Validates all API endpoints between wwwroot frontend and C++ backend;
+ */;
 class BackendConnectivityChecker {
     constructor() {
         this.results = {};
         this.baseURL = window.location.origin;
-        this.testTimeout = 5000; // 5 second timeout per test
+        this.testTimeout = 5000; // 5 second timeout per test;
     }
 
-    // Expected endpoints from API manager
+    // Expected endpoints from API manager;
     getExpectedEndpoints() {
         return {
-            // System endpoints
-            'get_ap_config': { method: 'GET', critical: true },
-            'sysinfo': { method: 'GET', critical: true },
-            'sysinfo.json': { method: 'GET', critical: true },
-            'version.txt': { method: 'GET', critical: false },
-            'system_info': { method: 'GET', critical: false },
-            'restart_system': { method: 'POST', critical: false },
-            'get_function_status': { method: 'GET', critical: false },
-
-            // Tag management endpoints
-            'get_db': { method: 'GET', critical: true },
-            'tag_cmd': { method: 'POST', critical: true },
-            'save_cfg': { method: 'POST', critical: true },
-            'tag_status': { method: 'GET', critical: false },
-            'led_flash': { method: 'GET', critical: true },
-
-            // WiFi and network endpoints
-            'get_wifi_config': { method: 'GET', critical: true },
-            'save_wifi_config': { method: 'POST', critical: true },
-            'get_ssid_list': { method: 'GET', critical: true },
-            'wifi_scan': { method: 'GET', critical: false },
-            'network_info': { method: 'GET', critical: false },
-
-            // Configuration endpoints
-            'save_apcfg': { method: 'POST', critical: true },
-            'set_var': { method: 'POST', critical: true },
-            'set_vars': { method: 'POST', critical: true },
-            'setup': { method: 'GET', critical: false },
-
-            // File management endpoints
-            'getdata': { method: 'GET', critical: false },
-            'imgupload': { method: 'POST', critical: false },
-            'jsonupload': { method: 'POST', critical: false },
-            'littlefs_put': { method: 'POST', critical: false },
-            'check_file': { method: 'GET', critical: false },
-
-            // System control endpoints
-            'reboot': { method: 'POST', critical: false },
-            'rollback': { method: 'POST', critical: false },
-            'update_actions': { method: 'POST', critical: false },
-            'update_ota': { method: 'POST', critical: false },
-
-            // Database operations
-            'backup_db': { method: 'GET', critical: false },
-            'restore_db': { method: 'POST', critical: false },
-
-            // API endpoints
-            'api/features': { method: 'GET', critical: false },
-            'api/error_report': { method: 'POST', critical: false },
-            'api/modules': { method: 'GET', critical: false },
-
-            // Content generation endpoints
-            'start_content_generation': { method: 'POST', critical: false },
-            'stop_content_generation': { method: 'POST', critical: false },
-            'pause_content_generation': { method: 'POST', critical: false },
-
-            // Hardware feature endpoints
-            'led_control': { method: 'POST', critical: false },
-            'ble_status': { method: 'GET', critical: false },
+            // System endpoints;
+            'get_ap_config': { method: 'GET', critical: true },;
+            'sysinfo': { method: 'GET', critical: true },;
+            'sysinfo.json': { method: 'GET', critical: true },;
+            'version.txt': { method: 'GET', critical: false },;
+            'system_info': { method: 'GET', critical: false },;
+            'restart_system': { method: 'POST', critical: false },;
+            'get_function_status': { method: 'GET', critical: false },;
+            // Tag management endpoints;
+            'get_db': { method: 'GET', critical: true },;
+            'tag_cmd': { method: 'POST', critical: true },;
+            'save_cfg': { method: 'POST', critical: true },;
+            'tag_status': { method: 'GET', critical: false },;
+            'led_flash': { method: 'GET', critical: true },;
+            // WiFi and network endpoints;
+            'get_wifi_config': { method: 'GET', critical: true },;
+            'save_wifi_config': { method: 'POST', critical: true },;
+            'get_ssid_list': { method: 'GET', critical: true },;
+            'wifi_scan': { method: 'GET', critical: false },;
+            'network_info': { method: 'GET', critical: false },;
+            // Configuration endpoints;
+            'save_apcfg': { method: 'POST', critical: true },;
+            'set_var': { method: 'POST', critical: true },;
+            'set_vars': { method: 'POST', critical: true },;
+            'setup': { method: 'GET', critical: false },;
+            // File management endpoints;
+            'getdata': { method: 'GET', critical: false },;
+            'imgupload': { method: 'POST', critical: false },;
+            'jsonupload': { method: 'POST', critical: false },;
+            'littlefs_put': { method: 'POST', critical: false },;
+            'check_file': { method: 'GET', critical: false },;
+            // System control endpoints;
+            'reboot': { method: 'POST', critical: false },;
+            'rollback': { method: 'POST', critical: false },;
+            'update_actions': { method: 'POST', critical: false },;
+            'update_ota': { method: 'POST', critical: false },;
+            // Database operations;
+            'backup_db': { method: 'GET', critical: false },;
+            'restore_db': { method: 'POST', critical: false },;
+            // API endpoints;
+            'api/features': { method: 'GET', critical: false },;
+            'api/error_report': { method: 'POST', critical: false },;
+            'api/modules': { method: 'GET', critical: false },;
+            // Content generation endpoints;
+            'start_content_generation': { method: 'POST', critical: false },;
+            'stop_content_generation': { method: 'POST', critical: false },;
+            'pause_content_generation': { method: 'POST', critical: false },;
+            // Hardware feature endpoints;
+            'led_control': { method: 'POST', critical: false },;
+            'ble_status': { method: 'GET', critical: false },;
             'ble_control': { method: 'POST', critical: false }
         };
     }
 
-    // Test a single endpoint
+    // Test a single endpoint;
     async testEndpoint(endpoint, config) {
         console.log(`🔍 Testing ${endpoint} (${config.method})...`);
 
@@ -85,23 +75,23 @@ class BackendConnectivityChecker {
             const timeoutId = setTimeout(() => controller.abort(), this.testTimeout);
 
             const options = {
-                method: config.method,
-                signal: controller.signal,
+                method: config.method,;
+                signal: controller.signal,;
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json';
                 }
             };
 
-            // Add minimal body for POST requests to avoid 400 errors
+            // Add minimal body for POST requests to avoid 400 errors;
             if (config.method === 'POST') {
                 if (endpoint.includes('json') || endpoint.includes('api/')) {
                     options.body = JSON.stringify({ test: true });
                 } else {
-                    // For form-based endpoints, use FormData
+                    // For form-based endpoints, use FormData;
                     const formData = new FormData();
                     formData.append('test', 'true');
                     options.body = formData;
-                    delete options.headers['Content-Type']; // Let browser set boundary
+                    delete options.headers['Content-Type']; // Let browser set boundary;
                 }
             }
 
@@ -109,17 +99,17 @@ class BackendConnectivityChecker {
             clearTimeout(timeoutId);
 
             const result = {
-                endpoint,
-                method: config.method,
-                status: response.status,
-                statusText: response.statusText,
-                success: response.ok || response.status === 400, // 400 might be expected for test data
-                critical: config.critical,
-                responseTime: Date.now(),
-                headers: Object.fromEntries(response.headers.entries())
+                endpoint,;
+                method: config.method,;
+                status: response.status,;
+                statusText: response.statusText,;
+                success: response.ok || response.status === 400, // 400 might be expected for test data;
+                critical: config.critical,;
+                responseTime: Date.now(),;
+                headers: Object.fromEntries(response.headers.entries());
             };
 
-            // Try to read response content
+            // Try to read response content;
             try {
                 const contentType = response.headers.get('content-type');
                 if (contentType && contentType.includes('application/json')) {
@@ -136,17 +126,17 @@ class BackendConnectivityChecker {
 
         } catch (error) {
             return {
-                endpoint,
-                method: config.method,
-                success: false,
-                critical: config.critical,
-                error: error.message,
-                errorType: error.name
+                endpoint,;
+                method: config.method,;
+                success: false,;
+                critical: config.critical,;
+                error: error.message,;
+                errorType: error.name;
             };
         }
     }
 
-    // Test WebSocket connection
+    // Test WebSocket connection;
     async testWebSocket() {
         return new Promise((resolve) => {
             console.log('🔍 Testing WebSocket connection...');
@@ -158,11 +148,11 @@ class BackendConnectivityChecker {
             const timeout = setTimeout(() => {
                 ws.close();
                 resolve({
-                    endpoint: '/ws',
-                    method: 'WebSocket',
-                    success: false,
-                    error: 'Connection timeout',
-                    critical: true
+                    endpoint: '/ws',;
+                    method: 'WebSocket',;
+                    success: false,;
+                    error: 'Connection timeout',;
+                    critical: true;
                 });
             }, 5000);
 
@@ -170,37 +160,37 @@ class BackendConnectivityChecker {
                 clearTimeout(timeout);
                 ws.close();
                 resolve({
-                    endpoint: '/ws',
-                    method: 'WebSocket',
-                    success: true,
-                    critical: true,
-                    message: 'WebSocket connection successful'
+                    endpoint: '/ws',;
+                    method: 'WebSocket',;
+                    success: true,;
+                    critical: true,;
+                    message: 'WebSocket connection successful';
                 });
             };
 
             ws.onerror = (error) => {
                 clearTimeout(timeout);
                 resolve({
-                    endpoint: '/ws',
-                    method: 'WebSocket',
-                    success: false,
-                    critical: true,
-                    error: 'WebSocket connection failed',
-                    details: error
+                    endpoint: '/ws',;
+                    method: 'WebSocket',;
+                    success: false,;
+                    critical: true,;
+                    error: 'WebSocket connection failed',;
+                    details: error;
                 });
             };
         });
     }
 
-    // Test static file serving
+    // Test static file serving;
     async testStaticFiles() {
-        const staticFiles = [
-            'index.html',
-            'settings.html',
-            'setup.html',
-            'merged-styles.css',
-            'api-manager.js',
-            'shared-utils.js'
+        const staticFiles = [;
+            'index.html',;
+            'settings.html',;
+            'setup.html',;
+            'merged-styles.css',;
+            'api-manager.js',;
+            'shared-utils.js';
         ];
 
         const results = [];
@@ -208,24 +198,24 @@ class BackendConnectivityChecker {
             try {
                 const response = await fetch(`${this.baseURL}/${file}`);
                 results.push({
-                    file,
-                    success: response.ok,
-                    status: response.status,
-                    size: response.headers.get('content-length'),
-                    contentType: response.headers.get('content-type')
+                    file,;
+                    success: response.ok,;
+                    status: response.status,;
+                    size: response.headers.get('content-length'),;
+                    contentType: response.headers.get('content-type');
                 });
             } catch (error) {
                 results.push({
-                    file,
-                    success: false,
-                    error: error.message
+                    file,;
+                    success: false,;
+                    error: error.message;
                 });
             }
         }
         return results;
     }
 
-    // Run comprehensive connectivity test
+    // Run comprehensive connectivity test;
     async runFullTest() {
         console.log('🚀 Starting comprehensive backend-frontend connectivity test...');
         console.log('=' * 60);
@@ -233,13 +223,13 @@ class BackendConnectivityChecker {
         const startTime = Date.now();
         const endpoints = this.getExpectedEndpoints();
 
-        // Test all endpoints
+        // Test all endpoints;
         const endpointTests = [];
         for (const [endpoint, config] of Object.entries(endpoints)) {
             endpointTests.push(this.testEndpoint(endpoint, config));
         }
 
-        // Run tests in batches to avoid overwhelming the server
+        // Run tests in batches to avoid overwhelming the server;
         const batchSize = 5;
         const endpointResults = [];
 
@@ -248,19 +238,19 @@ class BackendConnectivityChecker {
             const batchResults = await Promise.all(batch);
             endpointResults.push(...batchResults);
 
-            // Small delay between batches
+            // Small delay between batches;
             if (i + batchSize < endpointTests.length) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
-        // Test WebSocket
+        // Test WebSocket;
         const wsResult = await this.testWebSocket();
 
-        // Test static files
+        // Test static files;
         const staticResults = await this.testStaticFiles();
 
-        // Compile results
+        // Compile results;
         const totalTime = Date.now() - startTime;
         const successful = endpointResults.filter(r => r.success).length;
         const critical = endpointResults.filter(r => r.critical).length;
@@ -268,32 +258,32 @@ class BackendConnectivityChecker {
 
         this.results = {
             summary: {
-                totalEndpoints: endpointResults.length,
-                successful,
-                failed: endpointResults.length - successful,
-                criticalEndpoints: critical,
-                criticalSuccessful: criticalSuccess,
-                websocketWorking: wsResult.success,
-                testDuration: totalTime
-            },
-            endpoints: endpointResults,
-            websocket: wsResult,
-            staticFiles: staticResults,
-            timestamp: new Date().toISOString()
+                totalEndpoints: endpointResults.length,;
+                successful,;
+                failed: endpointResults.length - successful,;
+                criticalEndpoints: critical,;
+                criticalSuccessful: criticalSuccess,;
+                websocketWorking: wsResult.success,;
+                testDuration: totalTime;
+            },;
+            endpoints: endpointResults,;
+            websocket: wsResult,;
+            staticFiles: staticResults,;
+            timestamp: new Date().toISOString();
         };
 
         this.displayResults();
         return this.results;
     }
 
-    // Display results in a formatted way
+    // Display results in a formatted way;
     displayResults() {
         const { summary, endpoints, websocket, staticFiles } = this.results;
 
         console.log('\n📊 CONNECTIVITY TEST RESULTS');
         console.log('=' * 50);
 
-        // Summary
+        // Summary;
         console.log(`📈 Summary:`);
         console.log(`   Total Endpoints: ${summary.totalEndpoints}`);
         console.log(`   ✅ Successful: ${summary.successful}`);
@@ -302,11 +292,11 @@ class BackendConnectivityChecker {
         console.log(`   🌐 WebSocket: ${websocket.success ? '✅ Working' : '❌ Failed'}`);
         console.log(`   ⏱️ Test Duration: ${summary.testDuration}ms`);
 
-        // Overall health score
-        const healthScore = Math.round(
-            (summary.successful / summary.totalEndpoints +
-                (websocket.success ? 1 : 0) +
-                (summary.criticalSuccessful / summary.criticalEndpoints)) / 3 * 100
+        // Overall health score;
+        const healthScore = Math.round(;
+            (summary.successful / summary.totalEndpoints +;
+                (websocket.success ? 1 : 0) +;
+                (summary.criticalSuccessful / summary.criticalEndpoints)) / 3 * 100;
         );
 
         let healthEmoji = '🔴';
@@ -316,7 +306,7 @@ class BackendConnectivityChecker {
 
         console.log(`\n${healthEmoji} Overall Health Score: ${healthScore}%`);
 
-        // Failed endpoints
+        // Failed endpoints;
         const failed = endpoints.filter(r => !r.success);
         if (failed.length > 0) {
             console.log('\n❌ Failed Endpoints:');
@@ -326,7 +316,7 @@ class BackendConnectivityChecker {
             });
         }
 
-        // Critical endpoint status
+        // Critical endpoint status;
         const criticalEndpoints = endpoints.filter(r => r.critical);
         console.log('\n🔥 Critical Endpoints Status:');
         criticalEndpoints.forEach(result => {
@@ -334,10 +324,10 @@ class BackendConnectivityChecker {
             console.log(`   ${status} ${result.endpoint} (${result.method})`);
         });
 
-        // WebSocket details
+        // WebSocket details;
         console.log(`\n🌐 WebSocket Status: ${websocket.success ? '✅' : '❌'} ${websocket.message || websocket.error || ''}`);
 
-        // Static files
+        // Static files;
         const staticFailed = staticFiles.filter(f => !f.success);
         if (staticFailed.length > 0) {
             console.log('\n📁 Static File Issues:');
@@ -346,11 +336,11 @@ class BackendConnectivityChecker {
             });
         }
 
-        // Recommendations
+        // Recommendations;
         this.displayRecommendations();
     }
 
-    // Display recommendations based on test results
+    // Display recommendations based on test results;
     displayRecommendations() {
         const { summary, endpoints, websocket } = this.results;
 
@@ -377,13 +367,13 @@ class BackendConnectivityChecker {
         console.log('   🔧 Verify ESP32 is running and accessible on the network');
     }
 
-    // Export results for analysis
+    // Export results for analysis;
     exportResults() {
         const resultsString = JSON.stringify(this.results, null, 2);
         console.log('\n📋 Raw Results (copy for analysis):');
         console.log(resultsString);
 
-        // Try to download as file if possible
+        // Try to download as file if possible;
         try {
             const blob = new Blob([resultsString], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -403,14 +393,14 @@ class BackendConnectivityChecker {
     }
 }
 
-// Auto-run test when script loads
+// Auto-run test when script loads;
 const connectivityChecker = new BackendConnectivityChecker();
 
-// Expose globally for manual use
+// Expose globally for manual use;
 window.testBackendConnectivity = () => connectivityChecker.runFullTest();
 window.exportConnectivityResults = () => connectivityChecker.exportResults();
 
-// Auto-run after page loads
+// Auto-run after page loads;
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => connectivityChecker.runFullTest(), 2000);

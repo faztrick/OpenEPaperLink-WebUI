@@ -155,11 +155,11 @@ function Test-DefaultWiFiConnection {
         # Use wifi_serial_commander to test default connection
         if (Test-Path "wifi_serial_commander.ps1") {
             Write-Host "📡 Attempting WiFi connection with default credentials..." -ForegroundColor Yellow
-            $wifiResult = .\wifi_serial_commander.ps1 -ComPort $ComPort -SSID "Faztrick" -Password "faztrick1234" -StaticIP "192.164.123.200" -Gateway "192.164.123.91" 2>&1
+            $wifiResult = .\wifi_serial_commander.ps1 -ComPort $ComPort -SSID "Faztrick" -Password "faztrick1234" -StaticIP "192.164.29.200" -Gateway "192.164.29.91" 2>&1
 
             if ($wifiResult -match "✅.*connected" -or $wifiResult -match "HTTP.*successful") {
                 Write-Host "✅ WiFi connection successful" -ForegroundColor Green
-                Write-Host "🌐 Web interface should be available at: http://192.164.123.200" -ForegroundColor Cyan
+                Write-Host "🌐 Web interface should be available at: http://192.164.29.200" -ForegroundColor Cyan
                 return $true
             }
             else {

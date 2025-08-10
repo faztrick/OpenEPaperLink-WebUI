@@ -1,40 +1,40 @@
-// $ is already defined in constants.js
+// $ is already defined in constants.js;
 // const $ = document.querySelector.bind(document);
 
-// Check if $ function is available, define it if not
+// Check if $ function is available, define it if not;
 if (typeof $ === 'undefined') {
     console.warn('$ function not available! Defining fallback.');
-    // Fallback definition
+    // Fallback definition;
     window.$ = document.querySelector.bind(document);
 }
 
-// Load shared utilities (script should be included before this file)
-// The shared-utils.js file provides: formatSecurity, formatSignalStrength, pad, showStatus
+// Load shared utilities (script should be included before this file);
+// The shared-utils.js file provides: formatSecurity, formatSignalStrength, pad, showStatus;
 if (typeof formatSecurity === 'undefined' || typeof formatSignalStrength === 'undefined') {
     console.warn('Shared utilities not loaded! Defining fallback functions.');
 
-    // Fallback utility functions
+    // Fallback utility functions;
     window.formatSecurity = function (encType) {
         switch (encType) {
-            case 0: return "🔓"; // Open
-            case 1: return "🔒"; // WEP
-            case 2: return "🔒"; // WPA PSK
-            case 3: return "🔒"; // WPA2 PSK
-            case 4: return "🔒"; // WPA/WPA2 PSK
-            case 5: return "🔒"; // WPA2 Enterprise
-            case 6: return "🔒"; // WPA3 PSK
-            case 7: return "🔒"; // WPA2/WPA3 PSK
-            case 8: return "🔒"; // WAPI PSK
-            default: return "❓"; // Unknown
+            case 0: return "🔓"; // Open;
+            case 1: return "🔒"; // WEP;
+            case 2: return "🔒"; // WPA PSK;
+            case 3: return "🔒"; // WPA2 PSK;
+            case 4: return "🔒"; // WPA/WPA2 PSK;
+            case 5: return "🔒"; // WPA2 Enterprise;
+            case 6: return "🔒"; // WPA3 PSK;
+            case 7: return "🔒"; // WPA2/WPA3 PSK;
+            case 8: return "🔒"; // WAPI PSK;
+            default: return "❓"; // Unknown;
         }
     };
 
     window.formatSignalStrength = function (rssi) {
-        if (rssi > -50) return "📶"; // Excellent
-        if (rssi > -60) return "📶"; // Good
-        if (rssi > -70) return "📶"; // Fair
-        if (rssi > -80) return "📶"; // Poor
-        return "📶"; // Very poor
+        if (rssi > -50) return "📶"; // Excellent;
+        if (rssi > -60) return "📶"; // Good;
+        if (rssi > -70) return "📶"; // Fair;
+        if (rssi > -80) return "📶"; // Poor;
+        return "📶"; // Very poor;
     };
 
     window.pad = function (str, len) {
@@ -59,26 +59,26 @@ if (typeof formatSecurity === 'undefined' || typeof formatSignalStrength === 'un
         element.style.border = '1px solid';
 
         switch (type) {
-            case 'success':
+            case 'success':;
                 element.style.backgroundColor = '#d4edda';
                 element.style.color = '#155724';
                 element.style.borderColor = '#c3e6cb';
                 element.innerHTML = `✅ ${message}`;
                 break;
-            case 'error':
+            case 'error':;
                 element.style.backgroundColor = '#f8d7da';
                 element.style.color = '#721c24';
                 element.style.borderColor = '#f5c6cb';
                 element.innerHTML = `❌ ${message}`;
                 break;
-            case 'warning':
+            case 'warning':;
                 element.style.backgroundColor = '#fff3cd';
                 element.style.color = '#856404';
                 element.style.borderColor = '#ffeaa7';
                 element.innerHTML = `⚠️ ${message}`;
                 break;
-            case 'info':
-            default:
+            case 'info':;
+            default:;
                 element.style.backgroundColor = '#d1ecf1';
                 element.style.color = '#0c5460';
                 element.style.borderColor = '#bee5eb';
@@ -103,7 +103,7 @@ if (typeof formatSecurity === 'undefined' || typeof formatSignalStrength === 'un
 }
 
 window.addEventListener("load", function () {
-    // Ensure DOM is fully loaded and all elements exist
+    // Ensure DOM is fully loaded and all elements exist;
     const requiredElements = ['ssid', 'pw', 'ip', 'mask', 'gw', 'dns', 'mac', 'listssid', 'connect'];
     const missingElements = [];
 
@@ -120,11 +120,11 @@ window.addEventListener("load", function () {
         return;
     }
 
-    // Load WiFi configuration
-    fetch("get_wifi_config")
-        .then(response => response.json())
+    // Load WiFi configuration;
+    fetch("get_wifi_config");
+        .then(response => response.json());
         .then(data => {
-            // Set form values with null checks
+            // Set form values with null checks;
             const ssidElement = $('#ssid');
             const pwElement = $('#pw');
             const ipElement = $('#ip');
@@ -141,7 +141,7 @@ window.addEventListener("load", function () {
             if (dnsElement) dnsElement.value = data.dns || "";
             if (macElement) macElement.innerHTML = data.mac || "";
 
-            // Show WiFi status
+            // Show WiFi status;
             const wifiStatus = document.getElementById('wifi_status');
             const wifiStatusText = document.getElementById('wifi_status_text');
             if (wifiStatus && wifiStatusText) {
@@ -154,13 +154,13 @@ window.addEventListener("load", function () {
                     wifiStatusText.style.color = '#ff9800';
                 }
             }
-        })
+        });
         .catch(error => {
             console.error('Failed to load WiFi config:', error);
             showStatus('scan_status', 'Failed to load current WiFi configuration', 'error');
         });
 
-    // Set up event listeners
+    // Set up event listeners;
     const listSSIDButton = $('#listssid');
     if (listSSIDButton) {
         listSSIDButton.addEventListener('click', () => {
@@ -196,12 +196,12 @@ window.addEventListener("load", function () {
             }
 
             const data = {
-                ssid: ssid,
-                pw: pwElement ? pwElement.value : '',
-                ip: ipElement ? ipElement.value : '',
-                mask: maskElement ? maskElement.value : '',
-                gw: gwElement ? gwElement.value : '',
-                dns: dnsElement ? dnsElement.value : ''
+                ssid: ssid,;
+                pw: pwElement ? pwElement.value : '',;
+                ip: ipElement ? ipElement.value : '',;
+                mask: maskElement ? maskElement.value : '',;
+                gw: gwElement ? gwElement.value : '',;
+                dns: dnsElement ? dnsElement.value : '';
             };
 
             const button = $('#connect');
@@ -212,12 +212,12 @@ window.addEventListener("load", function () {
             showStatus('save_status', 'Saving WiFi configuration...', 'info');
 
             fetch('save_wifi_config', {
-                method: 'POST',
+                method: 'POST',;
                 headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
+                    'Content-Type': 'application/json';
+                },;
+                body: JSON.stringify(data);
+            });
                 .then(response => {
                     if (response.ok) {
                         console.log('WiFi settings saved successfully');
@@ -232,7 +232,7 @@ window.addEventListener("load", function () {
                     } else {
                         throw new Error('Server error while saving WiFi settings');
                     }
-                })
+                });
                 .catch(error => {
                     console.error('Error saving WiFi settings:', error);
                     showStatus('save_status', 'Failed to save WiFi settings. Please try again.', 'error');
@@ -245,12 +245,11 @@ window.addEventListener("load", function () {
     }
 });
 
-// Removed duplicate showStatus, pad, formatSignalStrength, formatSecurity functions - now using shared-utils.js
-
+// Removed duplicate showStatus, pad, formatSignalStrength, formatSecurity functions - now using shared-utils.js;
 function getSsidList() {
     console.log('Starting optimized WiFi scan...');
 
-    // Show scanning status immediately
+    // Show scanning status immediately;
     showStatus('scan_status', 'Scanning for WiFi networks...', 'info');
     const button = $('#listssid');
     if (button) {
@@ -259,24 +258,24 @@ function getSsidList() {
         document.body.style.cursor = 'wait';
     }
 
-    // Use the correct endpoint that matches the C++ backend
+    // Use the correct endpoint that matches the C++ backend;
     fetch("get_ssid_list", {
-        method: 'GET',
+        method: 'GET',;
         headers: {
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache';
         }
-    })
+    });
         .then(response => {
             console.log('Received response:', response.status, response.statusText);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             return response.json();
-        })
+        });
         .then(data => {
             console.log('WiFi scan response:', data);
 
-            // Handle scan still running - check for both scanstatus and scanInProgress fields
+            // Handle scan still running - check for both scanstatus and scanInProgress fields;
             const isScanning = (data.scanstatus && data.scanstatus < 0) || data.scanInProgress;
             if (isScanning) {
                 console.log('Scan in progress, retrying in 3 seconds...');
@@ -285,7 +284,7 @@ function getSsidList() {
                 return;
             }
 
-            // Check if networks array exists and has content
+            // Check if networks array exists and has content;
             if (!data.networks || data.networks.length === 0) {
                 console.log('No networks found, trying fallback scan...');
                 showStatus('scan_status', 'No networks found. Trying alternative scan...', 'info');
@@ -293,13 +292,13 @@ function getSsidList() {
                 return;
             }
 
-            // Create and populate select element
+            // Create and populate select element;
             const select = document.createElement('select');
             select.id = 'ssid';
             select.className = 'wifi-ssid-select';
             console.log('Created optimized select element with id:', select.id);
 
-            // Networks should be sorted by signal strength
+            // Networks should be sorted by signal strength;
             console.log('Processing', data.networks.length, 'networks');
 
             data.networks.forEach((network, index) => {
@@ -307,10 +306,10 @@ function getSsidList() {
                     const option = document.createElement('option');
                     option.value = network.ssid;
 
-                    // Enhanced formatting with better signal and security info
+                    // Enhanced formatting with better signal and security info;
                     const rssiText = formatSignalStrength(network.rssi);
                     const ssidText = pad(network.ssid, 28);
-                    // Handle both 'enc' and 'encryption' field names for backward compatibility
+                    // Handle both 'enc' and 'encryption' field names for backward compatibility;
                     const encValue = network.encryption !== undefined ? network.encryption : network.enc;
                     const securityText = formatSecurity(encValue);
                     const channelText = network.channel ? `Ch${network.channel}` : '';
@@ -320,7 +319,7 @@ function getSsidList() {
 
                     select.appendChild(option);
 
-                    if (index < 5) { // Log first 5 for debugging
+                    if (index < 5) { // Log first 5 for debugging;
                         console.log('Added network:', network);
                     }
                 }
@@ -333,7 +332,7 @@ function getSsidList() {
                 return;
             }
 
-            // Replace existing SSID input with dropdown
+            // Replace existing SSID input with dropdown;
             let ssidval = $('#ssid') ? $('#ssid').value : '';
             console.log('Current SSID value before replacement:', ssidval);
             const currentSSIDInput = $('#ssid');
@@ -341,11 +340,11 @@ function getSsidList() {
             if (currentSSIDInput) {
                 currentSSIDInput.replaceWith(select);
 
-                // Set the selected value after DOM update
+                // Set the selected value after DOM update;
                 setTimeout(() => {
                     const newSelect = $('#ssid');
                     if (newSelect && ssidval) {
-                        // Try to find matching SSID
+                        // Try to find matching SSID;
                         for (let i = 0; i < newSelect.options.length; i++) {
                             if (newSelect.options[i].value === ssidval) {
                                 newSelect.selectedIndex = i;
@@ -365,7 +364,7 @@ function getSsidList() {
             const successMsg = `Found ${data.networks.length} WiFi networks. Select one from the dropdown.`;
             showStatus('scan_status', successMsg, 'success');
             resetScanButton();
-        })
+        });
         .catch(error => {
             console.error('WiFi scan error:', error);
             showStatus('scan_status', 'Primary scan failed. Trying alternative method...', 'error');
@@ -377,12 +376,12 @@ function tryFallbackScan() {
     console.log('Trying fallback scan method...');
     setTimeout(() => {
         fetch("get_ssid_list", {
-            method: 'GET',
+            method: 'GET',;
             headers: {
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache';
             }
-        })
-            .then(response => response.json())
+        });
+            .then(response => response.json());
             .then(data => {
                 console.log('Fallback scan response:', data);
 
@@ -438,7 +437,7 @@ function tryFallbackScan() {
 
                 showStatus('scan_status', `Found ${data.networks.length} networks using alternative method.`, 'success');
                 resetScanButton();
-            })
+            });
             .catch(fallbackError => {
                 console.error('Fallback scan also failed:', fallbackError);
                 showStatus('scan_status', 'All scan methods failed. Please enter SSID manually.', 'error');
@@ -447,8 +446,7 @@ function tryFallbackScan() {
     }, 2000);
 }
 
-// Removed duplicate utility functions - now using shared-utils.js
-
+// Removed duplicate utility functions - now using shared-utils.js;
 function resetScanButton() {
     const button = $('#listssid');
     document.body.style.cursor = 'default';
@@ -458,18 +456,18 @@ function resetScanButton() {
     }
 }
 
-// Utility function to get security type text
+// Utility function to get security type text;
 function getSecurityType(encType) {
     const securityTypes = {
-        0: 'Open',
-        1: 'WEP',
-        2: 'WPA PSK',
-        3: 'WPA2 PSK',
-        4: 'WPA/WPA2 PSK',
-        5: 'WPA2 Enterprise',
-        6: 'WPA3 PSK',
-        7: 'WPA2/WPA3 PSK',
-        8: 'WAPI PSK'
+        0: 'Open',;
+        1: 'WEP',;
+        2: 'WPA PSK',;
+        3: 'WPA2 PSK',;
+        4: 'WPA/WPA2 PSK',;
+        5: 'WPA2 Enterprise',;
+        6: 'WPA3 PSK',;
+        7: 'WPA2/WPA3 PSK',;
+        8: 'WAPI PSK';
     };
 
     return securityTypes[encType] || 'Unknown';

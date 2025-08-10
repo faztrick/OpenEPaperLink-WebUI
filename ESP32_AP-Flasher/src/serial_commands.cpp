@@ -3,16 +3,32 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
+#include "serialap.h"  // Include for AP state checking
 #include "wifi_utils.h"
+
+// Define LOG macro
+#define LOG(format, ...) printf(format, ##__VA_ARGS__)
 
 // Define author/version information
 #ifndef BUILD_VERSION
-#define BUILD_VERSION "custom"
+#define BUILD_VERSION "Outdoor"
 #endif
 
 #ifndef BUILD_AUTHOR
 #define BUILD_AUTHOR "OpenEPaperLink"
 #endif
+
+// Constants for better maintainability and performance
+static const size_t INPUT_BUFFER_SIZE = 256;
+static const size_t MAX_INPUT_LENGTH = 200;
+static const unsigned long COMMAND_TIMEOUT_MS = 30000;
+static const unsigned long AP_CHECK_INTERVAL_MS = 250;
+static const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+static const unsigned long WIFI_RETRY_INTERVAL_MS = 500;
+static const int MAX_WIFI_ATTEMPTS = WIFI_CONNECT_TIMEOUT_MS / WIFI_RETRY_INTERVAL_MS;
+static const size_t SMALL_JSON_SIZE = 512;
+static const size_t MEDIUM_JSON_SIZE = 1024;
+static const size_t LARGE_JSON_SIZE = 2048;
 
 SerialCommandHandler& SerialCommandHandler::getInstance() {
     static SerialCommandHandler instance;
@@ -22,122 +38,163 @@ SerialCommandHandler& SerialCommandHandler::getInstance() {
 void SerialCommandHandler::initialize() {
     if (initialized) return;
 
-    inputBuffer.reserve(256);
+    inputBuffer.reserve(INPUT_BUFFER_SIZE);
     initialized = true;
 
-    // Set default WiFi credentials if none exist
-    setDefaultWiFiCredentials();
+    // Add a delay to ensure serial is ready
+    // delay(100);
 
-    Serial.println();
-    Serial.println("=== ESP32 Serial Command Interface ===");
-    Serial.println("Type 'help' for available commands");
-    Serial.println("Commands are case-insensitive");
-    Serial.println("=======================================");
+    // Set default WiFi credentials if none exist
+    // setDefaultWiFiCredentials();
+
+    // delay(50);
+    LOG("\n");
+    LOG("=== ESP32 Serial Command Interface ===\n");
+    LOG("Type 'CMD:' to activate command mode\n");
+    LOG("Commands are case-insensitive\n");
+    LOG("=======================================\n");
 }
 
 void SerialCommandHandler::setDefaultWiFiCredentials() {
     // Check if credentials already exist
-    String existingSSID = wifiUtils.getSSID();
-    if (existingSSID.length() > 0) {
-        Serial.println("📶 Existing WiFi credentials found: " + existingSSID);
+    WiFiConfig config = wifiUtils.loadConfig();
 
-        // Auto-connect to existing WiFi
+    if (config.ssid.length() > 0) {
+        LOG("📶 WiFi: %s (existing)\n", config.ssid.c_str());
+        LOG("🔑 Password: %s (existing)\n", config.password.length() > 0 ? "***configured***" : "not set");
+        LOG("🌐 Static IP: %s (existing)\n", config.ip.c_str());
+        LOG("🏠 Gateway: %s (existing)\n", config.gateway.c_str());
+        LOG("📡 Subnet: %s (existing)\n", config.mask.c_str());
+        LOG("🔍 DNS: %s (existing)\n", config.dns.c_str());
+        LOG("🏠 Hostname: %s (existing)\n", config.hostname.c_str());
+
+        // Auto-connect to existing WiFi if not connected
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("🔄 Auto-connecting to WiFi...");
+            LOG("🔄 Auto-connecting...\n");
             handleWiFiConnect("");
         }
         return;
     }
 
     // Set default credentials as requested
-    Serial.println("🔧 Setting default WiFi credentials...");
+    LOG("🔧 Setting default WiFi...\n");
 
-    wifiUtils.setSSID("Faztrick");
-    wifiUtils.setPassword("faztrick1234");
-    wifiUtils.setStaticIP("192.164.123.200");
-    wifiUtils.setGateway("192.164.123.91");
-    wifiUtils.setSubnetMask("255.255.255.0");
-    wifiUtils.setDNS("8.8.8.8");
-    wifiUtils.save();
+    // Update configuration with defaults
+    config.ssid = "Faztrick";
+    config.password = "faztrick1234";
+    config.ip = "192.168.29.200";      // Fixed: was 192.164.29.200
+    config.gateway = "192.168.29.91";  // Fixed: was 192.164.29.91
+    config.mask = "255.255.255.0";
+    config.dns = "8.8.8.8";
+    config.hasStaticIP = true;
 
-    Serial.println("✅ Default WiFi credentials set:");
-    Serial.println("   SSID: Faztrick");
-    Serial.println("   IP: 192.164.123.200");
-    Serial.println("   Gateway: 192.164.123.91");
+    wifiUtils.saveConfig(config);
+
+    LOG("✅ WiFi defaults set (Faztrick/192.168.29.200)\n");
 
     // Auto-connect to default WiFi
-    Serial.println("🔄 Auto-connecting to default WiFi...");
+    LOG("🔄 Auto-connecting to default WiFi...\n");
     handleWiFiConnect("");
 }
 void SerialCommandHandler::processSerialInput() {
     if (!initialized) return;
 
-    // Only process serial commands when AP task is not actively communicating
-    // Check if there's a command prefix or if we're in command mode
+    // Check if AP is in a critical state where we shouldn't interfere
+    extern struct APInfoS apInfo;
+    extern volatile ApSerialState gSerialTaskState;
+
     static bool commandMode = false;
     static unsigned long lastCommandTime = 0;
-    
+    static unsigned long lastApCheck = 0;
+    static String commandPrefix = "";
+
+    // Check AP state less frequently for better performance
+    unsigned long currentTime = millis();
+    if (currentTime - lastApCheck > AP_CHECK_INTERVAL_MS) {
+        lastApCheck = currentTime;
+        // If AP is actively communicating, be less aggressive about command processing
+        if (apInfo.state == AP_STATE_FLASHING || gSerialTaskState == SERIAL_STATE_STARTING) {
+            if (commandMode) {
+                LOG("\n=== Command Mode Paused (AP Active) ===\n");
+                commandMode = false;
+                inputBuffer.clear();
+                commandPrefix.clear();
+            }
+            return;
+        }
+    }
+
     while (Serial.available() > 0) {
         char c = Serial.read();
 
-        // Look for command prefix "CMD:" to enter command mode
-        if (!commandMode && inputBuffer.length() == 0 && c == 'C') {
-            inputBuffer += c;
-            continue;
-        }
-        
-        // Check for "CMD:" prefix
-        if (!commandMode && inputBuffer.length() > 0 && inputBuffer.length() < 4) {
-            inputBuffer += c;
-            if (inputBuffer == "CMD:") {
-                commandMode = true;
-                inputBuffer = "";
-                Serial.println("\n=== Command Mode Activated ===");
-                Serial.println("Type commands (wifi.status, help, etc.)");
-                Serial.print("CMD> ");
-                lastCommandTime = millis();
-                continue;
-            } else if (!String("CMD:").startsWith(inputBuffer)) {
-                // Not a command prefix, clear buffer and let AP task handle it
-                inputBuffer = "";
-                return;
-            }
-            continue;
-        }
-        
-        // Exit command mode after 30 seconds of inactivity
-        if (commandMode && (millis() - lastCommandTime > 30000)) {
+        // Exit command mode after timeout
+        if (commandMode && (currentTime - lastCommandTime > COMMAND_TIMEOUT_MS)) {
             commandMode = false;
-            Serial.println("\n=== Command Mode Deactivated ===");
-            inputBuffer = "";
+            LOG("\n=== Command Mode Timeout ===\n");
+            inputBuffer.clear();
+            commandPrefix.clear();
             return;
         }
 
+        // Handle command prefix detection when not in command mode
+        if (!commandMode) {
+            if (commandPrefix.length() < 4) {
+                commandPrefix += c;
+                if (commandPrefix == "CMD:") {
+                    commandMode = true;
+                    commandPrefix.clear();
+                    inputBuffer.clear();
+                    LOG("\n=== Command Mode Activated ===\n");
+                    LOG("Type commands (wifi.status, help, etc.)\n");
+                    LOG("CMD> ");
+                    lastCommandTime = currentTime;
+                    continue;
+                } else if (!String("CMD:").startsWith(commandPrefix)) {
+                    // Not a command prefix, clear and let AP task handle
+                    commandPrefix.clear();
+                    return;
+                }
+                continue;
+            } else {
+                // Reset if we've collected too many characters without matching
+                commandPrefix.clear();
+                return;
+            }
+        }
+
+        // Process command mode input
         if (commandMode) {
-            lastCommandTime = millis();
-            
+            lastCommandTime = currentTime;
+
             if (c == '\r' || c == '\n') {
                 if (inputBuffer.length() > 0) {
                     String trimmedInput = inputBuffer;
                     trimmedInput.trim();
                     if (trimmedInput.equalsIgnoreCase("exit")) {
                         commandMode = false;
-                        Serial.println("=== Command Mode Deactivated ===");
-                        inputBuffer = "";
+                        LOG("=== Command Mode Deactivated ===\n");
+                        inputBuffer.clear();
                         return;
                     }
                     handleCommand(inputBuffer);
-                    inputBuffer = "";
-                    Serial.print("CMD> ");
+                    inputBuffer.clear();
+                    LOG("CMD> ");
                 }
             } else if (c == '\b' || c == 127) {  // Backspace
                 if (inputBuffer.length() > 0) {
                     inputBuffer.remove(inputBuffer.length() - 1);
-                    Serial.print("\b \b");  // Echo backspace
+                    LOG("\b \b");  // Echo backspace
                 }
             } else if (isPrintable(c)) {
-                inputBuffer += c;
-                Serial.print(c);  // Echo character
+                // Prevent buffer overflow
+                if (inputBuffer.length() < MAX_INPUT_LENGTH) {
+                    inputBuffer += c;
+                    LOG("%c", c);  // Echo character
+                } else {
+                    LOG("\n[Buffer full - command too long]\n");
+                    inputBuffer.clear();
+                    LOG("CMD> ");
+                }
             }
         }
     }
@@ -154,7 +211,7 @@ void SerialCommandHandler::handleCommand(const String& command) {
 
     if (cmd.length() == 0) return;
 
-    Serial.println(">" + command);  // Echo command
+    LOG(">%s\n", command.c_str());  // Echo command
 
     // Parse main command and parameters
     int spaceIndex = cmd.indexOf(' ');
@@ -164,13 +221,19 @@ void SerialCommandHandler::handleCommand(const String& command) {
     // Handle main commands
     if (mainCmd.startsWith("wifi.")) {
         String subCmd = mainCmd.substring(5);  // Remove "wifi."
+        LOG("Handling WiFi command: %s with params: %s\n", subCmd.c_str(), params.c_str());
         handleWiFiCommand(subCmd, params);
     } else if (mainCmd.startsWith("author.")) {
         String subCmd = mainCmd.substring(7);  // Remove "author."
+        LOG("Handling Author command: %s with params: %s\n", subCmd.c_str(), params.c_str());
         handleAuthorCommand(subCmd, params);
     } else if (mainCmd.startsWith("system.")) {
         String subCmd = mainCmd.substring(7);  // Remove "system."
+        LOG("Handling System command: %s with params: %s\n", subCmd.c_str(), params.c_str());
         handleSystemCommand(subCmd, params);
+    } else if (mainCmd.startsWith("web.")) {
+        String subCmd = mainCmd.substring(4);  // Remove "web."
+        handleWebCommand(subCmd, params);
     } else if (mainCmd == "help") {
         handleHelpCommand();
     } else if (mainCmd == "version") {
@@ -213,6 +276,8 @@ void SerialCommandHandler::handleWiFiCommand(const String& subCommand, const Str
         handleWiFiSave();
     } else if (subCommand == "clearconfig") {
         handleWiFiClearConfig();
+    } else if (subCommand == "apstatus") {
+        handleWiFiAPStatus();
     } else {
         sendErrorResponse("Unknown WiFi command: wifi." + subCommand);
     }
@@ -246,6 +311,20 @@ void SerialCommandHandler::handleSystemCommand(const String& subCommand, const S
     }
 }
 
+void SerialCommandHandler::handleWebCommand(const String& subCommand, const String& params) {
+    if (subCommand == "start") {
+        handleWebStart();
+    } else if (subCommand == "status") {
+        handleWebStatus();
+    } else if (subCommand == "restart") {
+        handleWebRestart();
+    } else if (subCommand == "info") {
+        handleWebInfo();
+    } else {
+        sendErrorResponse("Unknown web command: web." + subCommand);
+    }
+}
+
 void SerialCommandHandler::handleHelpCommand() {
     sendResponse("=== Available Serial Commands ===");
     sendResponse("");
@@ -264,6 +343,8 @@ void SerialCommandHandler::handleHelpCommand() {
     sendResponse("  wifi.setsubnet <mask> - Set subnet mask");
     sendResponse("  wifi.setdns <dns>     - Set DNS server");
     sendResponse("  wifi.save             - Save WiFi configuration");
+    sendResponse("  wifi.clearconfig      - Clear WiFi config and restart in AP mode");
+    sendResponse("  wifi.apstatus         - Show AP radio and task status");
     sendResponse("");
     sendResponse("Author/Endpoint Commands:");
     sendResponse("  author.get            - Get current author information");
@@ -280,6 +361,12 @@ void SerialCommandHandler::handleHelpCommand() {
     sendResponse("  status                - Get overall status");
     sendResponse("  help                  - Show this help");
     sendResponse("");
+    sendResponse("Web Server Commands:");
+    sendResponse("  web.start             - Start/restart web server");
+    sendResponse("  web.status            - Get web server status");
+    sendResponse("  web.restart           - Restart web server (requires reboot)");
+    sendResponse("  web.info              - Get web server information");
+    sendResponse("");
     sendResponse("Examples:");
     sendResponse("  wifi.setssid \"MyNetwork\"");
     sendResponse("  wifi.setpassword \"mypassword\"");
@@ -288,7 +375,7 @@ void SerialCommandHandler::handleHelpCommand() {
 }
 
 void SerialCommandHandler::handleVersionCommand() {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["firmware"] = "OpenEPaperLink ESP32_AP-Flasher";
     doc["version"] = BUILD_VERSION;
     doc["author"] = BUILD_AUTHOR;
@@ -317,7 +404,7 @@ void SerialCommandHandler::handleWiFiScan() {
         delay(100);  // Brief delay for scan to initialize
         WiFiScanResult scanResult = wifiUtils.getScanResults(false);
 
-        DynamicJsonDocument doc(2048);
+        DynamicJsonDocument doc(LARGE_JSON_SIZE);
         doc["scanning"] = scanResult.scanInProgress;
         doc["networks_found"] = scanResult.networks.size();
 
@@ -340,50 +427,74 @@ void SerialCommandHandler::handleWiFiScan() {
 }
 
 void SerialCommandHandler::handleWiFiConnect(const String& params) {
-    String ssid = wifiUtils.getSSID();
-    String password = wifiUtils.getPassword();
+    WiFiConfig config = wifiUtils.loadConfig();
 
-    if (ssid.length() == 0) {
-        sendErrorResponse("No SSID configured. Use wifi.setssid first.");
+    if (config.ssid.length() == 0) {
+        sendErrorResponse("No SSID configured. Use wifi config methods first.");
         return;
     }
 
-    sendResponse("Connecting to WiFi: " + ssid);
+    // Log connection attempt without exposing password
+    sendResponse("Connecting to WiFi: " + config.ssid +
+                 " with password: " + (config.password.length() > 0 ? "***configured***" : "not set") +
+                 " IP: " + config.ip +
+                 " Gateway: " + config.gateway +
+                 " Subnet: " + config.mask +
+                 " DNS: " + config.dns);
 
-    // Check for static IP configuration
-    String staticIP = wifiUtils.getIP();
-    String gateway = wifiUtils.getGateway();
-    String subnet = wifiUtils.getMask();
-    String dns = wifiUtils.getDNS();
-
-    if (staticIP.length() > 0) {
+    // Configure static IP if provided
+    if (config.ip.length() > 0) {
         IPAddress ip, gw, sn, dnsIP;
-        if (ip.fromString(staticIP) && gw.fromString(gateway) &&
-            sn.fromString(subnet) && dnsIP.fromString(dns)) {
+        if (ip.fromString(config.ip) && gw.fromString(config.gateway) &&
+            sn.fromString(config.mask) && dnsIP.fromString(config.dns)) {
             WiFi.config(ip, gw, sn, dnsIP);
-            sendResponse("Static IP configuration applied: " + staticIP);
+            sendResponse("Static IP configuration applied: " + config.ip);
+        } else {
+            sendErrorResponse("Invalid IP configuration");
+            return;
         }
     }
 
-    WiFi.begin(ssid.c_str(), password.c_str());
+    WiFi.begin(config.ssid.c_str(), config.password.c_str());
 
-    // Wait for connection (with timeout)
+    // Non-blocking connection with better timeout management
+    unsigned long startTime = millis();
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
+
+    while (WiFi.status() != WL_CONNECTED &&
+           (millis() - startTime) < WIFI_CONNECT_TIMEOUT_MS) {
+        delay(WIFI_RETRY_INTERVAL_MS);
         attempts++;
-        Serial.print(".");
+
+        // Print progress less frequently
+        if (attempts % 10 == 0) {
+            unsigned long elapsed = millis() - startTime;
+            LOG("WiFi connecting... %lu ms elapsed (attempt %d)\n", elapsed, attempts);
+        }
+
+        yield();  // Allow other tasks to run
+
+        // Check for user input or critical system states
+        if (Serial.available() > 0) {
+            char c = Serial.read();
+            if (c == 27) {  // ESC key to abort
+                WiFi.disconnect();
+                sendErrorResponse("WiFi connection aborted by user");
+                return;
+            }
+        }
     }
-    Serial.println();
+    LOG("\n");
 
     if (WiFi.status() == WL_CONNECTED) {
-        DynamicJsonDocument doc(512);
+        DynamicJsonDocument doc(SMALL_JSON_SIZE);
         doc["connected"] = true;
         doc["ssid"] = WiFi.SSID();
         doc["ip"] = WiFi.localIP().toString();
         doc["rssi"] = WiFi.RSSI();
         doc["gateway"] = WiFi.gatewayIP().toString();
         doc["subnet"] = WiFi.subnetMask().toString();
+        doc["connection_time_ms"] = millis() - startTime;
 
         String jsonString;
         serializeJson(doc, jsonString);
@@ -392,7 +503,7 @@ void SerialCommandHandler::handleWiFiConnect(const String& params) {
         // Test connectivity and endpoints
         testConnectivityAndEndpoints();
     } else {
-        sendErrorResponse("Failed to connect to WiFi");
+        sendErrorResponse("Failed to connect to WiFi after " + String(WIFI_CONNECT_TIMEOUT_MS / 1000) + " seconds");
     }
 }
 
@@ -428,7 +539,7 @@ void SerialCommandHandler::handleWiFiDisconnect() {
 }
 
 void SerialCommandHandler::handleWiFiGetIP() {
-    DynamicJsonDocument doc(256);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["connected"] = (WiFi.status() == WL_CONNECTED);
     if (WiFi.status() == WL_CONNECTED) {
         doc["ip"] = WiFi.localIP().toString();
@@ -443,7 +554,7 @@ void SerialCommandHandler::handleWiFiGetIP() {
 }
 
 void SerialCommandHandler::handleWiFiGetSSID() {
-    DynamicJsonDocument doc(256);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["connected"] = (WiFi.status() == WL_CONNECTED);
     if (WiFi.status() == WL_CONNECTED) {
         doc["ssid"] = WiFi.SSID();
@@ -457,7 +568,7 @@ void SerialCommandHandler::handleWiFiGetSSID() {
 }
 
 void SerialCommandHandler::handleWiFiGetMAC() {
-    DynamicJsonDocument doc(256);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["mac_address"] = WiFi.macAddress();
     doc["ap_mac"] = WiFi.softAPmacAddress();
 
@@ -474,48 +585,116 @@ void SerialCommandHandler::handleWiFiSetSSID(const String& ssid) {
 
     String cleanSSID = parseQuotedString(ssid);
 
-    wifiUtils.setSSID(cleanSSID);
+    // Validate SSID length
+    if (cleanSSID.length() == 0) {
+        sendErrorResponse("SSID cannot be empty after parsing");
+        return;
+    }
+
+    if (cleanSSID.length() > 32) {
+        sendErrorResponse("SSID too long (max 32 characters)");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.ssid = cleanSSID;
+    wifiUtils.saveConfig(config);
     sendResponse("SSID set to: " + cleanSSID);
 }
 
 void SerialCommandHandler::handleWiFiSetPassword(const String& password) {
     String cleanPassword = parseQuotedString(password);
 
-    wifiUtils.setPassword(cleanPassword);
+    // Validate password length (WPA2 requires 8-63 characters, allow empty for open networks)
+    if (cleanPassword.length() > 0 && cleanPassword.length() < 8) {
+        sendErrorResponse("Password too short (minimum 8 characters for WPA2)");
+        return;
+    }
+
+    if (cleanPassword.length() > 63) {
+        sendErrorResponse("Password too long (maximum 63 characters)");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.password = cleanPassword;
+    wifiUtils.saveConfig(config);
     sendResponse("Password set (length: " + String(cleanPassword.length()) + " characters)");
 }
 
 void SerialCommandHandler::handleWiFiSetStaticIP(const String& ip) {
     String cleanIP = parseQuotedString(ip);
 
-    wifiUtils.setStaticIP(cleanIP);
+    // Validate IP format
+    IPAddress testIP;
+    if (cleanIP.length() > 0 && !testIP.fromString(cleanIP)) {
+        sendErrorResponse("Invalid IP address format");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.ip = cleanIP;
+    config.hasStaticIP = (cleanIP.length() > 0);
+    wifiUtils.saveConfig(config);
     sendResponse("Static IP set to: " + cleanIP);
 }
 
 void SerialCommandHandler::handleWiFiSetGateway(const String& gateway) {
     String cleanGateway = parseQuotedString(gateway);
 
-    wifiUtils.setGateway(cleanGateway);
+    // Validate gateway format
+    IPAddress testGW;
+    if (cleanGateway.length() > 0 && !testGW.fromString(cleanGateway)) {
+        sendErrorResponse("Invalid gateway address format");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.gateway = cleanGateway;
+    wifiUtils.saveConfig(config);
     sendResponse("Gateway set to: " + cleanGateway);
 }
 
 void SerialCommandHandler::handleWiFiSetSubnet(const String& subnet) {
     String cleanSubnet = parseQuotedString(subnet);
 
-    wifiUtils.setSubnetMask(cleanSubnet);
+    // Validate subnet format
+    IPAddress testSubnet;
+    if (cleanSubnet.length() > 0 && !testSubnet.fromString(cleanSubnet)) {
+        sendErrorResponse("Invalid subnet mask format");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.mask = cleanSubnet;
+    wifiUtils.saveConfig(config);
     sendResponse("Subnet mask set to: " + cleanSubnet);
 }
 
 void SerialCommandHandler::handleWiFiSetDNS(const String& dns) {
     String cleanDNS = parseQuotedString(dns);
 
-    wifiUtils.setDNS(cleanDNS);
+    // Validate DNS format
+    IPAddress testDNS;
+    if (cleanDNS.length() > 0 && !testDNS.fromString(cleanDNS)) {
+        sendErrorResponse("Invalid DNS address format");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+    config.dns = cleanDNS;
+    wifiUtils.saveConfig(config);
     sendResponse("DNS set to: " + cleanDNS);
 }
 
 void SerialCommandHandler::handleWiFiSave() {
-    wifiUtils.save();
-    sendResponse("WiFi configuration saved");
+    // Configuration is automatically saved with direct Preferences access
+    // Generate JSON export for confirmation
+    if (wifiUtils.saveConfigAsJson()) {
+        sendResponse("WiFi configuration saved and exported");
+    } else {
+        sendErrorResponse("Failed to export WiFi configuration");
+    }
 }
 
 void SerialCommandHandler::handleWiFiClearConfig() {
@@ -527,9 +706,96 @@ void SerialCommandHandler::handleWiFiClearConfig() {
     }
 }
 
+void SerialCommandHandler::handleWiFiAPStatus() {
+    extern struct APInfoS apInfo;
+    extern volatile ApSerialState gSerialTaskState;
+
+    DynamicJsonDocument doc(MEDIUM_JSON_SIZE);
+
+    // AP Serial Task Status
+    doc["ap_serial_task_state"] = static_cast<int>(gSerialTaskState);
+    switch (gSerialTaskState) {
+        case SERIAL_STATE_NONE:
+            doc["ap_task_status"] = "Not initialized";
+            break;
+        case SERIAL_STATE_INITIALIZED:
+            doc["ap_task_status"] = "Initialized";
+            break;
+        case SERIAL_STATE_STARTING:
+            doc["ap_task_status"] = "Starting";
+            break;
+        case SERIAL_STATE_RUNNING:
+            doc["ap_task_status"] = "Running";
+            break;
+        case SERIAL_STATE_STOP:
+            doc["ap_task_status"] = "Stopping";
+            break;
+        case SERIAL_STATE_STOPPED:
+            doc["ap_task_status"] = "Stopped";
+            break;
+        default:
+            doc["ap_task_status"] = "Unknown";
+            break;
+    }
+
+    // AP Radio Status
+    doc["ap_online"] = apInfo.isOnline;
+    doc["ap_state"] = apInfo.state;
+    switch (apInfo.state) {
+        case AP_STATE_OFFLINE:
+            doc["ap_state_name"] = "Offline";
+            break;
+        case AP_STATE_ONLINE:
+            doc["ap_state_name"] = "Online";
+            break;
+        case AP_STATE_COMING_ONLINE:
+            doc["ap_state_name"] = "Coming Online";
+            break;
+        case AP_STATE_FLASHING:
+            doc["ap_state_name"] = "Flashing";
+            break;
+        case AP_STATE_FAILED:
+            doc["ap_state_name"] = "Failed";
+            break;
+        case AP_STATE_NORADIO:
+            doc["ap_state_name"] = "No Radio";
+            break;
+        case AP_STATE_WAIT_RESET:
+            doc["ap_state_name"] = "Wait Reset";
+            break;
+        case AP_STATE_REQUIRED_POWER_CYCLE:
+            doc["ap_state_name"] = "Power Cycle Required";
+            break;
+        default:
+            doc["ap_state_name"] = "Unknown";
+            break;
+    }
+
+    // AP Info if available
+    if (apInfo.isOnline) {
+        doc["ap_channel"] = apInfo.channel;
+        doc["ap_power"] = apInfo.power;
+        doc["ap_type"] = apInfo.type;
+        doc["ap_version"] = apInfo.version;
+
+        // MAC address with proper formatting
+        String macStr = "";
+        for (int i = 7; i >= 0; i--) {
+            if (macStr.length() > 0) macStr += ":";
+            if (apInfo.mac[i] < 16) macStr += "0";  // Ensure proper hex formatting
+            macStr += String(apInfo.mac[i], HEX);
+        }
+        doc["ap_mac"] = macStr;
+    }
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+    sendJsonResponse(jsonString);
+}
+
 // Author/Endpoint Command Implementations
 void SerialCommandHandler::handleAuthorGet() {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["author"] = BUILD_AUTHOR;
     doc["firmware"] = "OpenEPaperLink ESP32_AP-Flasher";
     doc["version"] = BUILD_VERSION;
@@ -546,13 +812,18 @@ void SerialCommandHandler::handleAuthorSet(const String& author) {
         return;
     }
 
+    if (cleanAuthor.length() > 64) {
+        sendErrorResponse("Author name too long (maximum 64 characters)");
+        return;
+    }
+
     // For now, just acknowledge - could store in preferences
     sendResponse("Author information updated: " + cleanAuthor);
     sendResponse("Note: Author information is build-time configured");
 }
 
 void SerialCommandHandler::handleEndpointList() {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(MEDIUM_JSON_SIZE);
     JsonArray endpoints = doc.createNestedArray("endpoints");
 
     // List common web endpoints
@@ -586,12 +857,18 @@ void SerialCommandHandler::handleEndpointTest(const String& endpoint) {
         return;
     }
 
+    // Basic endpoint validation
+    if (!cleanEndpoint.startsWith("/")) {
+        sendErrorResponse("Endpoint must start with '/'");
+        return;
+    }
+
     if (WiFi.status() != WL_CONNECTED) {
         sendErrorResponse("Not connected to WiFi - cannot test endpoints");
         return;
     }
 
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["endpoint"] = cleanEndpoint;
     doc["base_url"] = "http://" + WiFi.localIP().toString();
     doc["full_url"] = "http://" + WiFi.localIP().toString() + cleanEndpoint;
@@ -604,7 +881,7 @@ void SerialCommandHandler::handleEndpointTest(const String& endpoint) {
 }
 
 void SerialCommandHandler::handleEndpointStatus() {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(SMALL_JSON_SIZE);
     doc["wifi_connected"] = (WiFi.status() == WL_CONNECTED);
 
     if (WiFi.status() == WL_CONNECTED) {
@@ -625,7 +902,7 @@ void SerialCommandHandler::handleEndpointStatus() {
 
 // System Command Implementations
 void SerialCommandHandler::handleSystemInfo() {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(MEDIUM_JSON_SIZE);
 
     // Firmware info
     doc["firmware"] = "OpenEPaperLink ESP32_AP-Flasher";
@@ -666,23 +943,99 @@ void SerialCommandHandler::handleSystemReset() {
     sendResponse("Use system.reboot for normal restart");
 }
 
+// Web server handlers
+void SerialCommandHandler::handleWebStart() {
+    sendResponse("📤 Starting web server...");
+
+    // The web server is typically started during initialization
+    // Check if web server components are available
+    extern void init_web();  // Declare the external function
+
+    sendResponse("✅ Web server initialization called");
+    sendResponse("🌐 Access points:");
+
+    if (WiFi.status() == WL_CONNECTED) {
+        sendResponse("   WiFi: http://" + WiFi.localIP().toString());
+    }
+
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        sendResponse("   AP: http://" + WiFi.softAPIP().toString());
+    }
+
+    if (WiFi.status() != WL_CONNECTED && WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
+        sendResponse("⚠️ No network interfaces active");
+        sendResponse("💡 Use 'wifi.connect' or check WiFi configuration");
+    }
+}
+void SerialCommandHandler::handleWebStatus() {
+    sendResponse("=== Web Server Status ===");
+
+    // Check if we have network access
+    bool hasWiFi = (WiFi.status() == WL_CONNECTED);
+    bool hasAP = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+
+    if (hasWiFi) {
+        sendResponse("✅ WiFi Connected: http://" + WiFi.localIP().toString());
+    } else {
+        sendResponse("❌ WiFi not connected");
+    }
+
+    if (hasAP) {
+        sendResponse("✅ Access Point: http://" + WiFi.softAPIP().toString());
+        sendResponse("   AP Clients: " + String(WiFi.softAPgetStationNum()));
+    } else {
+        sendResponse("❌ Access Point not active");
+    }
+
+    if (!hasWiFi && !hasAP) {
+        sendResponse("⚠️ No network interfaces available");
+        sendResponse("💡 Use 'wifi.connect' or check WiFi configuration");
+    }
+}
+
+void SerialCommandHandler::handleWebRestart() {
+    sendResponse("🔄 Restarting web server...");
+    sendResponse("⚠️ Note: Web server restart requires full system reboot");
+    sendResponse("🚀 Use 'system.reboot' to restart the entire system");
+    sendResponse("💡 Or use 'web.start' to reinitialize if needed");
+}
+
+void SerialCommandHandler::handleWebInfo() {
+    sendResponse("=== Web Server Information ===");
+    sendResponse("📦 Server: AsyncWebServer");
+    sendResponse("🌐 Protocols: HTTP, WebSocket");
+    sendResponse("📁 File System: LittleFS");
+    sendResponse("🔧 Features:");
+    sendResponse("   • Static file serving");
+    sendResponse("   • REST API endpoints");
+    sendResponse("   • WebSocket communication");
+    sendResponse("   • OTA updates");
+    sendResponse("   • Configuration management");
+    sendResponse("");
+    sendResponse("📍 Available endpoints:");
+    sendResponse("   / - Main interface");
+    sendResponse("   /setup - WiFi configuration");
+    sendResponse("   /api/* - REST API");
+    sendResponse("   /update - OTA updates");
+}
+
 // Utility Functions
 void SerialCommandHandler::sendResponse(const String& response) {
-    Serial.println(response);
+    LOG("%s\n", response.c_str());
     if (responseCallback) {
         responseCallback(response);
     }
 }
 
 void SerialCommandHandler::sendErrorResponse(const String& error) {
-    Serial.println("ERROR: " + error);
+    LOG("ERROR: %s\n", error.c_str());
     if (responseCallback) {
         responseCallback("ERROR: " + error);
     }
 }
 
 void SerialCommandHandler::sendJsonResponse(const String& json) {
-    Serial.println("JSON: " + json);
+    LOG("JSON: %s\n", json.c_str());
     if (responseCallback) {
         responseCallback("JSON: " + json);
     }

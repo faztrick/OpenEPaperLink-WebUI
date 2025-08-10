@@ -1,30 +1,28 @@
-//
-// Group5
-// A 1-bpp image decoder
-//
-// Written by Larry Bank
-// Copyright (c) 2024 BitBank Software, Inc.
-//
-// Use of this software is governed by the Business Source License
-// included in the file ./LICENSE.
-//
-// As of the Change Date specified in that file, in accordance with
-// the Business Source License, use of this software will be governed
-// by the Apache License, Version 2.0, included in the file
-// ./APL.txt.
-
-// Converted from C to Javascript by Nic Limper
-
-// Define constants
+//;
+// Group5;
+// A 1-bpp image decoder;
+//;
+// Written by Larry Bank;
+// Copyright (c) 2024 BitBank Software, Inc.;
+//;
+// Use of this software is governed by the Business Source License;
+// included in the file ./LICENSE.;
+//;
+// As of the Change Date specified in that file, in accordance with;
+// the Business Source License, use of this software will be governed;
+// by the Apache License, Version 2.0, included in the file;
+// ./APL.txt.;
+// Converted from C to Javascript by Nic Limper;
+// Define constants;
 const MAX_IMAGE_FLIPS = 640;
 
-// Horizontal prefix bits
+// Horizontal prefix bits;
 const HORIZ_SHORT_SHORT = 0;
 const HORIZ_SHORT_LONG = 1;
 const HORIZ_LONG_SHORT = 2;
 const HORIZ_LONG_LONG = 3;
 
-// Return code for encoder and decoder
+// Return code for encoder and decoder;
 const G5_SUCCESS = 0;
 const G5_INVALID_PARAMETER = 1;
 const G5_DECODE_ERROR = 2;
@@ -35,7 +33,7 @@ const G5_NOT_INITIALIZED = 6;
 const G5_DATA_OVERFLOW = 7;
 const G5_MAX_FLIPS_EXCEEDED = 8;
 
-// Utility function equivalent to the TIFFMOTOLONG macro - optimized
+// Utility function equivalent to the TIFFMOTOLONG macro - optimized;
 function TIFFMOTOLONG(p, ix) {
     const len = p.length;
     if (ix >= len) return 0;
@@ -47,37 +45,34 @@ function TIFFMOTOLONG(p, ix) {
     return value;
 }
 
-// Constants for bit manipulation
-const REGISTER_WIDTH = 32; // Must align with a 32-bit system in C++
-
-/*
- The code tree that follows has: bit_length, decode routine
- These codes are for Group 4 (MMR) decoding
-
- 01 = vertneg1, 11h = vert1, 20h = horiz, 30h = pass, 12h = vert2
- 02 = vertneg2, 13h = vert3, 03 = vertneg3, 90h = trash
-*/
-
-const code_table = [
-    0x90, 0, 0x40, 0,       // trash, uncompressed mode - codes 0 and 1
-    3, 7,                   // V(-3) pos = 2
-    0x13, 7,                // V(3)  pos = 3
-    2, 6, 2, 6,             // V(-2) pos = 4,5
-    0x12, 6, 0x12, 6,       // V(2)  pos = 6,7
-    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,    // pass  pos = 8->F
-    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    // horiz pos = 10->1F
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    // V(-1) pos = 20->2F
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,   // V(1)   pos = 30->3F
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3
+// Constants for bit manipulation;
+const REGISTER_WIDTH = 32; // Must align with a 32-bit system in C++;
+/*;
+ The code tree that follows has: bit_length, decode routine;
+ These codes are for Group 4 (MMR) decoding;
+ 01 = vertneg1, 11h = vert1, 20h = horiz, 30h = pass, 12h = vert2;
+ 02 = vertneg2, 13h = vert3, 03 = vertneg3, 90h = trash;
+*/;
+const code_table = [;
+    0x90, 0, 0x40, 0,       // trash, uncompressed mode - codes 0 and 1;
+    3, 7,                   // V(-3) pos = 2;
+    0x13, 7,                // V(3)  pos = 3;
+    2, 6, 2, 6,             // V(-2) pos = 4,5;
+    0x12, 6, 0x12, 6,       // V(2)  pos = 6,7;
+    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,    // pass  pos = 8->F;
+    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,;
+    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    // horiz pos = 10->1F;
+    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,;
+    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,;
+    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    // V(-1) pos = 20->2F;
+    1, 3, 1, 3, 1, 3, 1, 3,;
+    1, 3, 1, 3, 1, 3, 1, 3,;
+    1, 3, 1, 3, 1, 3, 1, 3,;
+    1, 3, 1, 3, 1, 3, 1, 3,;
+    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,   // V(1)   pos = 30->3F;
+    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,;
+    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,;
+    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3;
 ];
 
 class G5DECIMAGE {
@@ -92,16 +87,16 @@ class G5DECIMAGE {
         this.u32Accum = 0;
         this.ulBitOff = 0;
         this.ulBits = 0;
-        this.pSrc = null; // Input buffer
-        this.pBuf = null; // Current buffer index
+        this.pSrc = null; // Input buffer;
+        this.pBuf = null; // Current buffer index;
         this.pBufIndex = 0;
-        this.pCur = new Int16Array(MAX_IMAGE_FLIPS); // Current state
-        this.pRef = new Int16Array(MAX_IMAGE_FLIPS); // Reference state
-        this.u32HMask = 0; // Pre-calculated horizontal mask
-        this.bytesPerLine = 0; // Pre-calculated bytes per line
+        this.pCur = new Int16Array(MAX_IMAGE_FLIPS); // Current state;
+        this.pRef = new Int16Array(MAX_IMAGE_FLIPS); // Reference state;
+        this.u32HMask = 0; // Pre-calculated horizontal mask;
+        this.bytesPerLine = 0; // Pre-calculated bytes per line;
     }
 
-    // Consolidated bit buffer loading function to avoid duplication
+    // Consolidated bit buffer loading function to avoid duplication;
     loadBitBuffer() {
         if (this.ulBitOff > (REGISTER_WIDTH - 8)) {
             this.pBufIndex += (this.ulBitOff >> 3);
@@ -110,7 +105,7 @@ class G5DECIMAGE {
         }
     }
 
-    // Extended bit buffer loading for 16-bit operations
+    // Extended bit buffer loading for 16-bit operations;
     loadBitBuffer16() {
         if (this.ulBitOff > (REGISTER_WIDTH - 16)) {
             this.pBufIndex += (this.ulBitOff >> 3);
@@ -121,14 +116,14 @@ class G5DECIMAGE {
 }
 
 
-//static int g5_decode_init(G5DECIMAGE *pImage, int iWidth, int iHeight, uint8_t *pData, int iDataSize)
+//static int g5_decode_init(G5DECIMAGE *pImage, int iWidth, int iHeight, uint8_t *pData, int iDataSize);
 function g5_decode_init(pImage, iWidth, iHeight, pData, iDataSize) {
-    if (
-        pImage == null ||
-        iWidth < 1 ||
-        iHeight < 1 ||
-        pData == null ||
-        iDataSize < 1
+    if (;
+        pImage === null ||;
+        iWidth < 1 ||;
+        iHeight < 1 ||;
+        pData === null ||;
+        iDataSize < 1;
     ) {
         return G5_INVALID_PARAMETER;
     }
@@ -137,11 +132,11 @@ function g5_decode_init(pImage, iWidth, iHeight, pData, iDataSize) {
     pImage.pSrc = pData;
     pImage.ulBitOff = 0;
     pImage.y = 0;
-    pImage.ulBits = TIFFMOTOLONG(pData, 0); // Preload the first 32 bits of data
+    pImage.ulBits = TIFFMOTOLONG(pData, 0); // Preload the first 32 bits of data;
     pImage.iWidth = iWidth;
     pImage.iHeight = iHeight;
     
-    // Pre-calculate commonly used values
+    // Pre-calculate commonly used values;
     pImage.iHLen = 32 - Math.clz32(iWidth);
     pImage.u32HMask = (1 << pImage.iHLen) - 1;
     pImage.bytesPerLine = (iWidth + 7) >> 3;
@@ -150,24 +145,23 @@ function g5_decode_init(pImage, iWidth, iHeight, pData, iDataSize) {
 }
 
 
-//static void G5DrawLine(G5DECIMAGE *pPage, int16_t *pCurFlips, uint8_t *pOut)
+//static void G5DrawLine(G5DECIMAGE *pPage, int16_t *pCurFlips, uint8_t *pOut);
 function G5DrawLine(pPage, pCurFlips, pOut) {
     const xright = pPage.iWidth;
     let pCurIndex = 0;
 
-    // Initialize output to white (0xff) - use pre-calculated length
+    // Initialize output to white (0xff) - use pre-calculated length;
     pOut.fill(0xff, 0, pPage.bytesPerLine);
 
     while (pCurIndex < pCurFlips.length - 1) {
-        const startX = pCurFlips[pCurIndex++]; // Black starting point
+        const startX = pCurFlips[pCurIndex++]; // Black starting point;
         if (startX >= xright) break;
         
         const endX = pCurFlips[pCurIndex++];
-        const run = endX - startX; // Get the black run
-
+        const run = endX - startX; // Get the black run;
         if (run <= 0) break;
 
-        // Calculate visible run
+        // Calculate visible run;
         const visibleX = Math.max(0, startX);
         const visibleRun = Math.min(xright, endX) - visibleX;
 
@@ -176,20 +170,20 @@ function G5DrawLine(pPage, pCurFlips, pOut) {
             const endByte = (visibleX + visibleRun - 1) >> 3;
 
             if (endByte === startByte) {
-                // If the run fits in a single byte, combine left and right bit masks
+                // If the run fits in a single byte, combine left and right bit masks;
                 const lBit = 0xff << (8 - (visibleX & 7));
                 const rBit = 0xff >> ((visibleX + visibleRun) & 7);
                 pOut[startByte] &= (lBit | rBit) & 0xff;
             } else {
-                // Mask the left-most byte
+                // Mask the left-most byte;
                 pOut[startByte] &= (0xff << (8 - (visibleX & 7))) & 0xff;
 
-                // Set intermediate bytes to 0
+                // Set intermediate bytes to 0;
                 for (let i = startByte + 1; i < endByte; i++) {
                     pOut[i] = 0x00;
                 }
 
-                // Mask the right-most byte if it's not fully aligned
+                // Mask the right-most byte if it's not fully aligned;
                 if (endByte < pPage.bytesPerLine) {
                     pOut[endByte] &= 0xff >> ((visibleX + visibleRun) & 7);
                 }
@@ -199,31 +193,31 @@ function G5DrawLine(pPage, pCurFlips, pOut) {
 }
 
 
-// Initialize internal structures to decode the image
-//
+// Initialize internal structures to decode the image;
+//;
 function Decode_Begin(pPage) {
     const xsize = pPage.iWidth;
 
-    // Seed the current and reference lines with xsize for V(0) codes
+    // Seed the current and reference lines with xsize for V(0) codes;
     pPage.pRef.fill(xsize, 0, MAX_IMAGE_FLIPS - 2);
     pPage.pCur.fill(xsize, 0, MAX_IMAGE_FLIPS - 2);
 
-    // Prefill both current and reference lines with 0x7fff to prevent walking off the end
-    // if the data gets bunged and the current X is > XSIZE
+    // Prefill both current and reference lines with 0x7fff to prevent walking off the end;
+    // if the data gets bunged and the current X is > XSIZE;
     pPage.pCur[MAX_IMAGE_FLIPS - 2] = pPage.pRef[MAX_IMAGE_FLIPS - 2] = 0x7fff;
     pPage.pCur[MAX_IMAGE_FLIPS - 1] = pPage.pRef[MAX_IMAGE_FLIPS - 1] = 0x7fff;
 
-    pPage.pBuf = pPage.pSrc; // Start buffer
+    pPage.pBuf = pPage.pSrc; // Start buffer;
     pPage.pBufIndex = 0;
 
-    // Load 32 bits to start (use a helper function to interpret bytes as a 32-bit integer)
+    // Load 32 bits to start (use a helper function to interpret bytes as a 32-bit integer);
     pPage.ulBits = TIFFMOTOLONG(pPage.pSrc, 0);
     pPage.ulBitOff = 0;
 }
 
 
-// Decode a single line of G5 data - optimized version
-//
+// Decode a single line of G5 data - optimized version;
+//;
 function DecodeLine(pPage) {
     let a0 = -1;
     let a0_p, b1;
@@ -248,10 +242,10 @@ function DecodeLine(pPage) {
             pPage.ulBitOff += code_table[lBits + 1];
             
             switch (sCode) {
-                case 1: case 2: case 3: // V(-1), V(-2), V(-3)
-                    a0 = pRef[pRefIndex] - sCode;  // A0 = B1 - x
+                case 1: case 2: case 3: // V(-1), V(-2), V(-3);
+                    a0 = pRef[pRefIndex] - sCode;  // A0 = B1 - x;
                     pCur[pCurIndex++] = a0;
-                    if (pRefIndex == 0) {
+                    if (pRefIndex === 0) {
                         pRefIndex += 2;
                     }
                     pRefIndex--;
@@ -260,7 +254,7 @@ function DecodeLine(pPage) {
                     }
                     break;
 
-                case 0x11: case 0x12: case 0x13: // V(1), V(2), V(3)
+                case 0x11: case 0x12: case 0x13: // V(1), V(2), V(3);
                     a0 = pRef[pRefIndex++];
                     b1 = a0;
                     a0 += sCode & 7;
@@ -275,7 +269,7 @@ function DecodeLine(pPage) {
                     pCur[pCurIndex++] = a0;
                     break;
 
-                case 0x20: // Horizontal codes
+                case 0x20: // Horizontal codes;
                     pPage.loadBitBuffer16();
 
                     a0_p = Math.max(0, a0);
@@ -283,28 +277,28 @@ function DecodeLine(pPage) {
                     pPage.ulBitOff += 2;
 
                     switch (lBits) {
-                        case HORIZ_SHORT_SHORT:
+                        case HORIZ_SHORT_SHORT:;
                             tot_run = (pPage.ulBits >> ((REGISTER_WIDTH - 3) - pPage.ulBitOff)) & 0x7;
                             pPage.ulBitOff += 3;
                             tot_run1 = (pPage.ulBits >> ((REGISTER_WIDTH - 3) - pPage.ulBitOff)) & 0x7;
                             pPage.ulBitOff += 3;
                             break;
 
-                        case HORIZ_SHORT_LONG:
+                        case HORIZ_SHORT_LONG:;
                             tot_run = (pPage.ulBits >> ((REGISTER_WIDTH - 3) - pPage.ulBitOff)) & 0x7;
                             pPage.ulBitOff += 3;
                             tot_run1 = (pPage.ulBits >> ((REGISTER_WIDTH - u32HLen) - pPage.ulBitOff)) & u32HMask;
                             pPage.ulBitOff += u32HLen;
                             break;
 
-                        case HORIZ_LONG_SHORT:
+                        case HORIZ_LONG_SHORT:;
                             tot_run = (pPage.ulBits >> ((REGISTER_WIDTH - u32HLen) - pPage.ulBitOff)) & u32HMask;
                             pPage.ulBitOff += u32HLen;
                             tot_run1 = (pPage.ulBits >> ((REGISTER_WIDTH - 3) - pPage.ulBitOff)) & 0x7;
                             pPage.ulBitOff += 3;
                             break;
 
-                        case HORIZ_LONG_LONG:
+                        case HORIZ_LONG_LONG:;
                             tot_run = (pPage.ulBits >> ((REGISTER_WIDTH - u32HLen) - pPage.ulBitOff)) & u32HMask;
                             pPage.ulBitOff += u32HLen;
                             pPage.loadBitBuffer16();
@@ -324,12 +318,12 @@ function DecodeLine(pPage) {
                     pCur[pCurIndex++] = a0;
                     break;
 
-                case 0x30: // Pass code
+                case 0x30: // Pass code;
                     pRefIndex++;
                     a0 = pRef[pRefIndex++];
                     break;
 
-                default: // ERROR
+                default: // ERROR;
                     pPage.iError = G5_DECODE_ERROR;
                     return pPage.iError;
             }
@@ -368,7 +362,7 @@ function processG5(data, width, height) {
 
             G5DrawLine(decoder, decoder.pCur, lineBuffer);
             
-            // Swap current and reference lines efficiently
+            // Swap current and reference lines efficiently;
             [decoder.pRef, decoder.pCur] = [decoder.pCur, decoder.pRef];
         }
 

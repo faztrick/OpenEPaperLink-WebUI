@@ -1,18 +1,29 @@
 #pragma once
 
-#include <ArduinoJson.h>
-#include <Preferences.h>
-#include <WiFi.h>
-#include <esp_wifi.h>
-
+// Standard includes
 #include <algorithm>
 #include <functional>
 #include <vector>
 
-// Centralized WiFi utilities to eliminate duplicate code
-// ======================================================
+// ESP32 includes
+#include <Preferences.h>
+#include <WiFi.h>
+#include <esp_wifi.h>
 
+// Third-party includes
+#include <ArduinoJson.h>
+
+// Project includes
+#include "common_utils.h"
+
+// ============================================================================
+// Constants and Definitions
+// ============================================================================
 #define MAX_WIFI_NETWORKS 50
+
+// ============================================================================
+// Enums and Structures
+// ============================================================================
 
 enum WifiStatus {
     NOINIT,
@@ -76,6 +87,7 @@ class WiFiUtils {
     // Connection management
     bool _connected;
     bool _savewhensuccessfull;
+    bool _initialized;
     int _reconnectIntervalCheck;
     int _retryIntervalCheck;
     int _connectionTimeout;
@@ -98,6 +110,7 @@ class WiFiUtils {
     void pollSerial();
     String buildHostname(esp_mac_type_t mac_type);
     void terminalLog(String text);
+    void setupDisconnectHandler();
 
    public:
     static WiFiUtils& getInstance();
@@ -129,20 +142,13 @@ class WiFiUtils {
     bool factoryReset();
     bool hasStaticIP();
 
+    // JSON configuration methods
+    String getConfigAsJson() const;
+    bool loadConfigFromJson(const String& json);
+    bool saveConfigAsJson();
+
     // Storage compatibility methods
-    void setSSID(const String& ssid);
-    void setPassword(const String& password);
-    void setStaticIP(const String& ip);
-    void setGateway(const String& gateway);
-    void setSubnetMask(const String& mask);
-    void setDNS(const String& dns);
     bool save();
-    String getSSID() const;
-    String getPassword() const;
-    String getIP() const;
-    String getGateway() const;
-    String getMask() const;
-    String getDNS() const;
 
     // Event handling
     static void WiFiEvent(WiFiEvent_t event);

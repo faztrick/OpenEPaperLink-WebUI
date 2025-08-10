@@ -1,0 +1,142 @@
+name: 'Code Quality and Linting'
+
+on:
+  push:
+    paths:
+      - '**/*.html'
+      - '**/*.js'
+      - '**/*.css'
+  pull_request:
+    paths:
+      - '**/*.html'
+      - '**/*.js'
+      - '**/*.css'
+
+jobs:
+  lint-html:
+    name: 'Lint HTML Files'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install HTMLHint
+      run: npm install -g htmlhint
+
+    - name: Create HTMLHint config
+      run: |
+        cat > .htmlhintrc << EOF
+        {
+          "tagname-lowercase": true,
+          "attr-lowercase": true,
+          "attr-value-double-quotes": true,
+          "doctype-first": true,
+          "tag-pair": true,
+          "spec-char-escape": true,
+          "id-unique": true,
+          "src-not-empty": true,
+          "attr-no-duplication": true,
+          "title-require": true
+        }
+        EOF
+
+    - name: Lint HTML files
+      run: |
+        find . -name "*.html" -not -path "./node_modules/*" -not -path "./.pio/*" | xargs htmlhint
+
+  lint-javascript:
+    name: 'Lint JavaScript Files'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install ESLint
+      run: npm install -g eslint
+
+    - name: Create ESLint config
+      run: |
+        cat > .eslintrc.json << EOF
+        {
+          "env": {
+            "browser": true,
+            "es2021": true
+          },
+          "extends": "eslint:recommended",
+          "parserOptions": {
+            "ecmaVersion": 12,
+            "sourceType": "script"
+          },
+          "globals": {
+            "pako": "readonly",
+            "Chart": "readonly"
+          },
+          "rules": {
+            "no-unused-vars": "warn",
+            "no-undef": "error",
+            "no-console": "off",
+            "semi": ["error", "always"],
+            "quotes": ["error", "single"]
+          }
+        }
+        EOF
+
+    - name: Lint JavaScript files
+      run: |
+        find . -name "*.js" -not -path "./node_modules/*" -not -path "./.pio/*" | xargs eslint --no-eslintrc --config .eslintrc.json || true
+
+  check-formatting:
+    name: 'Check Code Formatting'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install Prettier
+      run: npm install -g prettier
+
+    - name: Create Prettier config
+      run: |
+        cat > .prettierrc << EOF
+        {
+          "printWidth": 120,
+          "tabWidth": 4,
+          "useTabs": false,
+          "semi": true,
+          "singleQuote": true,
+          "quoteProps": "as-needed",
+          "trailingComma": "es5",
+          "bracketSpacing": true,
+          "arrowParens": "avoid"
+        }
+        EOF
+
+    - name: Check HTML formatting
+      run: |
+        prettier --check "**/*.html" --ignore-path=".gitignore" || true
+
+    - name: Check JavaScript formatting
+      run: |
+        prettier --check "**/*.js" --ignore-path=".gitignore" || true
+
+    - name: Check CSS formatting
+      run: |
+        prettier --check "**/*.css" --ignore-path=".gitignore" || true

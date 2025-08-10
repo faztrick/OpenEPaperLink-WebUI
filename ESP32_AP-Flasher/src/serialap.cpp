@@ -18,6 +18,42 @@
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
 
+// Constants for better maintainability and performance
+static const uint32_t AP_ACTIVITY_MAX_INTERVAL = 30 * 1000;
+static const uint32_t CMD_REPLY_TIMEOUT_MS = 200;
+static const uint32_t AP_BOOT_TIMEOUT_MS = 10 * 1000;
+static const uint32_t AP_PING_RETRY_DELAY_MS = 300;
+static const uint32_t AP_RESET_DELAY_MS = 50;
+static const uint32_t AP_POWER_CYCLE_DELAY_MS = 300;
+static const uint32_t AP_STABILIZE_DELAY_MS = 100;
+static const uint32_t TASK_DELAY_MS = 1;
+static const uint32_t TASK_CREATION_DELAY_MS = 500;
+static const uint32_t TX_BUSY_WAIT_MS = 10;
+static const uint32_t MAX_TX_WAIT_CYCLES = 1000;  // Prevent infinite waiting
+static const uint8_t MAX_CMD_RETRIES = 5;
+static const uint8_t MAX_PING_RETRIES = 3;
+static const uint8_t MAX_RECOVERY_ATTEMPTS = 5;
+static const size_t CMD_BUFFER_SIZE = 4;
+static const size_t RX_STRING_BUFFER_SIZE = 100;
+static const size_t DUMMY_BUFFER_SIZE = 32;
+static const uint32_t SERIAL_FLOOD_THRESHOLD = 6000;  // chars per second
+static const uint32_t MODEM_RESET_HOLDOFF_MS = 20000;
+
+// Additional missing constants for AP operations
+static const uint32_t AP_POWER_OFF_DELAY_MS = 300;
+static const uint32_t AP_POWER_ON_DELAY_MS = 300;
+static const uint32_t AP_RESET_RELEASE_DELAY_MS = 100;
+static const uint32_t SEGMENTED_NOTIFICATION_DELAY = 1000;
+static const uint32_t POWER_CYCLE_WAIT_INTERVAL = 5000;
+static const size_t IP_DISPLAY_BUFFER_SIZE = 32;
+static const uint8_t AP_STATE_MAX = 10;  // Maximum valid AP state value
+
+// Command buffer sizes for different packet types
+static const size_t BLOCK_REQUEST_SIZE = sizeof(struct espBlockRequest) + 8;
+static const size_t AVAIL_DATA_REQ_SIZE = sizeof(struct espAvailDataReq) + 8;
+static const size_t XFER_COMPLETE_SIZE = sizeof(struct espXferComplete) + 8;
+static const size_t LOCAL_TAG_RETURN_DATA_SIZE = sizeof(struct espTagReturnData) + 8;
+
 QueueHandle_t rxCmdQueue;
 SemaphoreHandle_t txActive;
 
@@ -77,48 +113,68 @@ struct rxCmd {
 #define ZBS_RX_WAIT_SUBCHANNEL 19
 
 bool txStart() {
-    while (1) {
+    uint32_t attempts = 0;
+    const TickType_t maxWaitTicks = pdMS_TO_TICKS(TX_BUSY_WAIT_MS);
+
+    while (attempts < MAX_TX_WAIT_CYCLES) {
         if (xPortInIsrContext()) {
             if (xSemaphoreTakeFromISR(txActive, NULL) == pdTRUE) return true;
         } else {
-            if (xSemaphoreTake(txActive, portTICK_PERIOD_MS)) return true;
+            if (xSemaphoreTake(txActive, maxWaitTicks) == pdTRUE) return true;
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        Serial.println("wait... tx busy");
+
+        attempts++;
+        if (attempts % 10 == 0) {
+            LOG("TX busy, attempt %lu/%d\n", attempts, MAX_TX_WAIT_CYCLES);
+        }
+
+        // Allow other tasks to run
+        if (!xPortInIsrContext()) {
+            vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
+        }
     }
-    // this never happens. Should we make a timeout?
+
+    LOG("TX timeout after %d attempts\n", MAX_TX_WAIT_CYCLES);
     return false;
 }
+
 void txEnd() {
     if (xPortInIsrContext()) {
-        xSemaphoreGiveFromISR(txActive, NULL);
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(txActive, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     } else {
         xSemaphoreGive(txActive);
     }
 }
 bool waitCmdReply() {
-    uint32_t val = millis();
-    while (millis() < val + 200) {
+    const uint32_t startTime = millis();
+    const TickType_t taskDelay = pdMS_TO_TICKS(TASK_DELAY_MS);
+
+    while ((millis() - startTime) < CMD_REPLY_TIMEOUT_MS) {
         switch (cmdReplyValue) {
             case CMD_REPLY_WAIT:
                 break;
             case CMD_REPLY_ACK:
                 lastAPActivity = millis();
-                if (apInfo.isOnline == false)
+                if (apInfo.isOnline == false) {
                     setAPstate(true, AP_STATE_ONLINE);
+                }
                 return true;
-                break;
             case CMD_REPLY_NOK:
-                lastAPActivity = millis();
-                return false;
-                break;
             case CMD_REPLY_NOQ:
                 lastAPActivity = millis();
                 return false;
-                break;
+            default:
+                LOG("Unexpected reply value: %d\n", cmdReplyValue);
+                return false;
         }
-        vTaskDelay(1 / portTICK_RATE_MS);
+
+        // Allow other tasks to run and prevent watchdog timeout
+        vTaskDelay(taskDelay);
     }
+
+    LOG("Command reply timeout after %dms\n", CMD_REPLY_TIMEOUT_MS);
     return false;
 }
 
@@ -141,37 +197,58 @@ int8_t APpowerPins[] = FLASHER_ALT_POWER;
 #endif
 
 void APEnterEarlyReset() {
+    if (AP_RESET_PIN < 0) {
+        LOG("AP reset pin not configured\n");
+        return;
+    }
+
     pinMode(AP_RESET_PIN, OUTPUT);
     digitalWrite(AP_RESET_PIN, LOW);
+    LOG("AP early reset triggered\n");
 }
 
 void setAPstate(bool isOnline, uint8_t state) {
+    // Validate state parameter
+    if (state > AP_STATE_MAX) {
+        LOG("Invalid AP state: %d\n", state);
+        state = AP_STATE_OFFLINE;
+    }
+
     apInfo.isOnline = isOnline;
     apInfo.state = state;
+
 #ifdef HAS_RGB_LED
-    CRGB colorMap[8] = {
-        CRGB::Orange,
-        CRGB::Green,
-        CRGB::Blue,
-        CRGB::Yellow,
-        CRGB::Aqua,
-        CRGB::Red,
-        CRGB::YellowGreen,
-        CRGB::Purple};                               // Added for state 7
-    rgbIdleColor = colorMap[state < 8 ? state : 0];  // Bounds check
+    static const CRGB colorMap[] = {
+        CRGB::Orange,       // AP_STATE_OFFLINE
+        CRGB::Green,        // AP_STATE_ONLINE
+        CRGB::Blue,         // AP_STATE_WAIT_RESET
+        CRGB::Yellow,       // AP_STATE_FLASHING
+        CRGB::Aqua,         // AP_STATE_REQUIRED_POWER_CYCLE
+        CRGB::Red,          // AP_STATE_FAILED
+        CRGB::YellowGreen,  // AP_STATE_NORADIO
+        CRGB::Purple        // Additional state
+    };
+
+    const size_t colorMapSize = sizeof(colorMap) / sizeof(colorMap[0]);
+    rgbIdleColor = colorMap[state < colorMapSize ? state : 0];
+
 #ifdef BLE_ONLY
     rgbIdleColor = CRGB::Green;
 #endif
+
     rgbIdlePeriod = (isOnline ? 767 : 255);
     if (isOnline) rgbIdle();
 #endif
+
 #ifdef FLASHER_DEBUG_SHARED
     // Flasher shares port with AP comms
     if (state == AP_STATE_FLASHING) {
         LOG("Shared COM port, gSerialTaskState %d\n", gSerialTaskState);
         gSerialTaskState = SERIAL_STATE_STOP;
-        for (int i = 0; i < 100; i++) {
-            vTaskDelay(1 / portTICK_RATE_MS);
+
+        // Wait for serial task to stop with timeout
+        for (int i = 0; i < SERIAL_STOP_TIMEOUT_MS; i++) {
+            vTaskDelay(pdMS_TO_TICKS(1));
             if (gSerialTaskState == SERIAL_STATE_STOPPED) {
                 gSerialTaskState = SERIAL_STATE_NONE;
                 break;
@@ -180,108 +257,157 @@ void setAPstate(bool isOnline, uint8_t state) {
         LOG("gSerialTaskState %d\n", gSerialTaskState);
     }
 #endif
+
     wsSendSysteminfo();
 }
 
 // Reset the tag
 void APTagReset() {
     Serial.println("Resetting tag");
+
+    // Validate power pin configuration
     uint8_t powerPins = sizeof(APpowerPins);
-    if (powerPins > 0 && APpowerPins[0] == -1)
+    if (powerPins > 0 && APpowerPins[0] == -1) {
         powerPins = 0;
+    }
 
 #ifdef FLASHER_DEBUG_PROG
     pinMode(FLASHER_DEBUG_PROG, OUTPUT);
     digitalWrite(FLASHER_DEBUG_PROG, HIGH);
 #endif
+
+    // Validate reset pin
+    if (AP_RESET_PIN < 0) {
+        LOG("AP reset pin not configured\n");
+        return;
+    }
+
+    // Perform reset sequence with proper timing
     pinMode(AP_RESET_PIN, OUTPUT);
     digitalWrite(AP_RESET_PIN, LOW);
-    vTaskDelay(50 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(AP_RESET_DELAY_MS));
+
     powerControl(false, (uint8_t*)APpowerPins, powerPins);
-    vTaskDelay(300 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(AP_POWER_OFF_DELAY_MS));
+
     powerControl(true, (uint8_t*)APpowerPins, powerPins);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(AP_POWER_ON_DELAY_MS));
+
     digitalWrite(AP_RESET_PIN, HIGH);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(AP_RESET_RELEASE_DELAY_MS));
+
+    LOG("AP tag reset completed\n");
 }
 
 // Send data to the AP
 uint16_t sendBlock(const void* data, const uint16_t len) {
-    time_t timeCanary = millis();
+    const uint32_t timeCanary = millis();
+
+    // Early exit conditions
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if (!apInfo.isOnline) return false;
-    if (!txStart()) return 0;
-    // don't retry now, as it collides with communication from the tag
-    for (uint8_t attempt = 0; attempt < 1; attempt++) {
-        cmdReplyValue = CMD_REPLY_WAIT;
-        AP_SERIAL_PORT.print(">D>");
-        if (waitCmdReply()) goto blksend;
-        Serial.printf("block send failed in try %d\r\n", attempt);
+    if (data == nullptr || len == 0) {
+        LOG("Invalid data or length in sendBlock\n");
+        return 0;
     }
-    Serial.print("Failed sending block...\r\n");
-    txEnd();
-    return 0;
-blksend:
+
+    if (!txStart()) {
+        LOG("Failed to acquire TX semaphore\n");
+        return 0;
+    }
+
+    // Try sending the block command
+    cmdReplyValue = CMD_REPLY_WAIT;
+    AP_SERIAL_PORT.print(">D>");
+    if (!waitCmdReply()) {
+        LOG("Failed to get block send acknowledgment\n");
+        txEnd();
+        return 0;
+    }
+
+    // Prepare block data
     uint8_t blockbuffer[sizeof(struct blockData)];
     struct blockData* bd = (struct blockData*)blockbuffer;
     bd->size = len;
     bd->checksum = 0;
 
-    // calculate checksum
+    // Calculate checksum
     const uint8_t* dataBytes = reinterpret_cast<const uint8_t*>(data);
     for (uint16_t c = 0; c < len; c++) {
         bd->checksum += dataBytes[c];
     }
 
-    // send blockData header
-    dataBytes = reinterpret_cast<const uint8_t*>(&blockbuffer);
+    // Send blockData header with safer memory handling
     const size_t bufferSize = sizeof(struct blockData);
     uint8_t* modifiedHeader = static_cast<uint8_t*>(malloc(bufferSize));
-    if (modifiedHeader != nullptr) {
-        for (size_t i = 0; i < bufferSize; i++) {
-            modifiedHeader[i] = 0xAA ^ dataBytes[i];
-        }
-        AP_SERIAL_PORT.write(modifiedHeader, bufferSize);
-        free(modifiedHeader);
+    if (modifiedHeader == nullptr) {
+        LOG("Failed to allocate header buffer\n");
+        txEnd();
+        return 0;
     }
 
-    // send an entire block of data
-    uint16_t c = 0;  // Initialize c to prevent undefined behavior
-    dataBytes = reinterpret_cast<const uint8_t*>(data);
+    const uint8_t* headerBytes = reinterpret_cast<const uint8_t*>(&blockbuffer);
+    for (size_t i = 0; i < bufferSize; i++) {
+        modifiedHeader[i] = 0xAA ^ headerBytes[i];
+    }
+    AP_SERIAL_PORT.write(modifiedHeader, bufferSize);
+    free(modifiedHeader);
+
+    // Send data block with safer memory handling
     uint8_t* modifiedBuffer = static_cast<uint8_t*>(malloc(len));
-    if (modifiedBuffer != nullptr) {
-        for (c = 0; c < len; c++) {
-            modifiedBuffer[c] = 0xAA ^ dataBytes[c];
-        }
-        AP_SERIAL_PORT.write(modifiedBuffer, len);
-        free(modifiedBuffer);
+    if (modifiedBuffer == nullptr) {
+        LOG("Failed to allocate data buffer\n");
+        txEnd();
+        return 0;
     }
 
-    // fill the rest of the block-length filled with something else (will end up as 0xFF in the buffer)
-    const size_t remainingBytes = BLOCK_DATA_SIZE - c;
+    for (uint16_t c = 0; c < len; c++) {
+        modifiedBuffer[c] = 0xAA ^ dataBytes[c];
+    }
+    AP_SERIAL_PORT.write(modifiedBuffer, len);
+    free(modifiedBuffer);
+
+    // Fill remaining block space
+    const size_t remainingBytes = BLOCK_DATA_SIZE - len;
     if (remainingBytes > 0) {
-        uint8_t fillBuffer[remainingBytes];
-        memset(fillBuffer, 0x55, remainingBytes);
-        AP_SERIAL_PORT.write(fillBuffer, remainingBytes);
+        uint8_t* fillBuffer = static_cast<uint8_t*>(malloc(remainingBytes));
+        if (fillBuffer != nullptr) {
+            memset(fillBuffer, 0x55, remainingBytes);
+            AP_SERIAL_PORT.write(fillBuffer, remainingBytes);
+            free(fillBuffer);
+        } else {
+            // Fallback: send bytes individually if allocation fails
+            for (size_t i = 0; i < remainingBytes; i++) {
+                AP_SERIAL_PORT.write(0x55);
+            }
+        }
     }
 
-    // dummy bytes in case some bytes were missed, makes sure the AP gets kicked out of data-loading mode
-    uint8_t dummyBuffer[32];
-    memset(dummyBuffer, 0xF5, 32);
-    AP_SERIAL_PORT.write(dummyBuffer, 32);
+    // Send dummy bytes
+    uint8_t dummyBuffer[DUMMY_BUFFER_SIZE];
+    memset(dummyBuffer, 0xF5, DUMMY_BUFFER_SIZE);
+    AP_SERIAL_PORT.write(dummyBuffer, DUMMY_BUFFER_SIZE);
 
-    if (apInfo.type != ESP32_C6) delay(10);
+    // Delay only for non-C6 types
+    if (apInfo.type != ESP32_C6) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
     txEnd();
-    Serial.println("Sendblock complete, " + String(millis() - timeCanary) + "ms");
+
+    const uint32_t elapsed = millis() - timeCanary;
+    LOG("Sendblock complete, %lums\n", elapsed);
     return bd->checksum;
 }
 
 bool sendDataAvail(struct pendingData* pending) {
     if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!apInfo.isOnline) return false;
+    if (!apInfo.isOnline || pending == nullptr) return false;
     if (!txStart()) return false;
+
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_CMD_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("SDA>");
         for (uint8_t c = 0; c < sizeof(struct pendingData); c++) {
@@ -291,19 +417,22 @@ bool sendDataAvail(struct pendingData* pending) {
             txEnd();
             return true;
         }
-        Serial.printf("SDA send failed in try %d\r\n", attempt);
-        delay(200);
+        LOG("SDA send failed in attempt %d/%d\n", attempt + 1, MAX_CMD_RETRIES);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    Serial.print("SDA failed to send...\r\n");
+    LOG("SDA failed to send after %d attempts\n", MAX_CMD_RETRIES);
     txEnd();
     return false;
 }
+
 bool sendCancelPending(struct pendingData* pending) {
     if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!apInfo.isOnline) return false;
+    if (!apInfo.isOnline || pending == nullptr) return false;
     if (!txStart()) return false;
+
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_CMD_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("CXD>");
         for (uint8_t c = 0; c < sizeof(struct pendingData); c++) {
@@ -313,18 +442,23 @@ bool sendCancelPending(struct pendingData* pending) {
             txEnd();
             return true;
         }
-        Serial.printf("CXD send failed in try %d\r\n", attempt);
+        LOG("CXD send failed in attempt %d/%d\n", attempt + 1, MAX_CMD_RETRIES);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    Serial.print("CXD failed to send...\r\n");
+    LOG("CXD failed to send after %d attempts\n", MAX_CMD_RETRIES);
     txEnd();
     return false;
 }
+
 bool sendChannelPower(struct espSetChannelPower* scp) {
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if ((apInfo.state != AP_STATE_ONLINE) && (apInfo.state != AP_STATE_COMING_ONLINE)) return false;
+    if (scp == nullptr) return false;
     if (!txStart()) return false;
+
     addCRC(scp, sizeof(struct espSetChannelPower));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_CMD_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("SCP>");
         for (uint8_t c = 0; c < sizeof(struct espSetChannelPower); c++) {
@@ -336,68 +470,102 @@ bool sendChannelPower(struct espSetChannelPower* scp) {
             apInfo.power = scp->power;
             return true;
         }
-        Serial.printf("SCP send failed in try %d\r\n", attempt);
+        LOG("SCP send failed in attempt %d/%d\n", attempt + 1, MAX_CMD_RETRIES);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    Serial.print("SCP failed to send...\r\n");
+    LOG("SCP failed to send after %d attempts\n", MAX_CMD_RETRIES);
     txEnd();
     return false;
 }
 bool sendPing() {
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if (apInfo.state == AP_STATE_FLASHING) return false;
-    Serial.print("ping");
-    int t = millis();
+
+    const uint32_t startTime = millis();
+    LOG("ping");
+
     if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 3; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_PING_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("RDY?");
         if (waitCmdReply()) {
             txEnd();
-            Serial.printf(" ok, %dms\r\n", millis() - t);
+            const uint32_t elapsed = millis() - startTime;
+            LOG(" ok, %lums\n", elapsed);
             return true;
         }
+        if (attempt < MAX_PING_RETRIES - 1) {
+            vTaskDelay(pdMS_TO_TICKS(50));  // Brief delay between attempts
+        }
     }
+
     txEnd();
-    Serial.println(" failed");
+    LOG(" failed after %d attempts\n", MAX_PING_RETRIES);
     return false;
 }
+
 bool sendGetInfo() {
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_CMD_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("NFO?");
         if (waitCmdReply()) {
             txEnd();
             return true;
         }
+        if (attempt < MAX_CMD_RETRIES - 1) {
+            vTaskDelay(pdMS_TO_TICKS(100));  // Delay between attempts
+        }
     }
+
+    LOG("Failed to get AP info after %d attempts\n", MAX_CMD_RETRIES);
     txEnd();
     return false;
 }
+
 bool sendHighspeed() {
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+
+    for (uint8_t attempt = 0; attempt < MAX_CMD_RETRIES; attempt++) {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("HSPD");
         if (waitCmdReply()) {
             txEnd();
             return true;
         }
+        if (attempt < MAX_CMD_RETRIES - 1) {
+            vTaskDelay(pdMS_TO_TICKS(100));  // Delay between attempts
+        }
     }
+
+    LOG("Failed to set high speed after %d attempts\n", MAX_CMD_RETRIES);
     txEnd();
     return false;
 }
 
 // add RX'd request from the AP to the processor queue
 void addRXQueue(uint8_t* data, uint8_t len, uint8_t type) {
-    struct rxCmd* rxcmd = new struct rxCmd;
+    struct rxCmd* rxcmd = nullptr;
+
+    // Allocate memory for the command structure
+    rxcmd = static_cast<struct rxCmd*>(malloc(sizeof(struct rxCmd)));
+    if (rxcmd == nullptr) {
+        LOG("Failed to allocate memory for rxCmd\n");
+        if (data) free(data);
+        return;
+    }
+
     rxcmd->data = data;
     rxcmd->len = len;
     rxcmd->type = type;
+
     BaseType_t queuestatus = xQueueSend(rxCmdQueue, &rxcmd, 0);
-    if (queuestatus == pdFALSE) {
+    if (queuestatus != pdTRUE) {
+        LOG("RX queue full, dropping command type %d\n", type);
         if (data) free(data);
         free(rxcmd);
     }
@@ -405,295 +573,435 @@ void addRXQueue(uint8_t* data, uint8_t len, uint8_t type) {
 
 // Asynchronous command processor
 void rxCmdProcessor(void* parameter) {
+    // Create queue and semaphore
     rxCmdQueue = xQueueCreate(30, sizeof(struct rxCmd*));
+    if (rxCmdQueue == nullptr) {
+        LOG("Failed to create RX command queue\n");
+        vTaskDelete(NULL);
+        return;
+    }
+
     txActive = xSemaphoreCreateBinary();
+    if (txActive == nullptr) {
+        LOG("Failed to create TX semaphore\n");
+        vQueueDelete(rxCmdQueue);
+        vTaskDelete(NULL);
+        return;
+    }
+
     xSemaphoreGive(txActive);
+
+    LOG("RX command processor started\n");
+
     while (1) {
         if (apInfo.isOnline) {
             struct rxCmd* rxcmd = nullptr;
-            BaseType_t q = xQueueReceive(rxCmdQueue, &rxcmd, 10);
-            if (q == pdTRUE) {
+            BaseType_t queueResult = xQueueReceive(rxCmdQueue, &rxcmd, pdMS_TO_TICKS(10));
+
+            if (queueResult == pdTRUE && rxcmd != nullptr) {
                 switch (rxcmd->type) {
                     case RX_CMD_RQB:
-                        processBlockRequest((struct espBlockRequest*)rxcmd->data);
-#ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Blue);
-#endif
-                        quickBlink(3);
+                        if (rxcmd->data) {
+                            processBlockRequest((struct espBlockRequest*)rxcmd->data);
+                            quickBlink(3);
+                        }
                         break;
                     case RX_CMD_ADR:
-                        processDataReq((struct espAvailDataReq*)rxcmd->data, true);
-#ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Aqua);
-#endif
-                        quickBlink(1);
+                        if (rxcmd->data) {
+                            processDataReq((struct espAvailDataReq*)rxcmd->data, true);
+                            quickBlink(1);
+                        }
                         break;
                     case RX_CMD_XFC:
-                        processXferComplete((struct espXferComplete*)rxcmd->data, true);
-#ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Purple);
-#endif
+                        if (rxcmd->data) {
+                            processXferComplete((struct espXferComplete*)rxcmd->data, true);
+                        }
                         break;
                     case RX_CMD_XTO:
-                        processXferTimeout((struct espXferComplete*)rxcmd->data, true);
+                        if (rxcmd->data) {
+                            processXferTimeout((struct espXferComplete*)rxcmd->data, true);
+                        }
                         break;
                     case RX_CMD_RSET:
-                        Serial.println("AP did reset, resending pending\r\n");
+                        LOG("AP did reset, resending pending\n");
                         refreshAllPending();
                         sendChannelPower(&curChannel);
                         break;
                     case RX_CMD_TRD:
-                        // received tag return data
-                        processTagReturnData((struct espTagReturnData*)rxcmd->data, rxcmd->len, true);
+                        if (rxcmd->data) {
+                            processTagReturnData((struct espTagReturnData*)rxcmd->data, rxcmd->len, true);
+                        }
+                        break;
+                    default:
+                        LOG("Unknown RX command type: %d\n", rxcmd->type);
                         break;
                 }
-                if (rxcmd->data) free(rxcmd->data);
-                if (rxcmd) free(rxcmd);
+
+                // Clean up resources
+                if (rxcmd->data) {
+                    free(rxcmd->data);
+                    rxcmd->data = nullptr;
+                }
+                free(rxcmd);
             }
         }
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+
+        // Allow other tasks to run
+        vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
     }
 }
 void rxSerialTask(void* parameter) {
-    static char cmdbuffer[4] = {0};
+    static char cmdbuffer[CMD_BUFFER_SIZE] = {0};
     static uint8_t* packetp = nullptr;
-    //    static uint8_t pktlen = 0;
-    static uint8_t pktindex = 0;  // length of the command
+    static uint8_t pktindex = 0;
     static uint8_t RXState = ZBS_RX_WAIT_HEADER;
     static char lastchar = 0;
     static uint8_t charindex = 0;
 
     gSerialTaskState = SERIAL_STATE_RUNNING;
     LOG("rxSerialTask starting\n");
+
     while (gSerialTaskState == SERIAL_STATE_RUNNING) {
         while (AP_SERIAL_PORT.available()) {
             lastchar = AP_SERIAL_PORT.read();
+
             switch (RXState) {
                 case ZBS_RX_WAIT_HEADER:
-
-                    Serial.write(lastchar);
-
-                    //  shift characters in
-                    for (uint8_t c = 0; c < 3; c++) {
+                    // Shift characters in
+                    for (uint8_t c = 0; c < CMD_BUFFER_SIZE - 1; c++) {
                         cmdbuffer[c] = cmdbuffer[c + 1];
                     }
-                    cmdbuffer[3] = lastchar;
+                    cmdbuffer[CMD_BUFFER_SIZE - 1] = lastchar;
 
-                    if ((strncmp(cmdbuffer, "ACK>", 4) == 0)) cmdReplyValue = CMD_REPLY_ACK;
-                    if ((strncmp(cmdbuffer, "NOK>", 4) == 0)) cmdReplyValue = CMD_REPLY_NOK;
-                    if ((strncmp(cmdbuffer, "NOQ>", 4) == 0)) cmdReplyValue = CMD_REPLY_NOQ;
+                    // Check for acknowledgment responses
+                    if (strncmp(cmdbuffer, "ACK>", 4) == 0)
+                        cmdReplyValue = CMD_REPLY_ACK;
+                    else if (strncmp(cmdbuffer, "NOK>", 4) == 0)
+                        cmdReplyValue = CMD_REPLY_NOK;
+                    else if (strncmp(cmdbuffer, "NOQ>", 4) == 0)
+                        cmdReplyValue = CMD_REPLY_NOQ;
 
-                    if ((strncmp(cmdbuffer, "VER>", 4) == 0)) {
+                    // Handle various command headers
+                    else if (strncmp(cmdbuffer, "VER>", 4) == 0) {
                         pktindex = 0;
                         RXState = ZBS_RX_WAIT_VER;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "MAC>", 4) == 0)) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "MAC>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_MAC;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "ZCH>", 4) == 0)) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "ZCH>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_CHANNEL;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
                     }
 #ifdef HAS_SUBGHZ
-                    if ((strncmp(cmdbuffer, "SCH>", 4) == 0)) {
+                    else if (strncmp(cmdbuffer, "SCH>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_SUBCHANNEL;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
                     }
 #endif
-                    if ((strncmp(cmdbuffer, "ZPW>", 4) == 0)) {
+                    else if (strncmp(cmdbuffer, "ZPW>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_POWER;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "PEN>", 4) == 0)) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "PEN>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_PENDING;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "NOP>", 4) == 0)) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "NOP>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_NOP;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "TYP>", 4) == 0)) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "TYP>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_TYPE;
                         charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "RES>", 4) == 0) {
-                        addRXQueue(NULL, 0, RX_CMD_RSET);
-                    }
-                    if (strncmp(cmdbuffer, "RQB>", 4) == 0) {
+                        memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                    } else if (strncmp(cmdbuffer, "RES>", 4) == 0) {
+                        addRXQueue(nullptr, 0, RX_CMD_RSET);
+                    } else if (strncmp(cmdbuffer, "RQB>", 4) == 0) {
                         RXState = ZBS_RX_BLOCK_REQUEST;
                         charindex = 0;
                         pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espBlockRequest) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                        // don't set APstate heree, as it interferes with the flashing process
-                        // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
-                    }
-                    if (strncmp(cmdbuffer, "ADR>", 4) == 0) {
+                        packetp = static_cast<uint8_t*>(calloc(BLOCK_REQUEST_SIZE, 1));
+                        if (packetp == nullptr) {
+                            LOG("Failed to allocate memory for block request\n");
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        } else {
+                            memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                            lastAPActivity = millis();
+                        }
+                    } else if (strncmp(cmdbuffer, "ADR>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_DATA_REQ;
                         charindex = 0;
                         pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espAvailDataReq) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                        // don't set APstate heree, as it interferes with the flashing process
-                        // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
-                    }
-                    if (strncmp(cmdbuffer, "XFC>", 4) == 0) {
+                        packetp = static_cast<uint8_t*>(calloc(AVAIL_DATA_REQ_SIZE, 1));
+                        if (packetp == nullptr) {
+                            LOG("Failed to allocate memory for data request\n");
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        } else {
+                            memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                            lastAPActivity = millis();
+                        }
+                    } else if (strncmp(cmdbuffer, "XFC>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_XFERCOMPLETE;
                         pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espXferComplete) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "XTO>", 4) == 0) {
+                        packetp = static_cast<uint8_t*>(calloc(XFER_COMPLETE_SIZE, 1));
+                        if (packetp == nullptr) {
+                            LOG("Failed to allocate memory for xfer complete\n");
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        } else {
+                            memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                        }
+                    } else if (strncmp(cmdbuffer, "XTO>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_XFERTIMEOUT;
                         pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espXferComplete) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "RDY>", 4) == 0) {
-                        addRXQueue(NULL, 0, RX_CMD_RDY);
-                    }
-                    if (strncmp(cmdbuffer, "TRD>", 4) == 0) {
+                        packetp = static_cast<uint8_t*>(calloc(XFER_COMPLETE_SIZE, 1));
+                        if (packetp == nullptr) {
+                            LOG("Failed to allocate memory for xfer timeout\n");
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        } else {
+                            memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                        }
+                    } else if (strncmp(cmdbuffer, "RDY>", 4) == 0) {
+                        addRXQueue(nullptr, 0, RX_CMD_RDY);
+                    } else if (strncmp(cmdbuffer, "TRD>", 4) == 0) {
                         RXState = ZBS_RX_WAIT_TAG_RETURN_DATA;
                         pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espTagReturnData) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                    }
-                    break;
-                case ZBS_RX_BLOCK_REQUEST:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espBlockRequest)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_RQB);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_XFERCOMPLETE:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espXferComplete)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_XFC);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_XFERTIMEOUT:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espXferComplete)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_XTO);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_DATA_REQ:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espAvailDataReq)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_ADR);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_TAG_RETURN_DATA: {
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if ((pktindex > 10) && (pktindex >= (packetp[9] + 10))) {
-                        addRXQueue(packetp, pktindex, RX_CMD_TRD);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                } break;
-                case ZBS_RX_WAIT_VER:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 4) {
-                        charindex = 0;
-                        apInfo.version = (uint16_t)strtoul(cmdbuffer, NULL, 16);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_MAC:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        charindex = 0;
-                        apInfo.mac[pktindex] = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                        pktindex++;
-                    }
-                    if (pktindex == 8) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_CHANNEL:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.channel = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
-#ifdef HAS_SUBGHZ
-                case ZBS_RX_WAIT_SUBCHANNEL:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 3) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        int Channel = atoi(cmdbuffer);
-                        if (Channel != NO_SUBGHZ_CHANNEL) {
-                            apInfo.hasSubGhz = true;
-                            apInfo.SubGhzChannel = Channel;
+                        packetp = static_cast<uint8_t*>(calloc(TAG_RETURN_DATA_SIZE, 1));
+                        if (packetp == nullptr) {
+                            LOG("Failed to allocate memory for tag return data\n");
+                            RXState = ZBS_RX_WAIT_HEADER;
                         } else {
-                            apInfo.hasSubGhz = false;
-                            apInfo.SubGhzChannel = 0;
+                            memset(cmdbuffer, 0x00, CMD_BUFFER_SIZE);
+                            lastAPActivity = millis();
                         }
                     }
                     break;
+                case ZBS_RX_BLOCK_REQUEST:
+                    if (packetp != nullptr) {
+                        packetp[pktindex] = lastchar;
+                        pktindex++;
+                        if (pktindex == sizeof(struct espBlockRequest)) {
+                            addRXQueue(packetp, pktindex, RX_CMD_RQB);
+                            packetp = nullptr;  // Prevent double-free
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_XFERCOMPLETE:
+                    if (packetp != nullptr) {
+                        packetp[pktindex] = lastchar;
+                        pktindex++;
+                        if (pktindex == sizeof(struct espXferComplete)) {
+                            addRXQueue(packetp, pktindex, RX_CMD_XFC);
+                            packetp = nullptr;  // Prevent double-free
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_XFERTIMEOUT:
+                    if (packetp != nullptr) {
+                        packetp[pktindex] = lastchar;
+                        pktindex++;
+                        if (pktindex == sizeof(struct espXferComplete)) {
+                            addRXQueue(packetp, pktindex, RX_CMD_XTO);
+                            packetp = nullptr;  // Prevent double-free
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_DATA_REQ:
+                    if (packetp != nullptr) {
+                        packetp[pktindex] = lastchar;
+                        pktindex++;
+                        if (pktindex == sizeof(struct espAvailDataReq)) {
+                            addRXQueue(packetp, pktindex, RX_CMD_ADR);
+                            packetp = nullptr;  // Prevent double-free
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_TAG_RETURN_DATA:
+                    if (packetp != nullptr) {
+                        packetp[pktindex] = lastchar;
+                        pktindex++;
+                        // Check if we have enough data and the expected length
+                        if ((pktindex > 10) && (pktindex >= (packetp[9] + 10))) {
+                            addRXQueue(packetp, pktindex, RX_CMD_TRD);
+                            packetp = nullptr;  // Prevent double-free
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+                case ZBS_RX_WAIT_VER:
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 4) {
+                            cmdbuffer[4] = '\0';  // Null terminate
+                            apInfo.version = (uint16_t)strtoul(cmdbuffer, nullptr, 16);
+                            charindex = 0;
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        // Buffer overflow protection
+                        charindex = 0;
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_MAC:
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            if (pktindex < 8) {
+                                apInfo.mac[pktindex] = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                                pktindex++;
+                            }
+                            charindex = 0;
+                        }
+                        if (pktindex == 8) {
+                            RXState = ZBS_RX_WAIT_HEADER;
+                            pktindex = 0;
+                        }
+                    } else {
+                        charindex = 0;
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+                case ZBS_RX_WAIT_CHANNEL:
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            apInfo.channel = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
+
+#ifdef HAS_SUBGHZ
+                case ZBS_RX_WAIT_SUBCHANNEL:
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 3) {
+                            cmdbuffer[3] = '\0';  // Null terminate
+                            int Channel = atoi(cmdbuffer);
+                            if (Channel != NO_SUBGHZ_CHANNEL) {
+                                apInfo.hasSubGhz = true;
+                                apInfo.SubGhzChannel = Channel;
+                            } else {
+                                apInfo.hasSubGhz = false;
+                                apInfo.SubGhzChannel = 0;
+                            }
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
+                        RXState = ZBS_RX_WAIT_HEADER;
+                    }
+                    break;
 #endif
+
                 case ZBS_RX_WAIT_POWER:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            apInfo.power = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
                         RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.power = (uint8_t)strtoul(cmdbuffer, NULL, 16);
                     }
                     break;
+
                 case ZBS_RX_WAIT_PENDING:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            apInfo.pendingBuffer = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
                         RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.pendingBuffer = (uint8_t)strtoul(cmdbuffer, NULL, 16);
                     }
                     break;
+
                 case ZBS_RX_WAIT_NOP:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            apInfo.nop = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
                         RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.nop = (uint8_t)strtoul(cmdbuffer, NULL, 16);
                     }
                     break;
+
                 case ZBS_RX_WAIT_TYPE:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
+                    if (charindex < CMD_BUFFER_SIZE - 1) {
+                        cmdbuffer[charindex] = lastchar;
+                        charindex++;
+                        if (charindex == 2) {
+                            cmdbuffer[2] = '\0';  // Null terminate
+                            apInfo.type = (uint8_t)strtoul(cmdbuffer, nullptr, 16);
+                            RXState = ZBS_RX_WAIT_HEADER;
+                        }
+                    } else {
                         RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.type = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                    }
+                    break;
+
+                default:
+                    // Unknown state, reset to header wait
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    if (packetp != nullptr) {
+                        free(packetp);
+                        packetp = nullptr;
                     }
                     break;
             }
         }
-        vTaskDelay(1 / portTICK_PERIOD_MS);
-    }  // end of while(1)
+
+        // Allow other tasks to run and prevent watchdog timeout
+        vTaskDelay(pdMS_TO_TICKS(TASK_DELAY_MS));
+    }
+
+    // Cleanup before task termination
+    if (packetp != nullptr) {
+        free(packetp);
+        packetp = nullptr;
+    }
 
     AP_SERIAL_PORT.end();
     gSerialTaskState = SERIAL_STATE_STOPPED;
@@ -772,49 +1080,76 @@ void rxSerialTask2(void* parameter) {
 #endif
 
 void ShowAPInfo() {
+    if (apInfo.type == 0 && apInfo.version == 0) {
+        Serial.println("| AP Info - No data available |");
+        return;
+    }
+
     Serial.printf("\r\n| AP Info - type %02X       |\r\n", apInfo.type);
     Serial.printf("| Ch   |             0x%02X |\r\n", apInfo.channel);
     Serial.printf("| Power|               %02X |\r\n", apInfo.power);
-    Serial.printf("| MAC  | %02X%02X%02X%02X%02X%02X%02X%02X |\r\n", apInfo.mac[7], apInfo.mac[6], apInfo.mac[5], apInfo.mac[4], apInfo.mac[3], apInfo.mac[2], apInfo.mac[1], apInfo.mac[0]);
+    Serial.printf("| MAC  | %02X%02X%02X%02X%02X%02X%02X%02X |\r\n",
+                  apInfo.mac[7], apInfo.mac[6], apInfo.mac[5], apInfo.mac[4],
+                  apInfo.mac[3], apInfo.mac[2], apInfo.mac[1], apInfo.mac[0]);
     Serial.printf("| Ver  |           0x%04X |\r\n", apInfo.version);
 }
 
 void notifySegmentedFlash() {
-    sendAPSegmentedData(apInfo.mac, (String) "Fl     ash", 0x0800, false, true);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    if (sendAPSegmentedData(apInfo.mac, (String) "Fl     ash", 0x0800, false, true)) {
+        vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
+    }
+
 #ifdef POWER_NO_SOFT_POWER
-    sendAPSegmentedData(apInfo.mac, (String) "If    done", 0x0800, false, true);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    sendAPSegmentedData(apInfo.mac, (String) "RE    boot", 0x0800, false, true);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    if (sendAPSegmentedData(apInfo.mac, (String) "If    done", 0x0800, false, true)) {
+        vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
+    }
+    if (sendAPSegmentedData(apInfo.mac, (String) "RE    boot", 0x0800, false, true)) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 #endif
 }
 void checkWaitPowerCycle() {
-    // check if we should wait for a power cycle. If we do, try to inform the user the best we can, and hang.
+    // Check if we should wait for a power cycle
 #ifdef POWER_NO_SOFT_POWER
     setAPstate(false, AP_STATE_REQUIRED_POWER_CYCLE);
-    // If we have no soft power control, we'll now wait until the device is power-cycled
-    Serial.printf("Please power-cycle your AP/device\r\n");
+
+    // Inform user about required power cycle
+    Serial.println("Please power-cycle your AP/device");
+
 #ifdef HAS_RGB_LED
     showColorPattern(CRGB::Aqua, CRGB::Aqua, CRGB::Red);
 #endif
+
+    // Wait indefinitely for power cycle
     while (1) {
-        vTaskDelay(3000 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(POWER_CYCLE_WAIT_INTERVAL));
     }
 #endif
 }
 void segmentedShowIp() {
     IPAddress IP = wifiUtils.localIP();
-    char temp[12];
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    sendAPSegmentedData(apInfo.mac, (String) "IP    Addr", 0x0200, true, true);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    sprintf(temp, "%03d IP %03d", IP[0], IP[1]);
-    sendAPSegmentedData(apInfo.mac, (String)temp, 0x0200, true, true);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    sprintf(temp, "%03d IP %03d", IP[2], IP[3]);
-    sendAPSegmentedData(apInfo.mac, (String)temp, 0x0200, true, true);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    char temp[IP_DISPLAY_BUFFER_SIZE];
+
+    vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
+
+    if (!sendAPSegmentedData(apInfo.mac, (String) "IP    Addr", 0x0200, true, true)) {
+        LOG("Failed to send IP address header\n");
+        return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
+
+    snprintf(temp, sizeof(temp), "%03d IP %03d", IP[0], IP[1]);
+    if (!sendAPSegmentedData(apInfo.mac, (String)temp, 0x0200, true, true)) {
+        LOG("Failed to send IP address part 1\n");
+        return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
+
+    snprintf(temp, sizeof(temp), "%03d IP %03d", IP[2], IP[3]);
+    if (!sendAPSegmentedData(apInfo.mac, (String)temp, 0x0200, true, true)) {
+        LOG("Failed to send IP address part 2\n");
+    }
+    vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));
 }
 
 bool bringAPOnline(uint8_t newState) {
@@ -824,6 +1159,7 @@ bool bringAPOnline(uint8_t newState) {
     if (apInfo.state == AP_STATE_NORADIO) return true;
     if (apInfo.state == AP_STATE_FLASHING) return false;
 
+    // Initialize serial communication if needed
     if (gSerialTaskState != SERIAL_STATE_INITIALIZED) {
 #ifdef HAS_ELECROW_ADV_2_8
         // Set GPIO45 low to connect the wireless interface to the multiplexed pins
@@ -842,50 +1178,84 @@ bool bringAPOnline(uint8_t newState) {
 #endif
         gSerialTaskState = SERIAL_STATE_INITIALIZED;
     }
+
+    // Start RX task if not running
     if (gSerialTaskState != SERIAL_STATE_RUNNING) {
         gSerialTaskState = SERIAL_STATE_STARTING;
         xTaskCreate(rxSerialTask, "rxSerialTask", 1750, NULL, 11, NULL);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(TASK_CREATION_DELAY_MS));
     }
+
     setAPstate(false, AP_STATE_OFFLINE);
-    // try without rebooting
+
+    // Try without rebooting first
     AP_SERIAL_PORT.updateBaudRate(115200);
     uint32_t bootTimeout = millis();
     bool APrdy = sendPing();
+
     if (!APrdy) {
         if (apInfo.state == AP_STATE_FLASHING) return false;
+
+        LOG("Initial ping failed, resetting AP\n");
         APTagReset();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
         bootTimeout = millis();
         APrdy = false;
-        while ((!APrdy) && (millis() - bootTimeout < 10 * 1000) && (apInfo.state != AP_STATE_FLASHING)) {
+        uint8_t attempts = 0;
+
+        while (!APrdy &&
+               (millis() - bootTimeout < AP_BOOT_TIMEOUT_MS) &&
+               (apInfo.state != AP_STATE_FLASHING)) {
             APrdy = sendPing();
-            vTaskDelay(300 / portTICK_PERIOD_MS);
-        }
-    }
-    if (!APrdy) {
-        return false;
-    } else {
-        setAPstate(false, AP_STATE_COMING_ONLINE);
-        sendChannelPower(&curChannel);
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-        if (!sendGetInfo()) {
-            setAPstate(false, AP_STATE_OFFLINE);
-            return false;
-        }
-        if (apInfo.type == ESP32_C6) {
-            if (sendHighspeed()) {
-                AP_SERIAL_PORT.flush();
-                vTaskDelay(10 / portTICK_PERIOD_MS);
-                AP_SERIAL_PORT.updateBaudRate(2000000);
-                Serial.println("switched to 2000000 baud");
+            if (!APrdy) {
+                vTaskDelay(pdMS_TO_TICKS(AP_PING_RETRY_DELAY_MS));
+                attempts++;
+                if (attempts % 10 == 0) {
+                    LOG("AP boot attempt %d, elapsed: %lums\n", attempts, millis() - bootTimeout);
+                }
             }
         }
-
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-        setAPstate(newState == AP_STATE_ONLINE ? true : false, newState);
-        return true;
     }
+
+    if (!APrdy) {
+        LOG("Failed to bring AP online after %lums\n", millis() - bootTimeout);
+        return false;
+    }
+
+    // AP is responding, configure it
+    setAPstate(false, AP_STATE_COMING_ONLINE);
+
+    if (!sendChannelPower(&curChannel)) {
+        LOG("Failed to set channel/power\n");
+        setAPstate(false, AP_STATE_OFFLINE);
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    if (!sendGetInfo()) {
+        LOG("Failed to get AP info\n");
+        setAPstate(false, AP_STATE_OFFLINE);
+        return false;
+    }
+
+    // Enable high speed for C6 modules
+    if (apInfo.type == ESP32_C6) {
+        if (sendHighspeed()) {
+            AP_SERIAL_PORT.flush();
+            vTaskDelay(pdMS_TO_TICKS(10));
+            AP_SERIAL_PORT.updateBaudRate(2000000);
+            LOG("Switched to 2000000 baud\n");
+        } else {
+            LOG("Failed to enable high speed mode\n");
+        }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+    setAPstate(newState == AP_STATE_ONLINE ? true : false, newState);
+    LOG("AP brought online successfully\n");
+    return true;
 }
 
 bool checkRadio() {
