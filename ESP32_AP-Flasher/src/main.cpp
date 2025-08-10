@@ -13,7 +13,7 @@
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
-#include "storage_utils.cpp"  // Include new storage utilities
+#include "storage_utils.h"  // Include new storage utilities
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"

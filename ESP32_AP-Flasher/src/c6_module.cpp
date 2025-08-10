@@ -6,7 +6,7 @@
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
-#include "storage_utils.cpp"  // Include new storage utilities
+#include "storage_utils.h"  // Include new storage utilities
 #include "system.h"
 #include "tag_db.h"
 #include "web.h"
@@ -215,17 +215,17 @@ class C6Module : public ModuleInterface {
         }
 
         // Use new storage utilities for consistent and validated saving
-        StorageUtils::Result result = StorageUtils::SUCCESS;
+        StorageUtils::Result result = StorageUtils::Result::SUCCESS;
 
         if (doc.containsKey("channel")) result = STORAGE_SET_INT("c6_module", "channel", doc["channel"]);
-        if (doc.containsKey("txPower") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
-        if (doc.containsKey("panId") && result == StorageUtils::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
-        if (doc.containsKey("sleepMode") && result == StorageUtils::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
-        if (doc.containsKey("wakeInterval") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
-        if (doc.containsKey("autoReconnect") && result == StorageUtils::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
-        if (doc.containsKey("healthCheckInterval") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
+        if (doc.containsKey("txPower") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
+        if (doc.containsKey("panId") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
+        if (doc.containsKey("sleepMode") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
+        if (doc.containsKey("wakeInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
+        if (doc.containsKey("autoReconnect") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
+        if (doc.containsKey("healthCheckInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
 
-        if (result != StorageUtils::SUCCESS) {
+        if (result != StorageUtils::Result::SUCCESS) {
             lastError = "Failed to save configuration to storage";
             return false;
         }
@@ -448,17 +448,17 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
 
         if (!error) {
             // Use new storage utilities with proper error handling
-            StorageUtils::Result result = StorageUtils::SUCCESS;
+            StorageUtils::Result result = StorageUtils::Result::SUCCESS;
 
             if (doc.containsKey("channel")) result = STORAGE_SET_INT("c6_module", "channel", doc["channel"]);
-            if (doc.containsKey("txPower") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
-            if (doc.containsKey("panId") && result == StorageUtils::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
-            if (doc.containsKey("sleepMode") && result == StorageUtils::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
-            if (doc.containsKey("wakeInterval") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
-            if (doc.containsKey("autoReconnect") && result == StorageUtils::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
-            if (doc.containsKey("healthCheckInterval") && result == StorageUtils::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
+            if (doc.containsKey("txPower") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
+            if (doc.containsKey("panId") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
+            if (doc.containsKey("sleepMode") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
+            if (doc.containsKey("wakeInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
+            if (doc.containsKey("autoReconnect") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
+            if (doc.containsKey("healthCheckInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
 
-            if (result == StorageUtils::SUCCESS) {
+            if (result == StorageUtils::Result::SUCCESS) {
                 // Apply settings to C6 module
                 applyC6Settings();
                 request->send(200, "application/json", "{\"success\":true}");

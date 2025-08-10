@@ -108,7 +108,7 @@ class WiFiUtils {
     // Private helper methods
     bool waitForConnection();
     void pollSerial();
-    String buildHostname(esp_mac_type_t mac_type);
+    
     void terminalLog(String text);
     void setupDisconnectHandler();
 
@@ -154,9 +154,9 @@ class WiFiUtils {
     static void WiFiEvent(WiFiEvent_t event);
 
     // Utility functions
-    static String getEncryptionString(wifi_auth_mode_t encryption);
-    static int getEncryptionType(wifi_auth_mode_t encryption);  // Numeric value for frontend compatibility
-    static int calculateSignalQuality(int rssi);
+    static 
+    static   // Numeric value for frontend compatibility
+    static 
 
     // Cleanup
     void cleanup();

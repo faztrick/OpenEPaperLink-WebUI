@@ -20,7 +20,7 @@ function formatUptime(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (days > 0) {
         return `${days}d ${hours}h ${minutes}m`;
     } else if (hours > 0) {
@@ -114,7 +114,7 @@ function formatNumber(num) {
 function getRelativeTime(timestamp) {
     const now = Date.now();
     const diff = now - (timestamp * 1000);
-    
+
     if (diff < 60000) return 'Just now';
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
