@@ -14,12 +14,17 @@
 #include <ArduinoJson.h>
 
 // Project includes
-#include "common_utils.h"
+#include "core_utilities.h"
 
 // ============================================================================
 // Constants and Definitions
 // ============================================================================
 #define MAX_WIFI_NETWORKS 50
+#define WIFI_CONNECT_TIMEOUT_MS 15000
+#define DISCONNECT_RATE_LIMIT_MS 5000
+#define MAX_AUTH_FAILURES 3
+#define MAX_HANDSHAKE_FAILURES 3
+#define SCAN_RATE_LIMIT_MS 10000
 
 // ============================================================================
 // Enums and Structures
@@ -70,11 +75,29 @@ struct WiFiConfig {
     String ssid;
     String password;
     String hostname;
-    String ip;
-    String mask;
+    bool useStaticIP = false;
+    String staticIP;
     String gateway;
-    String dns;
-    bool hasStaticIP;
+    String subnet;
+    String dns1;
+    String dns2;
+    bool enableAP = true;
+    String apSSID;
+    String apPassword;
+    uint8_t channel = 1;
+    bool autoReconnect = true;
+    bool powerSave = false;
+
+    // Legacy compatibility properties
+    String ip() const { return staticIP; }
+    String mask() const { return subnet; }
+    String dns() const { return dns1; }
+    bool hasStaticIP() const { return useStaticIP && !staticIP.isEmpty(); }
+
+    // Serialization methods for compatibility
+    String toJsonString() const;
+    bool fromJsonString(const String& json);
+    bool isValid() const;
 };
 
 class WiFiUtils {
@@ -108,7 +131,14 @@ class WiFiUtils {
     // Private helper methods
     bool waitForConnection();
     void pollSerial();
-    
+    bool startAccessPoint();
+    bool configureStaticIP();
+    void handleWiFiStatusChanges();
+    void handleReconnectionLogic();
+    void updateAPClientCount();
+    void processImprovSerial();
+    void setDefaultConfig(WiFiConfig& config);
+
     void terminalLog(String text);
     void setupDisconnectHandler();
 
@@ -154,9 +184,8 @@ class WiFiUtils {
     static void WiFiEvent(WiFiEvent_t event);
 
     // Utility functions
-    static 
-    static   // Numeric value for frontend compatibility
-    static 
+    static String authModeToString(wifi_auth_mode_t authMode);
+    static int calculateSignalQuality(int32_t rssi);
 
     // Cleanup
     void cleanup();

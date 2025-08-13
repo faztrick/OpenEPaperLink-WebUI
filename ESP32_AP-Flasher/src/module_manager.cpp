@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
+#include "core_utilities.h"
+
 // Global module manager instance
 ModuleManager moduleManager;
 
@@ -21,7 +23,7 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
 
     // Check for duplicate module names
     if (findModule(info.name) != modules.end()) {
-        Serial.printf("[MODULE_MANAGER] Module '%s' already registered\n", info.name.c_str());
+        LogUtils::logWarning("[MODULE_MANAGER] Module '" + info.name + "' already registered");
         return false;
     }
 
@@ -33,8 +35,7 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
 
     modules.push_back(std::move(regModule));
 
-    Serial.printf("[MODULE_MANAGER] Registered module '%s' v%s\n",
-                  info.name.c_str(), info.version.c_str());
+    LogUtils::logInfo("[MODULE_MANAGER] Registered module '" + info.name + "' v" + info.version);
 
     return true;
 }
@@ -59,8 +60,7 @@ bool ModuleManager::initializeAll() {
     // Initialize modules in dependency order
     for (auto& regModule : modules) {
         if (regModule.info.state == ModuleState::UNINITIALIZED) {
-            Serial.printf("[MODULE_MANAGER] Initializing module '%s'\n",
-                          regModule.info.name.c_str());
+            LogUtils::logInfo("[MODULE_MANAGER] Initializing module '" + regModule.info.name + "'");
 
             regModule.info.state = ModuleState::INITIALIZING;
 
@@ -71,13 +71,11 @@ bool ModuleManager::initializeAll() {
             if (success) {
                 regModule.info.state = ModuleState::INITIALIZED;
                 regModule.info.lastActivity = millis();
-                Serial.printf("[MODULE_MANAGER] Module '%s' initialized in %dms\n",
-                              regModule.info.name.c_str(), regModule.info.initTime);
+                LogUtils::logInfo("[MODULE_MANAGER] Module '" + regModule.info.name + "' initialized in " + String(regModule.info.initTime) + "ms");
             } else {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = "Initialization failed";
-                Serial.printf("[MODULE_MANAGER] Module '%s' initialization failed\n",
-                              regModule.info.name.c_str());
+                LogUtils::logError("[MODULE_MANAGER] Module '" + regModule.info.name + "' initialization failed");
                 allSuccess = false;
             }
         }
@@ -85,8 +83,7 @@ bool ModuleManager::initializeAll() {
 
     if (allSuccess) {
         initialized = true;
-        Serial.printf("[MODULE_MANAGER] All modules initialized successfully in %dms\n",
-                      millis() - startTime);
+        LogUtils::logInfo("[MODULE_MANAGER] All modules initialized successfully in " + String(millis() - startTime) + "ms");
     } else {
         Serial.println("[MODULE_MANAGER] Some modules failed to initialize");
     }
@@ -106,20 +103,17 @@ bool ModuleManager::startAll() {
 
     for (auto& regModule : modules) {
         if (regModule.autoStart && regModule.info.state == ModuleState::INITIALIZED) {
-            Serial.printf("[MODULE_MANAGER] Starting module '%s'\n",
-                          regModule.info.name.c_str());
+            LogUtils::logInfo("[MODULE_MANAGER] Starting module '" + regModule.info.name + "'");
 
             bool success = regModule.instance->start();
             if (success) {
                 regModule.info.state = ModuleState::ACTIVE;
                 regModule.info.lastActivity = millis();
-                Serial.printf("[MODULE_MANAGER] Module '%s' started successfully\n",
-                              regModule.info.name.c_str());
+                LogUtils::logInfo("[MODULE_MANAGER] Module '" + regModule.info.name + "' started successfully");
             } else {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = "Start failed";
-                Serial.printf("[MODULE_MANAGER] Module '%s' start failed\n",
-                              regModule.info.name.c_str());
+                LogUtils::logError("[MODULE_MANAGER] Module '" + regModule.info.name + "' start failed");
                 allSuccess = false;
             }
         }
@@ -131,17 +125,16 @@ bool ModuleManager::startAll() {
 bool ModuleManager::startModule(const String& name) {
     auto it = findModule(name);
     if (it == modules.end()) {
-        Serial.printf("[MODULE_MANAGER] Module '%s' not found\n", name.c_str());
+        LogUtils::logError("[MODULE_MANAGER] Module '" + name + "' not found");
         return false;
     }
 
     if (it->info.state != ModuleState::INITIALIZED && it->info.state != ModuleState::SUSPENDED) {
-        Serial.printf("[MODULE_MANAGER] Module '%s' not in startable state (current: %d)\n",
-                      name.c_str(), static_cast<int>(it->info.state));
+        LogUtils::logError("[MODULE_MANAGER] Module '" + name + "' not in startable state (current: " + String(static_cast<int>(it->info.state)) + ")");
         return false;
     }
 
-    Serial.printf("[MODULE_MANAGER] Starting module '%s'\n", name.c_str());
+    LogUtils::logInfo("[MODULE_MANAGER] Starting module '" + name + "'");
 
     bool success = it->instance->start();
     if (success) {
@@ -168,7 +161,7 @@ bool ModuleManager::stopModule(const String& name) {
         return false;
     }
 
-    Serial.printf("[MODULE_MANAGER] Stopping module '%s'\n", name.c_str());
+    LogUtils::logInfo("[MODULE_MANAGER] Stopping module '" + name + "'");
 
     bool success = it->instance->stop();
     if (success) {
@@ -188,13 +181,12 @@ bool ModuleManager::restartModule(const String& name) {
 }
 
 void ModuleManager::registerAllWebHandlers(AsyncWebServer& server) {
-    Serial.println("[MODULE_MANAGER] Registering web handlers for all modules...");
+    LogUtils::logInfo("[MODULE_MANAGER] Registering web handlers for all modules...");
 
     for (auto& regModule : modules) {
         if (regModule.info.capabilities.hasWebHandlers &&
             regModule.info.state == ModuleState::ACTIVE) {
-            Serial.printf("[MODULE_MANAGER] Registering web handlers for '%s'\n",
-                          regModule.info.name.c_str());
+            LogUtils::logInfo("[MODULE_MANAGER] Registering web handlers for '" + regModule.info.name + "'");
 
             regModule.instance->registerWebHandlers(server);
         }
@@ -410,8 +402,7 @@ bool ModuleManager::resolveDependencies() {
                         break;
                     }
                 } else {
-                    Serial.printf("[MODULE_MANAGER] Warning: Module '%s' depends on unknown module '%s'\n",
-                                  modules[i].info.name.c_str(), dep.c_str());
+                    LogUtils::logWarning("[MODULE_MANAGER] Warning: Module '" + modules[i].info.name + "' depends on unknown module '" + dep + "'");
                 }
             }
             if (changed) break;
@@ -434,9 +425,9 @@ void ModuleManager::updateModuleActivity(const String& name) {
 
 void ModuleManager::logModuleEvent(const String& name, const String& event, const String& details) {
     if (details.length() > 0) {
-        Serial.printf("[MODULE:%s] %s - %s\n", name.c_str(), event.c_str(), details.c_str());
+        LogUtils::logInfo("[MODULE:" + name + "] " + event + " - " + details);
     } else {
-        Serial.printf("[MODULE:%s] %s\n", name.c_str(), event.c_str());
+        LogUtils::logInfo("[MODULE:" + name + "] " + event);
     }
 }
 

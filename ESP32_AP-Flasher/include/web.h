@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+
 #include "c6_module.h"
 
 // Forward declarations
@@ -15,6 +16,10 @@ void init_web();
 void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 void doJsonUpload(AsyncWebServerRequest *request);
 void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
+
+// Web response utility functions
+void sendErrorResponse(AsyncWebServerRequest *request, int code, const String &message);
+void sendSuccessResponse(AsyncWebServerRequest *request, const String &message);
 
 // Enhanced Module Management API
 void setupModuleManagementAPI(AsyncWebServer &server);
@@ -41,4 +46,4 @@ uint8_t wsClientCount();
 extern AsyncWebSocket ws;
 extern SemaphoreHandle_t wsMutex;
 
-#endif // WEB_H
+#endif  // WEB_H

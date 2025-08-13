@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <HTTPClient.h>
-#include <WiFi.h>
 #include <MD5Builder.h>
+#include <WiFi.h>
 #include <time.h>
 
 #include <algorithm>
@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 
+#include "core_utilities.h"
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
@@ -46,7 +47,7 @@ uint8_t* getDataForFile(fs::File& file) {
     const size_t fileSize = file.size();
     uint8_t* ret = (uint8_t*)malloc(fileSize);
     if (ret == nullptr) {
-        Serial.printf("malloc failed for file with size %d\r\n", fileSize);
+        LogUtils::logError("malloc failed for file with size " + String(fileSize));
         wsErr("malloc failed while reading file");
         util::printHeap();
         return nullptr;
@@ -83,7 +84,9 @@ void prepareIdleReq(const uint8_t* dst, uint16_t nextCheckin) {
         pending.availdatainfo.nextCheckIn = nextCheckin;
         pending.attemptsLeft = 10 + config.maxsleep;
 
-        Serial.printf(">SDA %02X%02X%02X%02X%02X%02X%02X%02X sleeping %d minutes\r\n", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0], nextCheckin);
+        char macStr[25];
+        snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X%02X%02X", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0]);
+        LogUtils::logDebug(">SDA " + String(macStr) + " sleeping " + String(nextCheckin) + " minutes");
         sendDataAvail(&pending);
     }
 }
@@ -256,7 +259,9 @@ bool prepareDataAvail(String& filename, uint8_t dataType, uint8_t dataTypeArgume
     checkMirror(taginfo, &pending);
     queueDataAvail(&pending, !taginfo->isExternal);
     if (taginfo->isExternal == false) {
-        Serial.printf(">SDA %02X%02X%02X%02X%02X%02X%02X%02X TYPE 0x%02X\r\n", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0], pending.availdatainfo.dataType);
+        char macStr[25];
+        snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X%02X%02X", dst[7], dst[6], dst[5], dst[4], dst[3], dst[2], dst[1], dst[0]);
+        LogUtils::logDebug(">SDA " + String(macStr) + " TYPE 0x" + String(pending.availdatainfo.dataType, HEX));
     } else {
         udpsync.netSendDataAvail(&pending);
     }
@@ -310,7 +315,7 @@ void prepareExternalDataAvail(struct pendingData* pending, IPAddress remoteIP) {
                         xSemaphoreGive(fsMutex);
                     }
                 } else {
-                    logLine("prepareExternalDataAvail " + String(imageUrl) + " error " + String(httpCode));
+                    LogUtils::logInfo("prepareExternalDataAvail " + String(imageUrl) + " error " + String(httpCode));
                     wsLog("error " + String(httpCode));
                 }
                 http.end();
@@ -350,7 +355,7 @@ void prepareExternalDataAvail(struct pendingData* pending, IPAddress remoteIP) {
                 snprintf(dataUrl, sizeof(dataUrl), "http://%s/getdata?mac=%s&md5=%s", remoteIP.toString().c_str(), hexmac, md5);
                 wsLog("GET " + String(dataUrl));
                 HTTPClient http;
-                logLine("http DATATYPE_NFC_* " + String(dataUrl));
+                LogUtils::logInfo("http DATATYPE_NFC_* " + String(dataUrl));
                 http.begin(dataUrl);
                 int httpCode = http.GET();
                 if (httpCode == 200) {
@@ -392,7 +397,9 @@ void processBlockRequest(struct espBlockRequest* br) {
     PendingItem* queueItem = getQueueItem(br->src, br->ver);
     if (queueItem == nullptr) {
         prepareCancelPending(br->src);
-        Serial.printf("blockrequest: couldn't find taginfo %02X%02X%02X%02X%02X%02X%02X%02X\r\n", br->src[7], br->src[6], br->src[5], br->src[4], br->src[3], br->src[2], br->src[1], br->src[0]);
+        char macStr[25];
+        snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X%02X%02X", br->src[7], br->src[6], br->src[5], br->src[4], br->src[3], br->src[2], br->src[1], br->src[0]);
+        LogUtils::logError("blockrequest: couldn't find taginfo " + String(macStr));
         return;
     }
     if (queueItem->data == nullptr) {
@@ -452,8 +459,7 @@ void processXferComplete(struct espXferComplete* xfc, bool local) {
             uint8_t dataType = queueItem->pendingdata.availdatainfo.dataType;
             if (config.preview && dataType != DATATYPE_FW_UPDATE && dataType != DATATYPE_NOUPDATE) {
                 contentFS->rename(queueItem->filename, String(dst_path));
-                }
-            else {
+            } else {
                 if (queueItem->pendingdata.availdatainfo.dataType != DATATYPE_FW_UPDATE) contentFS->remove(queueItem->filename);
             }
         }
@@ -590,7 +596,7 @@ void processDataReq(struct espAvailDataReq* eadr, bool local, IPAddress remoteIP
                 else if (eadr->adr.wakeupReason == WAKEUP_REASON_FAILED_OTA_FW)
                     reason = "Firmware update rejected";
                 sprintf(buffer, "%02X%02X%02X%02X%02X%02X%02X%02X %s", eadr->src[7], eadr->src[6], eadr->src[5], eadr->src[4], eadr->src[3], eadr->src[2], eadr->src[1], eadr->src[0], reason);
-                logLine(buffer);
+                LogUtils::logInfo(buffer);
             }
         }
 
@@ -608,7 +614,7 @@ void processDataReq(struct espAvailDataReq* eadr, bool local, IPAddress remoteIP
     if (local) {
         sprintf(buffer, "<ADR %02X%02X%02X%02X%02X%02X%02X%02X\r\n\0", eadr->src[7], eadr->src[6], eadr->src[5], eadr->src[4], eadr->src[3], eadr->src[2], eadr->src[1], eadr->src[0]);
         Serial.print(buffer);
-        checkQueue(eadr->src);   // experiemental 3/26/25: redundant check
+        checkQueue(eadr->src);  // experiemental 3/26/25: redundant check
     }
 
     if (local) {
@@ -760,7 +766,6 @@ bool sendTagMac(const uint8_t* dst, const uint64_t newmac, bool local) {
     pending.availdatainfo.dataType = DATATYPE_COMMAND_DATA;
     pending.availdatainfo.dataTypeArgument = 0x23;
     pending.availdatainfo.nextCheckIn = 0;
-    
 
     pending.availdatainfo.dataVer = newmac;
     pending.availdatainfo.dataSize = 0;
@@ -959,7 +964,7 @@ void checkQueue(const uint8_t* targetMac) {
     uint16_t queueCount;
     queueCount = countQueueItem(targetMac);
     if (queueCount > 0) {
-        Serial.printf("queue: total %d elements\r\n", pendingQueue.size());
+        LogUtils::logDebug("queue: total " + String(pendingQueue.size()) + " elements");
         PendingItem* queueItem = getQueueItem(targetMac);
         if (queueItem == nullptr) {
             return;
@@ -988,8 +993,8 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
         taginfo->data = nullptr;
     } else {
         newPending.data = nullptr;
-        
-        if (pendingQueue.size() < 5) {   // maximized to 5 to save some memory
+
+        if (pendingQueue.size() < 5) {  // maximized to 5 to save some memory
             // optional: read data early, don't wait for block request.
             fs::File file = contentFS->open(newPending.filename);
             if (file) {
@@ -1029,6 +1034,3 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
 
     return true;
 }
-
-
-

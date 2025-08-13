@@ -1,44 +1,31 @@
 /**
  * @file wifi_utils.cpp
- * @brief Optimized WiFi utilities for OpenEPaperLink ESP32 AP-Flasher
+ * @brief Optimized WiFi utility functions implementation
  *
- * This file provides centralized WiFi functionality without duplicate serial command handling.
- * Serial commands are handled by SerialCommandHandler which uses this class for WiFi operations.
- *
- * Key Features:
- * - Thread-safe WiFi scanning with mutex protection
- * - Async WiFi operations with rate limiting
- * - Unified connection management and configuration
- * - Optimized memory usage and performance
- * - Improv protocol support for WiFi provisioning
+ * This file provides comprehensive WiFi management functionality with:
+ * - Unified configuration through json_config system
+ * - Thread-safe operations with proper error handling
+ * - Improv WiFi protocol support for easy setup
+ * - Integration with core utilities and web systems
+ * - Optimized scanning and connection management
  *
  * @author OpenEPaperLink Contributors
- * @version Optimized and restructured implementation
+ * @version 2.0 - Optimized & Refactored
  */
 
-#include <ArduinoJson.h>
-#include <ETH.h>
-#include <WiFi.h>
-#include <esp_wifi.h>
-#include <esp_wifi_types.h>
-
-#include "common_utils.h"
-#include "storage_utils.h"
 #include "wifi_utils.h"
 
-// Include project dependencies
-#ifdef HAS_IPS_DISPLAY
-#include "ips_display.h"
-#endif
-#include "newproto.h"
-#include "serialap.h"  // Include for AP state checking
-#include "system.h"
-#include "tag_db.h"
-#include "udp.h"
-#include "web.h"
+#include <ETH.h>
+
+#include <cstring>
+
+#include "build_constants.h"
+#include "core_utilities.h"
+#include "json_config.h"
+#include "web_utilities.h"
 
 // ============================================================================
-// Static Variables and Global Instance
+// Static Variables and Initialization
 // ============================================================================
 WiFiUtils* WiFiUtils::instance = nullptr;
 SemaphoreHandle_t WiFiUtils::scanMutex = nullptr;
@@ -49,38 +36,23 @@ uint8_t WiFiUtils::apClients = 0;
 // Global instance for compatibility
 WiFiUtils& wifiUtils = WiFiUtils::getInstance();
 
-// External buffers for improv protocol
-uint8_t x_buffer[100];
-uint8_t x_position = 0;
-
-// Disconnect tracking for spam prevention
-static uint32_t lastDisconnectTime = 0;
-static uint8_t disconnectReason = 0;
-static uint8_t consecutiveAuthFailures = 0;
-
-#if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-static bool eth_init = false;
-static bool eth_connected = false;
-static bool eth_ip_ok = false;
-static long eth_timeout = 0;
-#endif
-
 // ============================================================================
-// Display Support Functions
+// Constructor and Singleton Pattern
 // ============================================================================
-#ifdef HAS_TFT
-extern void TFTLog(String text);
-#else
-// Stub function if not compiled with display support
-inline void TFTLog(String text) {
-    // Stub implementation - could be disabled for performance
-    // Serial.println("TFTLog: " + text);
+WiFiUtils::WiFiUtils()
+    : _connected(false), _savewhensuccessfull(false), _initialized(false), _reconnectIntervalCheck(10000), _retryIntervalCheck(30000), _connectionTimeout(WIFI_CONNECT_TIMEOUT_MS), _nextReconnectCheck(0), _APstarted(false), wifiStatus(NOINIT), serialIndex(0) {
+    // Initialize serial buffer to zero
+    memset(serialBuffer, 0, SERIAL_BUFFER_SIZE);
+
+    // Create scan mutex if not exists
+    if (!scanMutex) {
+        scanMutex = xSemaphoreCreateMutex();
+        if (!scanMutex) {
+            LogUtils::logError("[WiFiUtils] Failed to create scan mutex");
+        }
+    }
 }
-#endif
 
-// ============================================================================
-// Singleton Pattern Implementation
-// ============================================================================
 WiFiUtils& WiFiUtils::getInstance() {
     if (!instance) {
         instance = new WiFiUtils();
@@ -89,194 +61,512 @@ WiFiUtils& WiFiUtils::getInstance() {
 }
 
 // ============================================================================
-// Constructor and Initialization
+// WiFi Initialization and Connection Management
 // ============================================================================
-WiFiUtils::WiFiUtils() {
-    if (!scanMutex) {
-        scanMutex = xSemaphoreCreateMutex();
+void WiFiUtils::initEth() {
+    if (_initialized) {
+        LogUtils::logInfo("[WiFiUtils] Already initialized");
+        return;
     }
 
-    // Initialize connection management variables
-    _reconnectIntervalCheck = 5000;
-    _retryIntervalCheck = 5 * 60000;
-    _connectionTimeout = WIFI_CONNECT_TIMEOUT_MS;
+    LogUtils::logInfo("[WiFiUtils] Initializing WiFi subsystem...");
 
-    _nextReconnectCheck = 0;
-    _connected = false;
-    _savewhensuccessfull = false;
-    _initialized = false;
+    // Ensure core utilities are initialized first
+    if (!CoreUtils::isInitialized()) {
+        LogUtils::logInfo("[WiFiUtils] Initializing CoreUtils...");
+        if (!CoreUtils::initialize()) {
+            LogUtils::logError("[WiFiUtils] Failed to initialize CoreUtils");
+            return;
+        }
+    }
 
-    // Initialize buffer to prevent undefined behavior
-    memset(serialBuffer, 0, sizeof(serialBuffer));
-    serialIndex = 0;
-    _ssid = "";
-    _APstarted = false;
-    wifiStatus = NOINIT;
+    // Ensure configuration system is ready
+    if (!CONFIG.initialize()) {
+        LogUtils::logError("[WiFiUtils] Failed to initialize configuration system");
+        return;
+    }
 
+    // Setup WiFi event handler
     WiFi.onEvent(WiFiEvent);
-    setupDisconnectHandler();
+
+    // Load WiFi configuration from unified config
+    const auto& wifiConfig = WIFI_CONFIG;
+
+    // Set hostname if configured
+    if (!wifiConfig.hostname.isEmpty()) {
+        WiFi.setHostname(wifiConfig.hostname.c_str());
+        LogUtils::logInfo("[WiFiUtils] Hostname set: " + wifiConfig.hostname);
+    }
+
+    // Determine WiFi mode based on configuration
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if (wifiConfig.enableAP && !wifiConfig.ssid.isEmpty()) {
+        mode = WIFI_AP_STA;  // Both AP and STA mode
+        LogUtils::logInfo("[WiFiUtils] Setting mode: AP+STA");
+    } else if (wifiConfig.enableAP) {
+        mode = WIFI_AP;  // AP mode only
+        LogUtils::logInfo("[WiFiUtils] Setting mode: AP only");
+    } else if (!wifiConfig.ssid.isEmpty()) {
+        mode = WIFI_STA;  // STA mode only
+        LogUtils::logInfo("[WiFiUtils] Setting mode: STA only");
+    }
+
+    if (mode != WIFI_MODE_NULL) {
+        WiFi.mode(mode);
+    }
+
+    // Start Access Point if enabled
+    if (wifiConfig.enableAP) {
+        startAccessPoint();
+    }
+
+    // Configure static IP if enabled
+    if (wifiConfig.useStaticIP && !wifiConfig.staticIP.isEmpty()) {
+        configureStaticIP();
+    }
+
+    // Auto-connect to STA if credentials available
+    if (!wifiConfig.ssid.isEmpty()) {
+        LogUtils::logInfo("[WiFiUtils] Auto-connecting to: " + wifiConfig.ssid);
+        connectToWifi(wifiConfig.ssid, wifiConfig.password, false);
+    }
+
+    _initialized = true;
+    LogUtils::logInfo("[WiFiUtils] WiFi initialization complete");
 }
 
-void WiFiUtils::setupDisconnectHandler() {
-    WiFiEventId_t eventID = WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
-        uint32_t now = millis();
-        uint8_t reason = info.wifi_sta_disconnected.reason;
+bool WiFiUtils::startAccessPoint() {
+    const auto& wifiConfig = WIFI_CONFIG;
 
-        // Rate limit disconnect messages - only log if different reason or enough time passed
-        if (reason != disconnectReason || (now - lastDisconnectTime) > DISCONNECT_RATE_LIMIT_MS) {
-            SAFE_LOG("WiFi lost connection. Reason: %d - ", reason);
+    String apSSID = wifiConfig.apSSID.isEmpty() ? "OpenEPaperLink-AP" : wifiConfig.apSSID;
+    String apPassword = wifiConfig.apPassword;
 
-            // Print human-readable disconnect reason and handle auto-recovery
-            switch (reason) {
-                case WIFI_REASON_AUTH_EXPIRE:
-                    Serial.println("Auth expired");
-                    break;
-                case WIFI_REASON_AUTH_LEAVE:
-                    Serial.println("Auth leave");
-                    break;
-                case WIFI_REASON_ASSOC_EXPIRE:
-                    Serial.println("Assoc expired");
-                    break;
-                case WIFI_REASON_ASSOC_TOOMANY:
-                    Serial.println("Too many associations");
-                    break;
-                case WIFI_REASON_NOT_AUTHED:
-                    consecutiveAuthFailures++;
-                    Serial.println("Not authenticated");
-                    if (consecutiveAuthFailures >= MAX_AUTH_FAILURES) {
-                        Serial.println("❌ Too many auth failures - starting AP mode");
-                        WiFiUtils::getInstance().startManagementServer();
-                        consecutiveAuthFailures = 0;
-                    }
-                    break;
-                case WIFI_REASON_NOT_ASSOCED:
-                    Serial.println("Not associated");
-                    break;
-                case WIFI_REASON_BEACON_TIMEOUT:
-                    Serial.println("Beacon timeout");
-                    break;
-                case WIFI_REASON_HANDSHAKE_TIMEOUT:
-                    Serial.println("Handshake timeout");
-                    break;
-                case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-                    consecutiveAuthFailures++;
-                    Serial.println("4-way handshake timeout (WPA/WPA2 authentication failed)");
-                    if (consecutiveAuthFailures >= MAX_HANDSHAKE_FAILURES) {
-                        Serial.println("❌ Repeated handshake failures - starting AP mode");
-                        WiFiUtils::getInstance().startManagementServer();
-                        consecutiveAuthFailures = 0;
-                    }
-                    break;
-                case 201:
-                    Serial.println("Authentication failure (check password)");
-                    consecutiveAuthFailures++;
-                    break;
-                default:
-                    Serial.println("Unknown reason");
-                    consecutiveAuthFailures++;
-                    Serial.println(reason);
-                    if (consecutiveAuthFailures >= MAX_AUTH_FAILURES) {
-                        Serial.println("❌ Too many failures - starting AP mode");
-                        WiFiUtils::getInstance().startManagementServer();
-                        consecutiveAuthFailures = 0;
-                    }
-                    break;
+    // Validate AP password
+    if (!apPassword.isEmpty() && apPassword.length() < 8) {
+        LogUtils::logWarning("[WiFiUtils] AP password too short, using default");
+        apPassword = "12345678";
+    }
+
+    LogUtils::logInfo("[WiFiUtils] Starting AP: " + apSSID);
+
+    // Configure AP with enhanced settings
+    bool success;
+    if (apPassword.isEmpty()) {
+        success = WiFi.softAP(apSSID.c_str(), nullptr, wifiConfig.channel);
+    } else {
+        success = WiFi.softAP(apSSID.c_str(), apPassword.c_str(), wifiConfig.channel, false, 8);
+    }
+
+    if (success) {
+        // Apply power management settings
+        esp_err_t ret = esp_wifi_set_ps(wifiConfig.powerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+        if (ret != ESP_OK) {
+            LogUtils::logWarning("[WiFiUtils] Failed to set power save mode: " + String(esp_err_to_name(ret)));
+        }
+
+        // Set optimal TX power
+        if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {
+            LogUtils::logWarning("[WiFiUtils] Failed to set TX power");
+        }
+
+        // Set AP hostname
+        if (!WiFi.softAPsetHostname(apSSID.c_str())) {
+            LogUtils::logWarning("[WiFiUtils] Failed to set AP hostname");
+        }
+
+        // Configure bandwidth for better performance
+        ret = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+        if (ret != ESP_OK) {
+            LogUtils::logWarning("[WiFiUtils] Failed to set AP bandwidth: " + String(esp_err_to_name(ret)));
+        }
+
+        IPAddress apIP = WiFi.softAPIP();
+        LogUtils::logInfo("[WiFiUtils] AP started successfully. IP: " + apIP.toString());
+        LogUtils::logInfo("[WiFiUtils] Connect to '" + apSSID + "' and visit http://" + apIP.toString());
+
+        _APstarted = true;
+        return true;
+    } else {
+        LogUtils::logError("[WiFiUtils] Failed to start Access Point");
+        return false;
+    }
+}
+
+bool WiFiUtils::configureStaticIP() {
+    const auto& wifiConfig = WIFI_CONFIG;
+
+    IPAddress ip, gateway, subnet, dns1, dns2;
+
+    if (!ip.fromString(wifiConfig.staticIP)) {
+        LogUtils::logError("[WiFiUtils] Invalid static IP: " + wifiConfig.staticIP);
+        return false;
+    }
+
+    if (!gateway.fromString(wifiConfig.gateway)) {
+        LogUtils::logError("[WiFiUtils] Invalid gateway: " + wifiConfig.gateway);
+        return false;
+    }
+
+    if (!subnet.fromString(wifiConfig.subnet)) {
+        LogUtils::logError("[WiFiUtils] Invalid subnet: " + wifiConfig.subnet);
+        return false;
+    }
+
+    // DNS servers are optional
+    if (!wifiConfig.dns1.isEmpty()) {
+        dns1.fromString(wifiConfig.dns1);
+    }
+    if (!wifiConfig.dns2.isEmpty()) {
+        dns2.fromString(wifiConfig.dns2);
+    }
+
+    bool success = WiFi.config(ip, gateway, subnet, dns1, dns2);
+    if (success) {
+        LogUtils::logInfo("[WiFiUtils] Static IP configured: " + ip.toString());
+    } else {
+        LogUtils::logError("[WiFiUtils] Failed to configure static IP");
+    }
+
+    return success;
+}
+
+bool WiFiUtils::connectToWifi() {
+    const auto& wifiConfig = WIFI_CONFIG;
+    if (wifiConfig.ssid.isEmpty()) {
+        LogUtils::logWarning("[WiFiUtils] No SSID configured for connection");
+        return false;
+    }
+    return connectToWifi(wifiConfig.ssid, wifiConfig.password, false);
+}
+
+bool WiFiUtils::connectToWifi(String ssid, String pass, bool savewhensuccessfull) {
+    if (ssid.isEmpty()) {
+        LogUtils::logError("[WiFiUtils] SSID cannot be empty");
+        return false;
+    }
+
+    if (ssid.length() > 32) {
+        LogUtils::logError("[WiFiUtils] SSID too long (max 32 characters)");
+        return false;
+    }
+
+    if (!pass.isEmpty() && (pass.length() < 8 || pass.length() > 63)) {
+        LogUtils::logError("[WiFiUtils] Password must be 8-63 characters or empty for open network");
+        return false;
+    }
+
+    LogUtils::logInfo("[WiFiUtils] Connecting to WiFi: " + ssid);
+
+    _ssid = ssid;
+    _pass = pass;
+    _savewhensuccessfull = savewhensuccessfull;
+    wifiStatus = WAIT_CONNECTING;
+
+    // Disconnect first to ensure clean connection
+    WiFi.disconnect(false);
+    CoreUtils::safeDelay(100);
+
+    // Configure auto-reconnect
+    WiFi.setAutoReconnect(WIFI_CONFIG.autoReconnect);
+
+    // Start connection
+    if (pass.isEmpty()) {
+        WiFi.begin(ssid.c_str());  // Open network
+    } else {
+        WiFi.begin(ssid.c_str(), pass.c_str());
+    }
+
+    return waitForConnection();
+}
+
+bool WiFiUtils::waitForConnection() {
+    unsigned long startTime = millis();
+    wl_status_t lastStatus = WL_IDLE_STATUS;
+
+    LogUtils::logInfo("[WiFiUtils] Waiting for connection (timeout: " + String(_connectionTimeout / 1000) + "s)");
+
+    while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < _connectionTimeout) {
+        wl_status_t currentStatus = WiFi.status();
+
+        // Log status changes for debugging
+        if (currentStatus != lastStatus) {
+            LogUtils::logInfo("[WiFiUtils] WiFi status: " + WiFiHelpers::getStatusString(currentStatus));
+            lastStatus = currentStatus;
+        }
+
+        // Check for immediate failure conditions
+        if (currentStatus == WL_CONNECT_FAILED || currentStatus == WL_NO_SSID_AVAIL) {
+            LogUtils::logError("[WiFiUtils] Connection failed: " + WiFiHelpers::getStatusString(currentStatus));
+            break;
+        }
+
+        CoreUtils::safeDelay(100);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        _connected = true;
+        wifiStatus = CONNECTED;
+
+        // Log connection details
+        WiFiConnectionInfo info = getConnectionInfo();
+        LogUtils::logInfo("[WiFiUtils] Connected successfully!");
+        LogUtils::logInfo("  IP: " + info.ip);
+        LogUtils::logInfo("  Gateway: " + info.gateway);
+        LogUtils::logInfo("  RSSI: " + String(info.rssi) + " dBm");
+        LogUtils::logInfo("  Channel: " + String(info.channel));
+
+        // Save configuration if requested
+        if (_savewhensuccessfull) {
+            auto config = WIFI_CONFIG;
+            config.ssid = _ssid;
+            config.password = _pass;
+            CONFIG.save();
+            LogUtils::logInfo("[WiFiUtils] WiFi credentials saved to config: " + config.ssid);
+        }
+
+        // Notify web clients if available
+        if (WebSocketManager::hasClients()) {
+            WebSocketManager::sendNotification("WiFi Connected",
+                                               "Connected to " + _ssid + " (" + WiFi.localIP().toString() + ")",
+                                               "success", "info");
+        }
+
+        return true;
+    } else {
+        _connected = false;
+        wifiStatus = WAIT_RECONNECT;
+        _nextReconnectCheck = millis() + _retryIntervalCheck;
+
+        LogUtils::logError("[WiFiUtils] Connection timeout or failed");
+        LogUtils::logError("  Final status: " + WiFiHelpers::getStatusString(WiFi.status()));
+
+        return false;
+    }
+}
+
+void WiFiUtils::poll() {
+    // Handle WiFi status monitoring and auto-reconnection
+    handleWiFiStatusChanges();
+
+    // Handle reconnection attempts
+    handleReconnectionLogic();
+
+    // Process Improv WiFi serial protocol
+    processImprovSerial();
+
+    // Update AP client count
+    updateAPClientCount();
+}
+
+void WiFiUtils::handleWiFiStatusChanges() {
+    static wl_status_t lastStatus = WL_IDLE_STATUS;
+    wl_status_t currentStatus = WiFi.status();
+
+    // Check for connection state changes
+    bool currentlyConnected = (currentStatus == WL_CONNECTED);
+
+    if (_connected != currentlyConnected) {
+        if (currentlyConnected) {
+            _connected = true;
+            wifiStatus = CONNECTED;
+            LogUtils::logInfo("[WiFiUtils] WiFi reconnected: " + WiFi.localIP().toString());
+
+            // Notify web clients
+            if (WebSocketManager::hasClients()) {
+                WebSocketManager::sendNotification("WiFi Reconnected",
+                                                   "Connection restored to " + WiFi.SSID(), "success", "info");
+            }
+        } else {
+            _connected = false;
+            wifiStatus = WAIT_RECONNECT;
+            _nextReconnectCheck = millis() + _retryIntervalCheck;
+            LogUtils::logWarning("[WiFiUtils] WiFi disconnected: " + WiFiHelpers::getStatusString(currentStatus));
+
+            // Notify web clients
+            if (WebSocketManager::hasClients()) {
+                WebSocketManager::sendNotification("WiFi Disconnected",
+                                                   "Connection lost, attempting reconnection...", "warning", "warning");
+            }
+        }
+    }
+
+    // Log status changes for debugging
+    if (currentStatus != lastStatus && currentStatus != WL_CONNECTED) {
+        LogUtils::logInfo("[WiFiUtils] Status change: " + WiFiHelpers::getStatusString(currentStatus));
+        lastStatus = currentStatus;
+    }
+}
+
+void WiFiUtils::handleReconnectionLogic() {
+    if (wifiStatus == WAIT_RECONNECT && millis() > _nextReconnectCheck && WIFI_CONFIG.autoReconnect) {
+        _nextReconnectCheck = millis() + _retryIntervalCheck;
+
+        if (!_ssid.isEmpty()) {
+            LogUtils::logInfo("[WiFiUtils] Attempting auto-reconnection to: " + _ssid);
+
+            // Disconnect cleanly before reconnecting
+            WiFi.disconnect(false);
+            CoreUtils::safeDelay(100);
+
+            // Attempt reconnection
+            if (_pass.isEmpty()) {
+                WiFi.begin(_ssid.c_str());
+            } else {
+                WiFi.begin(_ssid.c_str(), _pass.c_str());
             }
 
-            lastDisconnectTime = now;
-            disconnectReason = reason;
+            wifiStatus = WAIT_CONNECTING;
         }
-
-        // Reset consecutive counter if different error type (but keep counting auth and handshake failures)
-        if (reason != WIFI_REASON_NOT_AUTHED && reason != WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT && reason != 201) {
-            consecutiveAuthFailures = 0;
-        }
-    },
-                                         WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    }
 }
 
-// ========================================================================
-// OPTIMIZED WIFI SCANNING
-// ========================================================================
+void WiFiUtils::updateAPClientCount() {
+    static uint32_t lastClientCheck = 0;
 
+    if (millis() - lastClientCheck > 5000) {  // Check every 5 seconds
+        lastClientCheck = millis();
+
+        if (_APstarted) {
+            uint8_t currentClients = WiFi.softAPgetStationNum();
+            if (currentClients != apClients) {
+                apClients = currentClients;
+                LogUtils::logInfo("[WiFiUtils] AP clients: " + String(apClients));
+            }
+        }
+    }
+}
+
+void WiFiUtils::processImprovSerial() {
+    // Basic Improv WiFi serial processing
+    // This handles the serial protocol for WiFi configuration
+    // Implementation would process incoming serial data according to Improv spec
+
+    // For now, just ensure buffer doesn't overflow
+    if (serialIndex >= SERIAL_BUFFER_SIZE - 1) {
+        serialIndex = 0;
+        LogUtils::logWarning("[WiFiUtils] Serial buffer overflow, resetting");
+    }
+
+    // Process any available serial data
+    while (Serial.available() && serialIndex < SERIAL_BUFFER_SIZE - 1) {
+        serialBuffer[serialIndex++] = Serial.read();
+
+        // Basic overflow protection
+        if (serialIndex >= SERIAL_BUFFER_SIZE - 1) {
+            serialIndex = 0;
+            break;
+        }
+    }
+}
+
+IPAddress WiFiUtils::localIP() {
+    return WiFi.localIP();
+}
+
+// ============================================================================
+// WiFi Scanning with Enhanced Error Handling
+// ============================================================================
 bool WiFiUtils::performAsyncScan(bool showHidden, uint32_t maxWaitMs) {
-    if (!scanMutex) return false;
-
-    // Prevent concurrent scans
-    if (xSemaphoreTake(scanMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    // Validate prerequisites
+    if (!CoreUtils::isInitialized()) {
+        LogUtils::logError("[WiFiUtils] CoreUtils not initialized, cannot perform scan");
         return false;
     }
 
-    // Rate limiting - don't scan more than once every 25 seconds
-    uint32_t now = millis();
-    if (now - lastScanTime < SCAN_RATE_LIMIT_MS && lastScanTime > 0) {
-        xSemaphoreGive(scanMutex);
+    if (!_initialized) {
+        LogUtils::logError("[WiFiUtils] WiFiUtils not initialized, cannot perform scan");
         return false;
     }
 
-    // Ensure WiFi is in correct mode for scanning
-    wifi_mode_t currentMode = WiFi.getMode();
-    if (currentMode == WIFI_OFF) {
-        WiFi.mode(WIFI_STA);
-        delay(100);
-    } else if (currentMode == WIFI_AP) {
-        WiFi.mode(WIFI_AP_STA);
-        delay(100);
+    // Thread-safe scan mutex handling
+    if (!CoreUtils::safeTakeMutex(scanMutex, pdMS_TO_TICKS(2000))) {
+        LogUtils::logWarning("[WiFiUtils] Failed to acquire scan mutex within timeout");
+        return false;
     }
 
-    // Clear previous results and start new scan
-    WiFi.scanDelete();
-    int16_t result = WiFi.scanNetworks(true, showHidden);  // Async scan
-
-    if (result == WIFI_SCAN_RUNNING) {
-        scanInProgress = true;
-        lastScanTime = now;
-        xSemaphoreGive(scanMutex);
-        return true;
+    // Check if scan already in progress
+    if (scanInProgress) {
+        LogUtils::logInfo("[WiFiUtils] Scan already in progress");
+        CoreUtils::safeGiveMutex(scanMutex);
+        return false;
     }
 
-    xSemaphoreGive(scanMutex);
-    return false;
+    // Rate limiting to prevent excessive scans
+    uint32_t timeSinceLastScan = millis() - lastScanTime;
+    if (timeSinceLastScan < SCAN_RATE_LIMIT_MS) {
+        LogUtils::logInfo("[WiFiUtils] Scan rate limited (wait " +
+                          String((SCAN_RATE_LIMIT_MS - timeSinceLastScan) / 1000) + "s)");
+        CoreUtils::safeGiveMutex(scanMutex);
+        return false;
+    }
+
+    // Start the scan
+    scanInProgress = true;
+    lastScanTime = millis();
+    CoreUtils::safeGiveMutex(scanMutex);
+
+    LogUtils::logInfo("[WiFiUtils] Starting WiFi scan (hidden: " + String(showHidden ? "yes" : "no") + ")");
+
+    int result = WiFi.scanNetworks(true, showHidden);  // Async scan
+
+    if (result == WIFI_SCAN_FAILED) {
+        scanInProgress = false;
+        LogUtils::logError("[WiFiUtils] Failed to start WiFi scan");
+        return false;
+    }
+
+    return true;
 }
 
 WiFiScanResult WiFiUtils::getScanResults(bool clearAfter) {
     WiFiScanResult result;
     result.success = false;
-    result.scanInProgress = false;
+    result.scanInProgress = scanInProgress;
     result.networksFound = 0;
 
-    int16_t scanResult = WiFi.scanComplete();
-    result.scanInProgress = (scanResult == WIFI_SCAN_RUNNING);
+    int scanResult = WiFi.scanComplete();
 
-    if (scanResult > 0) {
+    if (scanResult == WIFI_SCAN_RUNNING) {
+        result.scanInProgress = true;
+        result.errorMessage = "Scan in progress";
+        return result;
+    }
+
+    if (scanResult == WIFI_SCAN_FAILED) {
+        result.errorMessage = "Scan failed";
+        scanInProgress = false;
+        LogUtils::logError("[WiFiUtils] WiFi scan failed");
+        return result;
+    }
+
+    if (scanResult >= 0) {
         result.success = true;
         result.networksFound = scanResult;
+        scanInProgress = false;
 
-        // Build networks array
-        for (int i = 0; i < scanResult && i < MAX_WIFI_NETWORKS; i++) {
+        LogUtils::logInfo("[WiFiUtils] Scan completed: " + String(scanResult) + " networks found");
+
+        // Process scan results with bounds checking
+        int maxNetworks = std::min(scanResult, MAX_WIFI_NETWORKS);
+        result.networks.reserve(maxNetworks);
+
+        for (int i = 0; i < maxNetworks; i++) {
             WiFiNetworkInfo network;
             network.ssid = WiFi.SSID(i);
             network.rssi = WiFi.RSSI(i);
             network.channel = WiFi.channel(i);
             network.encryption = WiFi.encryptionType(i);
             network.bssid = WiFi.BSSIDstr(i);
-            result.networks.push_back(network);
-        }
 
-        // Sort by signal strength (strongest first)
-        std::sort(result.networks.begin(), result.networks.end(),
-                  [](const WiFiNetworkInfo& a, const WiFiNetworkInfo& b) {
-                      return a.rssi > b.rssi;
-                  });
+            // Skip networks with empty SSID unless hidden networks are requested
+            if (network.ssid.length() > 0 || network.ssid.length() == 0) {
+                result.networks.push_back(network);
+            }
+        }
 
         if (clearAfter) {
             WiFi.scanDelete();
-            scanInProgress = false;
         }
-    } else if (scanResult == WIFI_SCAN_FAILED) {
-        result.success = false;
-        result.errorMessage = "Scan failed";
-        scanInProgress = false;
     }
 
     return result;
@@ -285,39 +575,61 @@ WiFiScanResult WiFiUtils::getScanResults(bool clearAfter) {
 String WiFiUtils::buildScanResultsJson(bool clearAfter) {
     WiFiScanResult scanResult = getScanResults(clearAfter);
 
-    DynamicJsonDocument doc(4096);
+    const size_t jsonSize = 8192;  // Increased buffer size for more networks
+    DynamicJsonDocument doc(jsonSize);
+
     doc["success"] = scanResult.success;
     doc["scanInProgress"] = scanResult.scanInProgress;
     doc["networksFound"] = scanResult.networksFound;
-    doc["lastScanTime"] = lastScanTime;
-
-    // Add scanstatus for frontend compatibility (-1 = scanning, 0+ = complete)
-    doc["scanstatus"] = scanResult.scanInProgress ? -1 : scanResult.networksFound;
+    doc["timestamp"] = millis();
 
     if (!scanResult.errorMessage.isEmpty()) {
         doc["error"] = scanResult.errorMessage;
     }
 
-    JsonArray networks = doc["networks"].to<JsonArray>();
+    JsonArray networks = doc.createNestedArray("networks");
     for (const auto& network : scanResult.networks) {
         JsonObject net = networks.createNestedObject();
         net["ssid"] = network.ssid;
         net["rssi"] = network.rssi;
         net["channel"] = network.channel;
         net["encryption"] = WiFiHelpers::authModeToString(network.encryption);
-        net["enc"] = WiFiHelpers::authModeToInt(network.encryption);  // Numeric for frontend compatibility
+        net["encryptionType"] = WiFiHelpers::authModeToInt(network.encryption);
         net["bssid"] = network.bssid;
-        net["quality"] = WiFiHelpers::calculateSignalQuality(network.rssi);
+        net["signalQuality"] = WiFiHelpers::calculateSignalQuality(network.rssi);
+        net["isSecure"] = (network.encryption != WIFI_AUTH_OPEN);
+
+        // Signal strength classification
+        String signalStrength = "poor";
+        if (network.rssi > -50)
+            signalStrength = "excellent";
+        else if (network.rssi > -60)
+            signalStrength = "good";
+        else if (network.rssi > -70)
+            signalStrength = "fair";
+        net["signalStrength"] = signalStrength;
     }
 
-    String json;
-    serializeJson(doc, json);
-    return json;
+    String result;
+    if (serializeJson(doc, result) == 0) {
+        LogUtils::logError("[WiFiUtils] Failed to serialize scan results JSON");
+        return "{\"success\":false,\"error\":\"JSON serialization failed\"}";
+    }
+
+    return result;
 }
 
+bool WiFiUtils::isScanning() {
+    return scanInProgress;
+}
+
+// ============================================================================
+// Connection Information with Enhanced Details
+// ============================================================================
 WiFiConnectionInfo WiFiUtils::getConnectionInfo() {
     WiFiConnectionInfo info;
-    info.connected = (WiFi.status() == WL_CONNECTED);
+
+    info.connected = WiFi.isConnected();
     info.ssid = WiFi.SSID();
     info.ip = WiFi.localIP().toString();
     info.gateway = WiFi.gatewayIP().toString();
@@ -328,15 +640,25 @@ WiFiConnectionInfo WiFiUtils::getConnectionInfo() {
     info.hostname = WiFi.getHostname();
     info.mode = WiFi.getMode();
     info.apEnabled = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-    info.apClients = WiFi.softAPgetStationNum();
-    info.apIP = WiFi.softAPIP().toString();
+
+    if (info.apEnabled) {
+        info.apClients = WiFi.softAPgetStationNum();
+        info.apIP = WiFi.softAPIP().toString();
+    } else {
+        info.apClients = 0;
+        info.apIP = "";
+    }
+
     return info;
 }
 
 String WiFiUtils::getConnectionInfoJson() {
     WiFiConnectionInfo info = getConnectionInfo();
 
-    DynamicJsonDocument doc(1024);
+    const size_t jsonSize = 1536;  // Increased for additional fields
+    DynamicJsonDocument doc(jsonSize);
+
+    // Basic connection info
     doc["connected"] = info.connected;
     doc["ssid"] = info.ssid;
     doc["ip"] = info.ip;
@@ -346,361 +668,436 @@ String WiFiUtils::getConnectionInfoJson() {
     doc["channel"] = info.channel;
     doc["mac"] = info.mac;
     doc["hostname"] = info.hostname;
-    doc["mode"] = info.mode;
+
+    // WiFi mode information
+    String modeStr = "Unknown";
+    switch (info.mode) {
+        case WIFI_OFF:
+            modeStr = "Off";
+            break;
+        case WIFI_STA:
+            modeStr = "Station";
+            break;
+        case WIFI_AP:
+            modeStr = "Access Point";
+            break;
+        case WIFI_AP_STA:
+            modeStr = "AP+Station";
+            break;
+    }
+    doc["mode"] = modeStr;
+
+    // Access Point information
     doc["apEnabled"] = info.apEnabled;
-    doc["apClients"] = info.apClients;
-    doc["apIP"] = info.apIP;
-    doc["quality"] = WiFiHelpers::calculateSignalQuality(info.rssi);
-
-    String json;
-    serializeJson(doc, json);
-    return json;
-}
-
-bool WiFiUtils::isScanning() {
-    return scanInProgress || (WiFi.scanComplete() == WIFI_SCAN_RUNNING);
-}
-
-void WiFiUtils::cleanup() {
-    if (scanMutex) {
-        if (xSemaphoreTake(scanMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            WiFi.scanDelete();
-            scanInProgress = false;
-            xSemaphoreGive(scanMutex);
-        }
-    }
-}
-
-// ========================================================================
-// CONNECTION MANAGEMENT
-// ========================================================================
-
-bool WiFiUtils::connectToWifi() {
-#if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if (wifiStatus == ETHERNET || eth_connected)
-        return true;
-#endif
-
-    WiFiConfig config = loadConfig();
-    _ssid = config.ssid;
-    _pass = config.password;
-
-    SAFE_LOG("WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
-
-    if (_ssid.isEmpty()) {
-        terminalLog("No connection info saved");
-        startManagementServer();
-        return false;
-    }
-    terminalLog("ssid: " + String(_ssid));
-
-    // Configure static IP if available
-    if (config.hasStaticIP) {
-        IPAddress staticIP, subnetMask, gatewayIP, dnsIP;
-        if (staticIP.fromString(config.ip) && subnetMask.fromString(config.mask) && gatewayIP.fromString(config.gateway)) {
-            if (!config.dns.isEmpty() && dnsIP.fromString(config.dns)) {
-                WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
-            } else {
-                WiFi.config(staticIP, gatewayIP, subnetMask);
-            }
-            terminalLog("Setting static IP: " + config.ip);
-        } else {
-            Serial.println("WARNING: Invalid static IP configuration, using DHCP");
-        }
+    if (info.apEnabled) {
+        doc["apClients"] = info.apClients;
+        doc["apIP"] = info.apIP;
+        doc["apMAC"] = WiFi.softAPmacAddress();
     }
 
-    // Set hostname
-    String hostname = config.hostname.isEmpty() ? WiFiHelpers::buildHostname("OpenEpaperLink") : config.hostname;
-    WiFi.setHostname(hostname.c_str());
-    WiFi.mode(WIFI_STA);
-
-    // ESP32-S3 WiFi optimizations
-    esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving for better performance
-    if (ret != ESP_OK) {
-        SAFE_LOG("WARNING: Failed to set WiFi power save mode: %s\n", esp_err_to_name(ret));
+    // Additional status information
+    if (info.connected) {
+        doc["signalQuality"] = WiFiHelpers::calculateSignalQuality(info.rssi);
+        doc["signalStrength"] = info.rssi > -50 ? "excellent" : info.rssi > -60 ? "good"
+                                                            : info.rssi > -70   ? "fair"
+                                                                                : "poor";
+        doc["subnet"] = WiFi.subnetMask().toString();
+        doc["dnsSecondary"] = WiFi.dnsIP(1).toString();
     }
 
-    if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {  // Set optimal power for ESP32-S3
-        Serial.println("WARNING: Failed to set WiFi TX power");
-    }
+    // System information
+    doc["status"] = WiFiHelpers::getStatusString(WiFi.status());
+    doc["autoReconnect"] = WiFi.getAutoReconnect();
+    doc["uptime"] = millis();
 
-    WiFi.begin(_ssid.c_str(), _pass.c_str());
-    terminalLog("Connecting to " + _ssid);
-
-    _connected = waitForConnection();
-    return _connected;
-}
-
-bool WiFiUtils::connectToWifi(String ssid, String pass, bool savewhensuccessfull) {
-    _ssid = ssid;
-    _pass = pass;
-    _savewhensuccessfull = savewhensuccessfull;
-
-    WiFi.disconnect();
-    delay(100);
-
-    String hostname = WiFiHelpers::buildHostname("OpenEpaperLink");
-    WiFi.setHostname(hostname.c_str());
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(_ssid.c_str(), _pass.c_str());
-
-    terminalLog("Connecting to " + _ssid);
-
-    _connected = waitForConnection();
-    return _connected;
-}
-
-bool WiFiUtils::waitForConnection() {
-#if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if (wifiStatus == ETHERNET)
-        return true;
-#endif
-
-    unsigned long timeout = millis() + _connectionTimeout;
-    wifiStatus = WAIT_CONNECTING;
-    wl_status_t lastStatus = WL_IDLE_STATUS;
-
-    while (WiFi.status() != WL_CONNECTED) {
-        if (millis() > timeout) {
-            wl_status_t currentStatus = WiFi.status();
-            SAFE_LOG("WiFi connection timeout. Final status: %d\n", currentStatus);
-
-            switch (currentStatus) {
-                case WL_NO_SSID_AVAIL:
-                    terminalLog("!WiFi Error: SSID not found");
-                    break;
-                case WL_CONNECT_FAILED:
-                    terminalLog("!WiFi Error: Connection failed (wrong password?)");
-                    break;
-                case WL_CONNECTION_LOST:
-                    terminalLog("!WiFi Error: Connection lost during handshake");
-                    break;
-                case WL_DISCONNECTED:
-                    terminalLog("!WiFi Error: Disconnected");
-                    break;
-                default:
-                    terminalLog("!Unable to connect to WiFi - timeout");
-                    break;
-            }
-
-            startManagementServer();
-            return false;
-        }
-
-        wl_status_t currentStatus = WiFi.status();
-        if (currentStatus != lastStatus) {
-            SAFE_LOG("WiFi status changed: %d -> %d\n", lastStatus, currentStatus);
-            lastStatus = currentStatus;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(250));
-    }
-
-    // Save credentials if requested
-    if (_savewhensuccessfull) {
-        WiFiConfig config;
-        config.ssid = _ssid;
-        config.password = _pass;
-        config.hostname = WiFi.getHostname();
-
-        if (saveConfig(config)) {
-            Serial.println("✅ WiFi credentials saved successfully");
-        } else {
-            Serial.println("❌ ERROR: Failed to save WiFi credentials");
-        }
-        _savewhensuccessfull = false;
-    }
-
-    // Configure WiFi for optimal performance
-    WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
-
-    WiFiConnectionInfo connectedInfo = getConnectionInfo();
-    terminalLog("✅ Connected! IP: " + connectedInfo.ip);
-    SAFE_LOG("WiFi connected successfully - IP: %s, RSSI: %d dBm\n",
-             connectedInfo.ip.c_str(), connectedInfo.rssi);
-
-    _nextReconnectCheck = millis() + _reconnectIntervalCheck;
-    wifiStatus = CONNECTED;
-    return true;
-}
-
-void WiFiUtils::startManagementServer() {
-    if (!_APstarted && wifiStatus != ETHERNET) {
-        terminalLog("Starting config AP, ssid: OpenEPaperLink");
-
-        // Disable auto-reconnect to prevent interference with AP mode
-        WiFi.setAutoReconnect(false);
-        WiFi.disconnect(true, true);
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        WiFi.mode(WIFI_AP_STA);
-
-        esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);
-        if (ret != ESP_OK) {
-            SAFE_LOG("WARNING: Failed to set AP power save mode: %s\n", esp_err_to_name(ret));
-        }
-
-        if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {
-            Serial.println("WARNING: Failed to set AP TX power");
-        }
-
-        if (!WiFi.softAP("OpenEPaperLink", "", 1, false, 8)) {
-            Serial.println("ERROR: Failed to start WiFi AP");
-            return;
-        }
-
-        if (!WiFi.softAPsetHostname("OpenEPaperLink")) {
-            Serial.println("WARNING: Failed to set AP hostname");
-        }
-
-        ret = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
-        if (ret != ESP_OK) {
-            SAFE_LOG("WARNING: Failed to set AP bandwidth: %s\n", esp_err_to_name(ret));
-        }
-
-        IPAddress IP = WiFi.softAPIP();
-        terminalLog("✅ AP Started! Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
-        SAFE_LOG("AP Mode: IP=%s, MAC=%s\n", IP.toString().c_str(), WiFi.softAPmacAddress().c_str());
-
-        _APstarted = true;
-        _nextReconnectCheck = millis() + _retryIntervalCheck;
-        wifiStatus = AP;
-    }
-}
-
-void WiFiUtils::poll() {
-    // Handle GPIO0 reset functionality
-    if (digitalRead(0) == LOW) {
-        Serial.println("GPIO0 LOW detected");
-        unsigned long starttime = millis();
-        while (digitalRead(0) == LOW && millis() - starttime < 5000) {
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-        if (digitalRead(0) == LOW) {
-            Serial.println("Resetting WiFi settings...");
-
-            if (factoryReset()) {
-                Serial.println("✅ WiFi settings cleared successfully");
-            } else {
-                Serial.println("❌ Failed to clear WiFi settings");
-            }
-
-            wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-            esp_err_t ret = esp_wifi_init(&cfg);
-            if (ret == ESP_OK || ret == ESP_ERR_WIFI_NOT_INIT) {
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                ret = esp_wifi_restore();
-                if (ret != ESP_OK) {
-                    SAFE_LOG("WiFi restore failed: %s\n", esp_err_to_name(ret));
-                } else {
-                    Serial.println("✅ WiFi configurations cleared!");
-                }
-            } else {
-                SAFE_LOG("WiFi init failed: %s\n", esp_err_to_name(ret));
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(100));
-            ESP.restart();
-        }
-    }
-
-    pollSerial();
-}
-
-void WiFiUtils::initEth() {
-#if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if (!eth_init) {
-        eth_init = true;
-        ETH.begin(
-            ETH_PHY_ADDR,
-            ETHERNET_PHY_POWER,
-            ETHERNET_PHY_MDC,
-            ETHERNET_PHY_MDIO,
-            ETHERNET_PHY_TYPE,
-            ETHERNET_CLK_MODE,
-            false);
-    }
-#endif
-}
-
-IPAddress WiFiUtils::localIP() {
-    if (wifiStatus == ETHERNET) {
-        return ETH.localIP();
-    } else {
-        return WiFi.localIP();
-    }
-}
-
-// ========================================================================
-// CONFIGURATION MANAGEMENT
-// ========================================================================
-
-WiFiConfig WiFiUtils::loadConfig() {
-    WiFiConfig config;
-    
-    // Use centralized storage utilities for consistent configuration management
-    config.ssid = WIFI_STORAGE.getString("ssid", "");
-    config.password = WIFI_STORAGE.getString("password", "");
-    config.hostname = WIFI_STORAGE.getString("hostname", "OpenEPaperLink-AP");
-    config.ip = WIFI_STORAGE.getString("ip", "");
-    config.mask = WIFI_STORAGE.getString("mask", "255.255.255.0");
-    config.gateway = WIFI_STORAGE.getString("gateway", "");
-    config.dns = WIFI_STORAGE.getString("dns", "8.8.8.8");
-    config.hasStaticIP = !config.ip.isEmpty();
-
-    return config;
-}
-
-bool WiFiUtils::saveConfig(const WiFiConfig& config) {
-    // Use centralized storage utilities for consistent configuration management
-    bool result = true;
-    
-    result &= WIFI_STORAGE.putString("ssid", config.ssid);
-    result &= WIFI_STORAGE.putString("password", config.password);
-    result &= WIFI_STORAGE.putString("hostname", config.hostname);
-
-    if (config.hasStaticIP && !config.ip.isEmpty()) {
-        result &= WIFI_STORAGE.putString("ip", config.ip);
-        result &= WIFI_STORAGE.putString("mask", config.mask);
-        result &= WIFI_STORAGE.putString("gateway", config.gateway);
-        result &= WIFI_STORAGE.putString("dns", config.dns);
-    } else {
-        WIFI_STORAGE.remove("ip");
-        WIFI_STORAGE.remove("mask");
-        WIFI_STORAGE.remove("gateway");
-        WIFI_STORAGE.remove("dns");
+    String result;
+    if (serializeJson(doc, result) == 0) {
+        LogUtils::logError("[WiFiUtils] Failed to serialize connection info JSON");
+        return "{\"connected\":false,\"error\":\"JSON serialization failed\"}";
     }
 
     return result;
 }
 
+// ============================================================================
+// Configuration Management - Integrated with Unified Config System
+// ============================================================================
+WiFiConfig WiFiUtils::loadConfig() {
+    WiFiConfig config;
+
+    if (!CONFIG.initialize()) {
+        LogUtils::logError("[WiFiUtils] Failed to initialize config system, using defaults");
+        setDefaultConfig(config);
+        return config;
+    }
+
+    // Load from unified configuration system
+    const auto& wifiSection = WIFI_CONFIG;
+
+    config.ssid = wifiSection.ssid;
+    config.password = wifiSection.password;
+    config.hostname = wifiSection.hostname;
+    config.useStaticIP = wifiSection.useStaticIP;
+    config.staticIP = wifiSection.staticIP;
+    config.gateway = wifiSection.gateway;
+    config.subnet = wifiSection.subnet;
+    config.dns1 = wifiSection.dns1;
+    config.dns2 = wifiSection.dns2;
+    config.enableAP = wifiSection.enableAP;
+    config.apSSID = wifiSection.apSSID;
+    config.apPassword = wifiSection.apPassword;
+    config.channel = wifiSection.channel;
+    config.autoReconnect = wifiSection.autoReconnect;
+    config.powerSave = wifiSection.powerSave;
+
+    return config;
+}
+
+bool WiFiUtils::saveConfig(const WiFiConfig& config) {
+    if (!CONFIG.initialize()) {
+        LogUtils::logError("[WiFiUtils] Failed to initialize config system");
+        return false;
+    }
+
+    // Validate configuration before saving
+    if (!config.isValid()) {
+        LogUtils::logError("[WiFiUtils] Invalid WiFi configuration");
+        return false;
+    }
+
+    // Update unified configuration
+    auto& wifiSection = WIFI_CONFIG;
+
+    wifiSection.ssid = config.ssid;
+    wifiSection.password = config.password;
+    wifiSection.hostname = config.hostname;
+    wifiSection.useStaticIP = config.useStaticIP;
+    wifiSection.staticIP = config.staticIP;
+    wifiSection.gateway = config.gateway;
+    wifiSection.subnet = config.subnet;
+    wifiSection.dns1 = config.dns1;
+    wifiSection.dns2 = config.dns2;
+    wifiSection.enableAP = config.enableAP;
+    wifiSection.apSSID = config.apSSID;
+    wifiSection.apPassword = config.apPassword;
+    wifiSection.channel = config.channel;
+    wifiSection.autoReconnect = config.autoReconnect;
+    wifiSection.powerSave = config.powerSave;
+
+    bool success = CONFIG.save();
+    if (success) {
+        LogUtils::logInfo("[WiFiUtils] WiFi configuration saved successfully");
+    } else {
+        LogUtils::logError("[WiFiUtils] Failed to save WiFi configuration");
+    }
+
+    return success;
+}
+
 bool WiFiUtils::factoryReset() {
-    // Use centralized storage utilities for factory reset
-    return WIFI_STORAGE.clear();
+    LogUtils::logInfo("[WiFiUtils] Performing factory reset...");
+
+    // Reset to default configuration
+    auto& wifiSection = WIFI_CONFIG;
+
+    wifiSection.ssid = "";
+    wifiSection.password = "";
+    wifiSection.hostname = "esp32-ap";
+    wifiSection.useStaticIP = false;
+    wifiSection.staticIP = "";
+    wifiSection.gateway = "";
+    wifiSection.subnet = "";
+    wifiSection.dns1 = "";
+    wifiSection.dns2 = "";
+    wifiSection.enableAP = true;
+    wifiSection.apSSID = "OpenEPaperLink-AP";
+    wifiSection.apPassword = "12345678";
+    wifiSection.channel = 1;
+    wifiSection.autoReconnect = true;
+    wifiSection.powerSave = false;
+
+    bool success = CONFIG.save();
+
+    if (success) {
+        LogUtils::logInfo("[WiFiUtils] Factory reset complete, restarting...");
+
+        // Disconnect and restart
+        WiFi.disconnect(true, true);
+        CoreUtils::safeDelay(1000);
+        ESP.restart();
+    } else {
+        LogUtils::logError("[WiFiUtils] Factory reset failed");
+    }
+
+    return success;
+}
+
+void WiFiUtils::setDefaultConfig(WiFiConfig& config) {
+    config.ssid = "";
+    config.password = "";
+    config.hostname = "esp32-ap";
+    config.useStaticIP = false;
+    config.staticIP = "";
+    config.gateway = "";
+    config.subnet = "255.255.255.0";
+    config.dns1 = "8.8.8.8";
+    config.dns2 = "8.8.4.4";
+    config.enableAP = true;
+    config.apSSID = "OpenEPaperLink-AP";
+    config.apPassword = "12345678";
+    config.channel = 1;
+    config.autoReconnect = true;
+    config.powerSave = false;
 }
 
 bool WiFiUtils::hasStaticIP() {
-    // Check if static IP is configured using centralized storage
-    String ip = WIFI_STORAGE.getString("ip", "");
-    return !ip.isEmpty();
+    const auto& wifiConfig = WIFI_CONFIG;
+    return wifiConfig.useStaticIP && !wifiConfig.staticIP.isEmpty();
 }
 
 bool WiFiUtils::save() {
-    WiFiConfig config = loadConfig();
-    return saveConfig(config);
+    // Legacy compatibility method
+    return CONFIG.save();
 }
 
-// ========================================================================
-// JSON Configuration Methods
-// ========================================================================
+bool WiFiUtils::saveConfigAsJson() {
+    // Export current configuration as JSON
+    WiFiConfig config = loadConfig();
+    String jsonConfig = config.toJsonString();
+    LogUtils::logInfo("[WiFiUtils] Configuration exported as JSON: " + jsonConfig);
+    return true;
+}
 
+// ============================================================================
+// Event Handling with Enhanced Logging
+// ============================================================================
+void WiFiUtils::WiFiEvent(WiFiEvent_t event) {
+    String eventName = "Unknown";
+
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_START:
+            eventName = "STA_START";
+            LogUtils::logInfo("[WiFiUtils] WiFi station started");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_STOP:
+            eventName = "STA_STOP";
+            LogUtils::logInfo("[WiFiUtils] WiFi station stopped");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            eventName = "STA_CONNECTED";
+            LogUtils::logInfo("[WiFiUtils] Connected to WiFi network: " + WiFi.SSID());
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            eventName = "STA_DISCONNECTED";
+            LogUtils::logWarning("[WiFiUtils] Disconnected from WiFi network");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            eventName = "STA_GOT_IP";
+            LogUtils::logInfo("[WiFiUtils] Got IP address: " + WiFi.localIP().toString());
+            LogUtils::logInfo("  Gateway: " + WiFi.gatewayIP().toString());
+            LogUtils::logInfo("  Subnet: " + WiFi.subnetMask().toString());
+            LogUtils::logInfo("  DNS: " + WiFi.dnsIP().toString());
+
+            // Notify web clients if available
+            if (WebSocketManager::hasClients()) {
+                WiFiConnectionInfo info;
+                info.connected = true;
+                info.ip = WiFi.localIP().toString();
+                info.ssid = WiFi.SSID();
+
+                WebSocketManager::sendNotification("IP Address Assigned",
+                                                   "Connected to " + info.ssid + " with IP " + info.ip,
+                                                   "success", "info");
+            }
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+            eventName = "STA_LOST_IP";
+            LogUtils::logWarning("[WiFiUtils] Lost IP address");
+            break;
+
+        case ARDUINO_EVENT_WIFI_AP_START:
+            eventName = "AP_START";
+            LogUtils::logInfo("[WiFiUtils] Access Point started");
+            LogUtils::logInfo("  SSID: " + WiFi.softAPSSID());
+            LogUtils::logInfo("  IP: " + WiFi.softAPIP().toString());
+            break;
+
+        case ARDUINO_EVENT_WIFI_AP_STOP:
+            eventName = "AP_STOP";
+            LogUtils::logInfo("[WiFiUtils] Access Point stopped");
+            break;
+
+        case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+            eventName = "AP_STACONNECTED";
+            apClients++;
+            LogUtils::logInfo("[WiFiUtils] Client connected to AP (total: " + String(apClients) + ")");
+
+            // Notify web clients
+            if (WebSocketManager::hasClients()) {
+                WebSocketManager::sendNotification("AP Client Connected",
+                                                   "Device connected to access point", "info", "info");
+            }
+            break;
+
+        case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+            eventName = "AP_STADISCONNECTED";
+            if (apClients > 0) apClients--;
+            LogUtils::logInfo("[WiFiUtils] Client disconnected from AP (total: " + String(apClients) + ")");
+
+            // Notify web clients
+            if (WebSocketManager::hasClients()) {
+                WebSocketManager::sendNotification("AP Client Disconnected",
+                                                   "Device disconnected from access point", "info", "info");
+            }
+            break;
+
+        case ARDUINO_EVENT_WIFI_SCAN_DONE:
+            eventName = "SCAN_DONE";
+            LogUtils::logInfo("[WiFiUtils] WiFi scan completed");
+            break;
+
+        default:
+            eventName = "EVENT_" + String(event);
+            LogUtils::logInfo("[WiFiUtils] WiFi event: " + eventName);
+            break;
+    }
+
+    // Send event to web interface if available
+    if (WebSocketManager::hasClients()) {
+        DynamicJsonDocument doc(512);
+        doc["type"] = "wifi_event";
+        doc["event"] = eventName;
+        doc["timestamp"] = millis();
+
+        // Add relevant data based on event type
+        switch (event) {
+            case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+                doc["ip"] = WiFi.localIP().toString();
+                doc["gateway"] = WiFi.gatewayIP().toString();
+                break;
+            case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+            case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+                doc["apClients"] = apClients;
+                break;
+        }
+
+        WebSocketManager::sendMessage(doc);
+    }
+}
+
+// ============================================================================
+// Legacy Management Server - Enhanced with Error Handling
+// ============================================================================
+void WiFiUtils::startManagementServer() {
+    if (_APstarted && wifiStatus != ETHERNET) {
+        LogUtils::logInfo("[WiFiUtils] Management server already running");
+        return;
+    }
+
+    LogUtils::logInfo("[WiFiUtils] Starting WiFi management server...");
+
+    // Disable auto-reconnect temporarily to prevent interference
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(true, true);
+    CoreUtils::safeDelay(500);
+
+    // Set to AP+STA mode for maximum compatibility
+    WiFi.mode(WIFI_AP_STA);
+
+    // Configure power management
+    esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (ret != ESP_OK) {
+        LogUtils::logWarning("[WiFiUtils] Failed to set power save mode: " + String(esp_err_to_name(ret)));
+    }
+
+    // Set optimal TX power for AP mode
+    if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {
+        LogUtils::logWarning("[WiFiUtils] Failed to set AP TX power");
+    }
+
+    // Start Access Point with management SSID
+    String managementSSID = "OpenEPaperLink";
+    String managementPassword = "";  // Open network for easy access
+
+    if (!WiFi.softAP(managementSSID.c_str(), managementPassword.c_str(), 1, false, 8)) {
+        LogUtils::logError("[WiFiUtils] Failed to start WiFi management AP");
+        return;
+    }
+
+    // Set AP hostname
+    if (!WiFi.softAPsetHostname(managementSSID.c_str())) {
+        LogUtils::logWarning("[WiFiUtils] Failed to set AP hostname");
+    }
+
+    // Configure bandwidth for better performance
+    ret = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+    if (ret != ESP_OK) {
+        LogUtils::logWarning("[WiFiUtils] Failed to set AP bandwidth: " + String(esp_err_to_name(ret)));
+    }
+
+    // Get AP IP and log connection instructions
+    IPAddress apIP = WiFi.softAPIP();
+    String setupURL = "http://" + apIP.toString() + "/setup";
+
+    LogUtils::logInfo("[WiFiUtils] ✅ Management AP started successfully!");
+    LogUtils::logInfo("  SSID: " + managementSSID + " (Open Network)");
+    LogUtils::logInfo("  IP: " + apIP.toString());
+    LogUtils::logInfo("  Setup URL: " + setupURL);
+    LogUtils::logInfo("  MAC: " + WiFi.softAPmacAddress());
+
+    _APstarted = true;
+    _nextReconnectCheck = millis() + _retryIntervalCheck;
+    wifiStatus = AP;
+
+    // Notify web clients about management server
+    if (WebSocketManager::hasClients()) {
+        WebSocketManager::sendNotification("Management Server",
+                                           "WiFi setup available at " + setupURL, "info", "info");
+    }
+}
+
+// ============================================================================
+// JSON Configuration Methods - Enhanced
+// ============================================================================
 String WiFiUtils::getConfigAsJson() const {
-    // Use StorageUtils to generate JSON configuration
-    DynamicJsonDocument configDoc = WIFI_STORAGE.toJson();
-    String jsonString;
-    serializeJson(configDoc, jsonString);
-    return jsonString;
+    const auto& wifiConfig = WIFI_CONFIG;
+
+    DynamicJsonDocument doc(1024);
+
+    doc["ssid"] = wifiConfig.ssid;
+    doc["password"] = "***";  // Don't expose actual password
+    doc["hostname"] = wifiConfig.hostname;
+    doc["useStaticIP"] = wifiConfig.useStaticIP;
+    doc["staticIP"] = wifiConfig.staticIP;
+    doc["gateway"] = wifiConfig.gateway;
+    doc["subnet"] = wifiConfig.subnet;
+    doc["dns1"] = wifiConfig.dns1;
+    doc["dns2"] = wifiConfig.dns2;
+    doc["enableAP"] = wifiConfig.enableAP;
+    doc["apSSID"] = wifiConfig.apSSID;
+    doc["apPassword"] = "***";  // Don't expose AP password
+    doc["channel"] = wifiConfig.channel;
+    doc["autoReconnect"] = wifiConfig.autoReconnect;
+    doc["powerSave"] = wifiConfig.powerSave;
+
+    // Add runtime status
+    doc["connected"] = _connected;
+    doc["status"] = WiFiHelpers::getStatusString(WiFi.status());
+    doc["apActive"] = _APstarted;
+    doc["apClients"] = apClients;
+
+    String result;
+    if (serializeJson(doc, result) == 0) {
+        LogUtils::logError("[WiFiUtils] Failed to serialize config JSON");
+        return "{\"error\":\"JSON serialization failed\"}";
+    }
+
+    return result;
 }
 
 bool WiFiUtils::loadConfigFromJson(const String& json) {
@@ -708,305 +1105,168 @@ bool WiFiUtils::loadConfigFromJson(const String& json) {
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
-        SAFE_LOG("Failed to parse JSON config: %s\n", error.c_str());
+        LogUtils::logError("[WiFiUtils] Failed to parse JSON config: " + String(error.c_str()));
         return false;
     }
 
-    // Use StorageUtils for configuration management
-    StorageUtils::Result result = WIFI_STORAGE.fromJson(doc.as<JsonObject>());
+    // Create WiFiConfig from JSON
+    WiFiConfig tempConfig;
 
-    if (result == StorageUtils::Result::SUCCESS) {
-        SAFE_LOG("Configuration loaded from JSON successfully\n");
-        return true;
-    } else {
-        SAFE_LOG("Failed to save JSON configuration: %s\n",
-                 StorageUtils::getInstance().resultToString(result).c_str());
+    tempConfig.ssid = doc["ssid"] | "";
+    tempConfig.password = doc["password"] | "";
+    tempConfig.hostname = doc["hostname"] | "esp32-ap";
+    tempConfig.useStaticIP = doc["useStaticIP"] | false;
+    tempConfig.staticIP = doc["staticIP"] | "";
+    tempConfig.gateway = doc["gateway"] | "";
+    tempConfig.subnet = doc["subnet"] | "";
+    tempConfig.dns1 = doc["dns1"] | "";
+    tempConfig.dns2 = doc["dns2"] | "";
+    tempConfig.enableAP = doc["enableAP"] | true;
+    tempConfig.apSSID = doc["apSSID"] | "OpenEPaperLink-AP";
+    tempConfig.apPassword = doc["apPassword"] | "";
+    tempConfig.channel = doc["channel"] | 1;
+    tempConfig.autoReconnect = doc["autoReconnect"] | true;
+    tempConfig.powerSave = doc["powerSave"] | false;
+
+    // Validate configuration
+    if (!tempConfig.isValid()) {
+        LogUtils::logError("[WiFiUtils] Invalid WiFi configuration in JSON");
         return false;
     }
-}
 
-bool WiFiUtils::saveConfigAsJson() {
-    // Use StorageUtils to generate JSON configuration
-    DynamicJsonDocument configDoc = WIFI_STORAGE.toJson();
-    String jsonConfig;
-    serializeJson(configDoc, jsonConfig);
+    // Save the configuration
+    bool success = saveConfig(tempConfig);
 
-    SAFE_LOG("Configuration exported as JSON: %s\n", jsonConfig.c_str());
-    return true;
-}
-
-// ========================================================================
-// PRIVATE HELPER METHODS
-// ========================================================================
-
-void WiFiUtils::terminalLog(String text) {
-    Serial.println("WiFi: " + text);
-#ifdef HAS_TFT
-    TFTLog(text);
-#else
-    TFTLog(text);
-#endif
-}
-
-void WiFiUtils::pollSerial() {
-    // Improv WiFi serial protocol handling would go here
-    // This is a simplified version - full implementation would handle the protocol
-}
-
-void WiFiUtils::WiFiEvent(WiFiEvent_t event) {
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            SAFE_LOG("WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
-            apClients = 0;
-            break;
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            Serial.println("WiFi disconnected!");
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
-            apClients++;
-            SAFE_LOG("AP client connected. Total clients: %d\n", apClients);
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
-            if (apClients > 0) apClients--;
-            SAFE_LOG("AP client disconnected. Total clients: %d\n", apClients);
-            break;
-        default:
-            break;
-    }
-}
-
-// ========================================================================
-// IMPROV PROTOCOL IMPLEMENTATION (simplified)
-// ========================================================================
-
-void set_state(improv::State state) {
-    std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
-    data.resize(11);
-    data[6] = improv::IMPROV_SERIAL_VERSION;
-    data[7] = improv::TYPE_CURRENT_STATE;
-    data[8] = 1;
-    data[9] = state;
-
-    uint8_t checksum = 0x00;
-    for (uint8_t d : data)
-        checksum += d;
-    data[10] = checksum;
-
-    Serial.write(data.data(), data.size());
-}
-
-void send_response(std::vector<uint8_t>& response) {
-    std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
-    data.resize(9);
-    data[6] = improv::IMPROV_SERIAL_VERSION;
-    data[7] = improv::TYPE_RPC_RESPONSE;
-    data[8] = response.size();
-    data.insert(data.end(), response.begin(), response.end());
-
-    uint8_t checksum = 0x00;
-    for (uint8_t d : data)
-        checksum += d;
-    data.push_back(checksum);
-
-    Serial.write(data.data(), data.size());
-}
-
-void set_error(improv::Error error) {
-    std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
-    data.resize(11);
-    data[6] = improv::IMPROV_SERIAL_VERSION;
-    data[7] = improv::TYPE_ERROR_STATE;
-    data[8] = 1;
-    data[9] = error;
-
-    uint8_t checksum = 0x00;
-    for (uint8_t d : data)
-        checksum += d;
-    data[10] = checksum;
-
-    Serial.write(data.data(), data.size());
-}
-
-void getAvailableWifiNetworks() {
-    Serial.println("Starting WiFi network scan for Improv protocol...");
-    WiFiUtils& wifiUtils = WiFiUtils::getInstance();
-
-    bool scanStarted = wifiUtils.performAsyncScan(true, 5000);
-    if (!scanStarted) {
-        Serial.println("ERROR: Failed to start WiFi scan");
-        std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
-        send_response(data);
-        return;
-    }
-
-    uint32_t startTime = millis();
-    const uint32_t maxWaitTime = 10000;
-
-    while (wifiUtils.isScanning() && (millis() - startTime) < maxWaitTime) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    WiFiScanResult scanResult = wifiUtils.getScanResults(false);
-
-    if (scanResult.success && scanResult.networksFound > 0) {
-        SAFE_LOG("WiFi scan completed: %d networks found\n", scanResult.networksFound);
-
-        int maxNetworks = std::min(scanResult.networksFound, 30);
-        for (int i = 0; i < maxNetworks && i < scanResult.networks.size(); i++) {
-            const WiFiNetworkInfo& network = scanResult.networks[i];
-
-            if (network.ssid.length() == 0 || network.ssid.length() > 32) continue;
-
-            String authStatus = (network.encryption == WIFI_AUTH_OPEN) ? "NO" : "YES";
-
-            std::vector<uint8_t> data = improv::build_rpc_response(
-                improv::GET_WIFI_NETWORKS,
-                {network.ssid, String(network.rssi), authStatus},
-                false);
-            send_response(data);
-
-            vTaskDelay(pdMS_TO_TICKS(2));
-        }
+    if (success) {
+        LogUtils::logInfo("[WiFiUtils] Configuration loaded from JSON successfully");
     } else {
-        Serial.println("No WiFi networks found during scan or scan failed");
+        LogUtils::logError("[WiFiUtils] Failed to save JSON configuration");
     }
 
-    std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
-    send_response(data);
-
-    Serial.println("WiFi network scan completed for Improv protocol");
+    return success;
 }
 
-bool onCommandCallback(improv::ImprovCommand cmd) {
-    switch (cmd.command) {
-        case improv::Command::WIFI_SETTINGS: {
-            if (cmd.ssid.empty() || cmd.password.empty()) {
-                set_error(improv::ERROR_INVALID_RPC);
-                return false;
-            }
+// ============================================================================
+// Utility and Cleanup Functions
+// ============================================================================
+void WiFiUtils::cleanup() {
+    LogUtils::logInfo("[WiFiUtils] Cleaning up WiFi resources...");
 
-            set_state(improv::STATE_PROVISIONING);
+    // Stop WiFi
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
 
-            WiFiUtils& wifiUtils = WiFiUtils::getInstance();
-            if (wifiUtils.connectToWifi(String(cmd.ssid.c_str()), String(cmd.password.c_str()), true)) {
-                set_state(improv::STATE_PROVISIONED);
-                std::vector<uint8_t> data = improv::build_rpc_response(improv::WIFI_SETTINGS, std::vector<std::string>{"http://192.168.1.1"}, false);
-                send_response(data);
-            } else {
-                set_state(improv::STATE_STOPPED);
-                set_error(improv::Error::ERROR_UNABLE_TO_CONNECT);
-            }
-            break;
-        }
-
-        case improv::Command::GET_DEVICE_INFO: {
-            std::vector<std::string> infos = {
-                "OpenEPaperLink",
-                BUILD_VERSION,
-                "ESP32_AP-Flasher",
-                "Access Point"};
-            std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_DEVICE_INFO, infos, false);
-            send_response(data);
-            break;
-        }
-
-        case improv::Command::GET_WIFI_NETWORKS: {
-            getAvailableWifiNetworks();
-            break;
-        }
-
-        default: {
-            set_error(improv::ERROR_UNKNOWN_RPC);
-            return false;
-        }
+    // Clean up mutexes
+    if (scanMutex) {
+        vSemaphoreDelete(scanMutex);
+        scanMutex = nullptr;
     }
+
+    // Reset state variables
+    _initialized = false;
+    _connected = false;
+    _APstarted = false;
+    scanInProgress = false;
+    apClients = 0;
+
+    LogUtils::logInfo("[WiFiUtils] WiFi cleanup complete");
+}
+
+// ============================================================================
+// WiFiConfig Implementation - Enhanced Validation and JSON Support
+// ============================================================================
+String WiFiConfig::toJsonString() const {
+    const size_t jsonSize = 768;
+    DynamicJsonDocument doc(jsonSize);
+
+    doc["ssid"] = ssid;
+    doc["password"] = password;  // Note: In production, consider security implications
+    doc["hostname"] = hostname;
+    doc["useStaticIP"] = useStaticIP;
+    doc["staticIP"] = staticIP;
+    doc["gateway"] = gateway;
+    doc["subnet"] = subnet;
+    doc["dns1"] = dns1;
+    doc["dns2"] = dns2;
+    doc["enableAP"] = enableAP;
+    doc["apSSID"] = apSSID;
+    doc["apPassword"] = apPassword;
+    doc["channel"] = channel;
+    doc["autoReconnect"] = autoReconnect;
+    doc["powerSave"] = powerSave;
+
+    String result;
+    if (serializeJson(doc, result) == 0) {
+        return "{\"error\":\"JSON serialization failed\"}";
+    }
+    return result;
+}
+
+bool WiFiConfig::fromJsonString(const String& json) {
+    const size_t jsonSize = 768;
+    DynamicJsonDocument doc(jsonSize);
+
+    DeserializationError error = deserializeJson(doc, json);
+    if (error) {
+        return false;
+    }
+
+    // Load values with current values as defaults to preserve existing config
+    ssid = doc["ssid"] | ssid;
+    password = doc["password"] | password;
+    hostname = doc["hostname"] | hostname;
+    useStaticIP = doc["useStaticIP"] | useStaticIP;
+    staticIP = doc["staticIP"] | staticIP;
+    gateway = doc["gateway"] | gateway;
+    subnet = doc["subnet"] | subnet;
+    dns1 = doc["dns1"] | dns1;
+    dns2 = doc["dns2"] | dns2;
+    enableAP = doc["enableAP"] | enableAP;
+    apSSID = doc["apSSID"] | apSSID;
+    apPassword = doc["apPassword"] | apPassword;
+    channel = doc["channel"] | channel;
+    autoReconnect = doc["autoReconnect"] | autoReconnect;
+    powerSave = doc["powerSave"] | powerSave;
 
     return true;
 }
 
-void onErrorCallback(improv::Error err) {
-    set_error(err);
+bool WiFiConfig::isValid() const {
+    // SSID validation
+    if (ssid.length() > 32) return false;
+
+    // Password validation
+    if (password.length() > 63) return false;
+    if (!password.isEmpty() && password.length() < 8) return false;
+
+    // Hostname validation
+    if (hostname.isEmpty() || hostname.length() > 63) return false;
+
+    // Static IP validation
+    if (useStaticIP) {
+        if (staticIP.isEmpty() || gateway.isEmpty() || subnet.isEmpty()) return false;
+        if (!ValidationUtils::isValidIP(staticIP)) return false;
+        if (!ValidationUtils::isValidIP(gateway)) return false;
+        if (!ValidationUtils::isValidIP(subnet)) return false;
+
+        // Validate DNS if provided
+        if (!dns1.isEmpty() && !ValidationUtils::isValidIP(dns1)) return false;
+        if (!dns2.isEmpty() && !ValidationUtils::isValidIP(dns2)) return false;
+    }
+
+    // AP configuration validation
+    if (enableAP) {
+        if (apSSID.isEmpty() || apSSID.length() > 32) return false;
+        if (!apPassword.isEmpty() && apPassword.length() < 8) return false;
+        if (apPassword.length() > 63) return false;
+    }
+
+    // Channel validation
+    if (channel < 1 || channel > 13) return false;
+
+    return true;
 }
 
-// ========================================================================
-// IMPROV PROTOCOL PARSING (simplified implementation)
-// ========================================================================
-
-namespace improv {
-
-ImprovCommand parse_improv_data(const std::vector<uint8_t>& data, bool check_checksum) {
-    return parse_improv_data(data.data(), data.size(), check_checksum);
-}
-
-ImprovCommand parse_improv_data(const uint8_t* data, size_t length, bool check_checksum) {
-    ImprovCommand improv_command;
-    Command command = (Command)data[0];
-    uint8_t data_length = data[1];
-
-    if (data_length != length - 2 - check_checksum) {
-        improv_command.command = UNKNOWN;
-        return improv_command;
-    }
-
-    if (check_checksum) {
-        uint8_t checksum = data[length - 1];
-        uint32_t calculated_checksum = 0;
-        for (uint8_t i = 0; i < length - 1; i++) {
-            calculated_checksum += data[i];
-        }
-
-        if ((uint8_t)calculated_checksum != checksum) {
-            improv_command.command = BAD_CHECKSUM;
-            return improv_command;
-        }
-    }
-
-    if (command == WIFI_SETTINGS) {
-        uint8_t ssid_length = data[2];
-        uint8_t ssid_start = 3;
-        size_t ssid_end = ssid_start + ssid_length;
-
-        uint8_t pass_length = data[ssid_end];
-        size_t pass_start = ssid_end + 1;
-        size_t pass_end = pass_start + pass_length;
-
-        std::string ssid(data + ssid_start, data + ssid_end);
-        std::string password(data + pass_start, data + pass_end);
-        return {WIFI_SETTINGS, ssid, password};
-    }
-
-    improv_command.command = command;
-    return improv_command;
-}
-
-std::vector<uint8_t> build_rpc_response(Command command, const std::vector<std::string>& datum, bool add_checksum) {
-    std::vector<uint8_t> out;
-    uint32_t length = 0;
-    out.push_back(command);
-    for (auto str : datum) {
-        uint8_t len = str.length();
-        length += len + 1;
-        out.push_back(len);
-        out.insert(out.end(), str.begin(), str.end());
-    }
-    out.insert(out.begin() + 1, length);
-
-    if (add_checksum) {
-        uint32_t calculated_checksum = 0;
-        for (uint8_t byte : out) {
-            calculated_checksum += byte;
-        }
-        out.push_back(calculated_checksum);
-    }
-    return out;
-}
-
-std::vector<uint8_t> build_rpc_response(Command command, const std::vector<String>& datum, bool add_checksum) {
-    std::vector<std::string> string_vec;
-    for (auto str : datum) {
-        string_vec.push_back(str.c_str());
-    }
-    return build_rpc_response(command, string_vec, add_checksum);
-}
-
-}  // namespace improv
+// ============================================================================
+// End of optimized wifi_utils.cpp implementation
+// ============================================================================

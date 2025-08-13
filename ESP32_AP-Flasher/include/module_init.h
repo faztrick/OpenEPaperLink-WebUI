@@ -14,7 +14,7 @@ void initializeModuleSystem() {
         Serial.println("[MODULE_INIT] Warning: Module manager initialization had issues");
     }
 
-#ifdef C6_OTA_FLASHING
+#ifdef HAS_C6
     // Register C6 module
     Serial.println("[MODULE_INIT] Registering C6 module...");
     initC6Module();

@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "commstructs.h"
+#include "core_utilities.h"
 #include "newproto.h"
 #include "storage.h"
 #include "tag_db.h"
@@ -311,7 +312,7 @@ void touch_loop() {
         if (ts.isTouched) {
             touch_last_x = map(ts.points[0].x, 480, 0, 0, 480 - 1);
             touch_last_y = map(ts.points[0].y, 480, 0, 0, 480 - 1);
-            Serial.printf("Touch position X: %i Y: %i\r\n", touch_last_x, touch_last_y);
+            LogUtils::logDebug("Touch position X: " + String(touch_last_x) + " Y: " + String(touch_last_y));
             if (is_new_touch_checked == false) {
                 is_new_touch_checked = true;
                 if (touch_last_x <= 240)

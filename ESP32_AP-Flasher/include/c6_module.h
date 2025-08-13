@@ -2,12 +2,12 @@
 #define C6_MODULE_H
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
-#include <ArduinoJson.h>
 
-#ifdef C6_OTA_FLASHING
+#ifdef HAS_C6
 
 // C6 Module structures and types
 struct RadioTestResult {
@@ -43,6 +43,8 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
 void handleListDrives(AsyncWebServerRequest *request);
 void handleListSerialPorts(AsyncWebServerRequest *request);
 void handleFlashC6OTA(AsyncWebServerRequest *request);
+void handleFlashC6Firmware(AsyncWebServerRequest *request);
+void handleInstallC6Firmware(AsyncWebServerRequest *request);
 
 // C6 Module helper functions
 void applyC6Settings();
@@ -50,16 +52,16 @@ bool testC6ModuleConnection();
 RadioTestResult performC6RadioTest();
 bool restartC6Module();
 bool factoryResetC6Module();
-bool sendC6Command(const String& command, int parameter);
+bool sendC6Command(const String &command, int parameter);
 
 // C6 Module initialization and setup
 void initC6Module();
-void registerC6WebHandlers(AsyncWebServer& server);
+void registerC6WebHandlers(AsyncWebServer &server);
 
 // Task functions (declared here but implemented in ota.cpp)
-void C6firmwareUpdateTask(void* parameter);
-void C6OTAFlashTask(void* parameter);
+void C6firmwareUpdateTask(void *parameter);
+void C6OTAFlashTask(void *parameter);
 
-#endif // C6_OTA_FLASHING
+#endif  // HAS_C6
 
-#endif // C6_MODULE_H
+#endif  // C6_MODULE_H

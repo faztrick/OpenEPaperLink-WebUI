@@ -88,7 +88,7 @@ class PlatformIOValidator:
             'TAG_LED_CONTROL': ['HAS_SUBGHZ'],
             'TAG_BATTERY_MONITOR': ['HAS_SUBGHZ'],
             'FIND_MY_TAG': ['TAG_LED_CONTROL'],
-            'C6_OTA_FLASHING': ['HAS_H2'],
+            'HAS_C6': ['HAS_H2'],
         }
         
         for feature, deps in dependencies.items():

@@ -4,6 +4,7 @@
 
 #include "BLEDevice.h"
 #include "ble_filter.h"
+#include "core_utilities.h"
 #include "newproto.h"
 
 #define INTERVAL_BLE_SCANNING_SECONDS 60
@@ -112,7 +113,7 @@ bool BLE_connect(uint8_t addr[8], BLE_CONNECTION_TYPE conn_type) {
     pClient = BLEDevice::createClient();
     pClient->setClientCallbacks(new MyClientCallback());
     if (!pClient->connect(BLEAddress(temp_Address))) {
-        Serial.printf("BLE connection failed\r\n");
+        LogUtils::logError("BLE connection failed");
         pClient->disconnect();
         return false;
     }

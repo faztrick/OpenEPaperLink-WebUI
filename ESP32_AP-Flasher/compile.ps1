@@ -244,7 +244,6 @@ $files = @{
     "bootloader.bin" = "$buildPath\bootloader.bin"
     "partitions.bin" = "$buildPath\partitions.bin"
     "littlefs.bin" = "$buildPath\littlefs.bin"
-    "firmware.elf" = "$buildPath\firmware.elf"
 }
 
 # Copy files with verification (parallel where possible)

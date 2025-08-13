@@ -2,15 +2,14 @@
 
 #include <Arduino.h>
 #include <FS.h>
-#include <Preferences.h>
 #include <esp_sntp.h>
 
-#include "storage.h"
-#include "tag_db.h"
+#include "core_utilities.h"
+#include "json_config.h"
 #include "wifi_utils.h"
 
 void timeSyncCallback(struct timeval* tv) {
-    Serial.println("time succesfully synced");
+    LogUtils::logInfo("Time successfully synced");
 }
 
 void initTime(void* parameter) {
@@ -19,61 +18,32 @@ void initTime(void* parameter) {
     }
     sntp_set_time_sync_notification_cb(timeSyncCallback);
     sntp_set_sync_interval(300 * 1000);
-    configTzTime(config.timeZone, "time.cloudflare.com", "pool.ntp.org", "time.nist.gov");
-    logStartUp();
+
+    // Use the new configuration system
+    AppConfig& config = CONFIG.getConfig();
+    configTzTime(config.system.timezone.c_str(), "time.cloudflare.com", "pool.ntp.org", "time.nist.gov");
+
+    // Log startup using the new logging system
+    logSystemStartup();
+
     struct tm timeinfo;
     while (millis() < 30000) {
         if (!getLocalTime(&timeinfo)) {
-            Serial.println("Waiting for valid time from NTP-server");
+            LogUtils::logInfo("Waiting for valid time from NTP-server");
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         } else {
             break;
         }
     }
-    if (config.runStatus == RUNSTATUS_INIT) {
-        config.runStatus = RUNSTATUS_RUN;
-    }
+
     vTaskDelay(10 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
 }
 
-void logLine(const char* buffer) {
-    logLine(String(buffer));
-}
-
-void logLine(const String& text) {
-    time_t now;
-    time(&now);
-
-    char timeStr[24];
-    const char* format = (now < (time_t)1672531200) ? "           %H:%M:%S " : "%Y-%m-%d %H:%M:%S ";
-    strftime(timeStr, sizeof(timeStr), format, localtime(&now));
-
-    xSemaphoreTake(fsMutex, portMAX_DELAY);
-    File logFile = contentFS->open("/log.txt", "a");
-    if (logFile) {
-        if (logFile.size() >= 10 * 1024) {
-            logFile.close();
-            contentFS->remove("/logold.txt");
-            contentFS->rename("/log.txt", "/logold.txt");
-            logFile = contentFS->open("/log.txt", "a");
-            if (!logFile) {
-                xSemaphoreGive(fsMutex);
-                return;
-            }
-        }
-
-        logFile.print(timeStr);
-        logFile.println(text);
-        logFile.close();
-    }
-    xSemaphoreGive(fsMutex);
-}
-
-void logStartUp() {
+void logSystemStartup() {
     esp_reset_reason_t resetReason = esp_reset_reason();
 
-    String logEntry = "Reboot. Reason: ";
+    String logEntry = "System boot - Reset reason: ";
     switch (resetReason) {
         case ESP_RST_POWERON:
             logEntry += "Power-on";
@@ -110,5 +80,11 @@ void logStartUp() {
             break;
     }
 
-    logLine(logEntry);
+    // Use the new logging system
+    LogUtils::logInfo(logEntry);
+
+    // Update boot count in new config system
+    AppConfig& config = CONFIG.getConfig();
+    config.system.bootCount++;
+    CONFIG.save();
 }

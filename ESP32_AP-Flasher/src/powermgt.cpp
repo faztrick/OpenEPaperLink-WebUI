@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 
-#include "settings.h"
 #include "leds.h"
+#include "settings.h"
 
 #ifdef HAS_EXT_FLASHER
 #include "soc/rtc_cntl_reg.h"
@@ -117,4 +117,4 @@ void powerControl(bool powerState, uint8_t* pin, uint8_t pincount) {
     delay(500);
     // simpleAPPower(pin, pincount, true);
 #endif
-    }
+}

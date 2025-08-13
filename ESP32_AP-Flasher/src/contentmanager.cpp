@@ -1,5 +1,7 @@
 #include "contentmanager.h"
 
+#include "core_utilities.h"
+
 // possibility to turn off, to save space if needed
 #ifndef SAVE_SPACE
 #define CONTENT_QR
@@ -26,6 +28,7 @@
 #include <time.h>
 
 #include <map>
+#include <memory>  // For std::unique_ptr
 
 #include "commstructs.h"
 #include "makeimage.h"
@@ -42,6 +45,7 @@
 #include "util.h"
 #include "web.h"
 
+#ifdef HAS_TFT
 // Forward declarations for functions defined later in this file
 void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size, uint16_t bgcolor);
 void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size);
@@ -50,6 +54,7 @@ void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, St
 void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight, byte align);
 void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color, uint16_t bgcolor, float lineheight);
 void drawTextBox(TFT_eSprite &spr, String &content, int16_t &posx, int16_t &posy, int16_t boxwidth, int16_t boxheight, String font, uint16_t color);
+#endif
 
 // Forward declarations for existing functions with correct signatures
 void drawNumber(String &filename, int32_t count, int32_t thresholdred, tagRecord *&taginfo, imgParam &imageParams);
@@ -139,11 +144,12 @@ void contentRunner() {
 }
 
 void checkVars() {
-    DynamicJsonDocument cfgobj(2048);
+    // Use heap allocation to prevent stack overflow
+    auto cfgobj = std::make_unique<DynamicJsonDocument>(2048);
     for (tagRecord *tag : tagDB) {
         if (tag->contentMode == 19) {
-            deserializeJson(cfgobj, tag->modeConfigJson);
-            const String jsonfile = cfgobj["filename"].as<String>();
+            deserializeJson(*cfgobj, tag->modeConfigJson);
+            const String jsonfile = (*cfgobj)["filename"].as<String>();
             if (!util::isEmptyOrNull(jsonfile)) {
                 File file = contentFS->open(jsonfile, "r");
                 if (file) {
@@ -215,15 +221,16 @@ void drawNew(const uint8_t mac[8], tagRecord *&taginfo) {
             taginfo->contentMode = 21;
             taginfo->nextupdate = 0;
         } else if (contentFS->exists("/tag_defaults.json")) {
-            DynamicJsonDocument doc(2048);
+            // Use heap allocation to prevent stack overflow
+            auto doc = std::make_unique<DynamicJsonDocument>(2048);
             fs::File tagDefaults = contentFS->open("/tag_defaults.json", "r");
-            DeserializationError err = deserializeJson(doc, tagDefaults);
+            DeserializationError err = deserializeJson(*doc, tagDefaults);
             if (!err) {
-                if (doc["contentMode"].is<uint8_t>()) {
-                    taginfo->contentMode = doc["contentMode"];
+                if ((*doc)["contentMode"].is<uint8_t>()) {
+                    taginfo->contentMode = (*doc)["contentMode"];
                 }
-                if (doc["modecfgjson"].is<String>()) {
-                    taginfo->modeConfigJson = doc["modecfgjson"].as<String>();
+                if ((*doc)["modecfgjson"].is<String>()) {
+                    taginfo->modeConfigJson = (*doc)["modecfgjson"].as<String>();
                 }
             }
             tagDefaults.close();
@@ -239,9 +246,10 @@ void drawNew(const uint8_t mac[8], tagRecord *&taginfo) {
     }
 #endif
 
-    DynamicJsonDocument doc(2048);
-    deserializeJson(doc, taginfo->modeConfigJson);
-    JsonObject cfgobj = doc.as<JsonObject>();
+    // Use heap allocation to prevent stack overflow
+    auto doc = std::make_unique<DynamicJsonDocument>(2048);
+    deserializeJson(*doc, taginfo->modeConfigJson);
+    JsonObject cfgobj = (*doc).as<JsonObject>();
     char buffer[64];
 
     wsLog("Updating " + String(hexmac));
@@ -622,7 +630,7 @@ void drawNew(const uint8_t mac[8], tagRecord *&taginfo) {
 #endif
     }
 
-    taginfo->modeConfigJson = doc.as<String>();
+    taginfo->modeConfigJson = (*doc).as<String>();
 }
 
 bool updateTagImage(String &filename, const uint8_t *dst, uint16_t nextCheckin, tagRecord *&taginfo, imgParam &imageParams) {
@@ -1187,7 +1195,7 @@ int getImgURL(String &filename, String URL, time_t fetched, imgParam &imageParam
     // https://images.klari.net/kat-bw29.jpg
 
     HTTPClient http;
-    logLine("http getImgURL " + URL);
+    LogUtils::logInfo("http getImgURL " + URL);
     http.begin(URL);
     http.addHeader("If-Modified-Since", formatHttpDate(fetched));
     http.addHeader("X-ESL-MAC", MAC);
@@ -1353,7 +1361,7 @@ bool getCalFeed(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgPa
     strftime(dateString, sizeof(dateString), languageDateFormat[0].c_str(), &timeinfo);
 
     HTTPClient http;
-    // logLine("http getCalFeed " + URL);
+    // LogUtils::logInfo("http getCalFeed " + URL);
     http.begin(URL);
     http.setTimeout(10000);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -1902,7 +1910,7 @@ uint8_t drawBuienradar(String &filename, JsonObject &cfgobj, tagRecord *&taginfo
 
     String lat = cfgobj["#lat"];
     String lon = cfgobj["#lon"];
-    // logLine("http drawBuienradar");
+    // LogUtils::logInfo("http drawBuienradar");
     http.begin("https://gadgets.buienradar.nl/data/raintext/?lat=" + lat + "&lon=" + lon);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(5000);
@@ -2183,7 +2191,7 @@ String extractValueFromJson(JsonDocument &json, const String &path) {
             int index = atoi(segment);
             currentObj = currentObj.as<JsonArray>()[index];
         } else {
-            Serial.printf("Invalid JSON structure at path segment: %s\r\n", segment);
+            LogUtils::logError("Invalid JSON structure at path segment: " + String(segment));
             return "";
         }
         segment = strtok(NULL, ".");
@@ -2320,7 +2328,7 @@ bool getJsonTemplateFileExtractVariables(String &filename, String jsonfile, Json
 int getJsonTemplateUrl(String &filename, String URL, time_t fetched, String MAC, tagRecord *&taginfo, imgParam &imageParams) {
     HTTPClient http;
     http.useHTTP10(true);
-    logLine("http getJsonTemplateUrl " + URL);
+    LogUtils::logInfo("http getJsonTemplateUrl " + URL);
     http.begin(URL);
     http.addHeader("If-Modified-Since", formatHttpDate(fetched));
     http.addHeader("X-ESL-MAC", MAC);

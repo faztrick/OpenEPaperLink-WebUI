@@ -9,10 +9,12 @@
  * @version Optimized implementation using WiFiUtils
  */
 
+#include "serial_commands.h"
+
 #include <ArduinoJson.h>
 
-#include "common_utils.h"
-#include "serial_commands.h"
+#include "build_constants.h"
+#include "core_utilities.h"
 #include "serialap.h"  // Include for AP state checking
 
 SerialCommandHandler& SerialCommandHandler::getInstance() {
@@ -37,16 +39,22 @@ void SerialCommandHandler::initialize() {
 }
 
 void SerialCommandHandler::setDefaultWiFiCredentials() {
+    // Add safety check to ensure WiFiUtils is ready
+    if (!CoreUtils::isInitialized()) {
+        SAFE_LOG("⚠️ Core utilities not initialized, skipping WiFi defaults\n");
+        return;
+    }
+
     // Check if credentials already exist
     WiFiConfig config = wifiUtils.loadConfig();
 
     if (config.ssid.length() > 0) {
         SAFE_LOG("📶 WiFi: %s (existing)\n", config.ssid.c_str());
         SAFE_LOG("🔑 Password: %s (existing)\n", config.password.length() > 0 ? "***configured***" : "not set");
-        SAFE_LOG("🌐 Static IP: %s (existing)\n", config.ip.c_str());
+        SAFE_LOG("🌐 Static IP: %s (existing)\n", config.ip().c_str());
         SAFE_LOG("🏠 Gateway: %s (existing)\n", config.gateway.c_str());
-        SAFE_LOG("📡 Subnet: %s (existing)\n", config.mask.c_str());
-        SAFE_LOG("🔍 DNS: %s (existing)\n", config.dns.c_str());
+        SAFE_LOG("📡 Subnet: %s (existing)\n", config.mask().c_str());
+        SAFE_LOG("🔍 DNS: %s (existing)\n", config.dns().c_str());
         SAFE_LOG("🏠 Hostname: %s (existing)\n", config.hostname.c_str());
 
         // Auto-connect to existing WiFi if not connected
@@ -63,11 +71,11 @@ void SerialCommandHandler::setDefaultWiFiCredentials() {
     // Update configuration with defaults
     config.ssid = "Faztrick";
     config.password = "faztrick1234";
-    config.ip = "192.168.29.200";
+    config.staticIP = "192.168.29.200";
     config.gateway = "192.168.29.91";
-    config.mask = "255.255.255.0";
-    config.dns = "8.8.8.8";
-    config.hasStaticIP = true;
+    config.subnet = "255.255.255.0";
+    config.dns1 = "8.8.8.8";
+    config.useStaticIP = true;
 
     wifiUtils.saveConfig(config);
 
@@ -79,7 +87,9 @@ void SerialCommandHandler::setDefaultWiFiCredentials() {
 }
 
 void SerialCommandHandler::processSerialInput() {
-    if (!initialized) return;
+    if (!initialized || !CoreUtils::isInitialized()) {
+        return;
+    }
 
     // Check if AP is in a critical state where we shouldn't interfere
     if (!SerialUtils::isSerialSafe()) {
@@ -240,6 +250,11 @@ void SerialCommandHandler::handleWiFiScan() {
 }
 
 void SerialCommandHandler::handleWiFiConnect(const String& params) {
+    if (!CoreUtils::isInitialized()) {
+        sendErrorResponse("System not ready for WiFi operations");
+        return;
+    }
+
     WiFiConfig config = wifiUtils.loadConfig();
 
     if (config.ssid.length() == 0) {
@@ -250,10 +265,10 @@ void SerialCommandHandler::handleWiFiConnect(const String& params) {
     // Log connection attempt without exposing password
     sendResponse("Connecting to WiFi: " + config.ssid +
                  " with password: " + (config.password.length() > 0 ? "***configured***" : "not set") +
-                 " IP: " + config.ip +
+                 " IP: " + config.ip() +
                  " Gateway: " + config.gateway +
-                 " Subnet: " + config.mask +
-                 " DNS: " + config.dns);
+                 " Subnet: " + config.mask() +
+                 " DNS: " + config.dns());
 
     // Use WiFiUtils for connection
     bool connected = wifiUtils.connectToWifi(config.ssid, config.password, true);
@@ -267,7 +282,7 @@ void SerialCommandHandler::handleWiFiConnect(const String& params) {
         doc["ip"] = info.ip;
         doc["rssi"] = info.rssi;
         doc["gateway"] = info.gateway;
-        doc["quality"] = WiFiHelpers::WiFiHelpers::calculateSignalQuality(info.rssi);
+        doc["quality"] = WiFiHelpers::calculateSignalQuality(info.rssi);
 
         String jsonString;
         serializeJson(doc, jsonString);
@@ -332,7 +347,7 @@ void SerialCommandHandler::handleWiFiGetSSID() {
     doc["connected"] = info.connected;
     doc["ssid"] = info.ssid;
     doc["rssi"] = info.rssi;
-    doc["quality"] = WiFiHelpers::WiFiHelpers::calculateSignalQuality(info.rssi);
+    doc["quality"] = WiFiHelpers::calculateSignalQuality(info.rssi);
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -350,9 +365,9 @@ void SerialCommandHandler::handleWiFiGetMAC() {
 }
 
 void SerialCommandHandler::handleWiFiSetSSID(const String& ssid) {
-    String cleanSSID = ResponseUtils::parseQuotedString(ssid);
+    String cleanSSID = ValidationUtils::parseQuotedString(ssid);
 
-    if (!ResponseUtils::isValidSSID(cleanSSID)) {
+    if (!ValidationUtils::isValidSSID(cleanSSID)) {
         sendErrorResponse("Invalid SSID (empty or too long)");
         return;
     }
@@ -368,9 +383,9 @@ void SerialCommandHandler::handleWiFiSetSSID(const String& ssid) {
 }
 
 void SerialCommandHandler::handleWiFiSetPassword(const String& password) {
-    String cleanPassword = ResponseUtils::parseQuotedString(password);
+    String cleanPassword = ValidationUtils::parseQuotedString(password);
 
-    if (!ResponseUtils::isValidPassword(cleanPassword)) {
+    if (!ValidationUtils::isValidPassword(cleanPassword)) {
         sendErrorResponse("Invalid password (too short for WPA2)");
         return;
     }
@@ -386,16 +401,16 @@ void SerialCommandHandler::handleWiFiSetPassword(const String& password) {
 }
 
 void SerialCommandHandler::handleWiFiSetStaticIP(const String& ip) {
-    String cleanIP = ResponseUtils::parseQuotedString(ip);
+    String cleanIP = ValidationUtils::parseQuotedString(ip);
 
-    if (!ResponseUtils::isValidIP(cleanIP)) {
+    if (!ValidationUtils::isValidIP(cleanIP)) {
         sendErrorResponse("Invalid IP address format");
         return;
     }
 
     WiFiConfig config = wifiUtils.loadConfig();
-    config.ip = cleanIP;
-    config.hasStaticIP = !cleanIP.isEmpty();
+    config.staticIP = cleanIP;
+    config.useStaticIP = !cleanIP.isEmpty();
 
     if (wifiUtils.saveConfig(config)) {
         sendResponse("Static IP set to: " + cleanIP);
@@ -405,9 +420,9 @@ void SerialCommandHandler::handleWiFiSetStaticIP(const String& ip) {
 }
 
 void SerialCommandHandler::handleWiFiSetGateway(const String& gateway) {
-    String cleanGateway = ResponseUtils::parseQuotedString(gateway);
+    String cleanGateway = ValidationUtils::parseQuotedString(gateway);
 
-    if (!ResponseUtils::isValidIP(cleanGateway)) {
+    if (!ValidationUtils::isValidIP(cleanGateway)) {
         sendErrorResponse("Invalid gateway IP address format");
         return;
     }
@@ -423,15 +438,15 @@ void SerialCommandHandler::handleWiFiSetGateway(const String& gateway) {
 }
 
 void SerialCommandHandler::handleWiFiSetSubnet(const String& subnet) {
-    String cleanSubnet = ResponseUtils::parseQuotedString(subnet);
+    String cleanSubnet = ValidationUtils::parseQuotedString(subnet);
 
-    if (!ResponseUtils::isValidIP(cleanSubnet)) {
+    if (!ValidationUtils::isValidIP(cleanSubnet)) {
         sendErrorResponse("Invalid subnet mask format");
         return;
     }
 
     WiFiConfig config = wifiUtils.loadConfig();
-    config.mask = cleanSubnet;
+    config.subnet = cleanSubnet;
 
     if (wifiUtils.saveConfig(config)) {
         sendResponse("Subnet mask set to: " + cleanSubnet);
@@ -441,15 +456,15 @@ void SerialCommandHandler::handleWiFiSetSubnet(const String& subnet) {
 }
 
 void SerialCommandHandler::handleWiFiSetDNS(const String& dns) {
-    String cleanDNS = ResponseUtils::parseQuotedString(dns);
+    String cleanDNS = ValidationUtils::parseQuotedString(dns);
 
-    if (!ResponseUtils::isValidIP(cleanDNS)) {
+    if (!ValidationUtils::isValidIP(cleanDNS)) {
         sendErrorResponse("Invalid DNS IP address format");
         return;
     }
 
     WiFiConfig config = wifiUtils.loadConfig();
-    config.dns = cleanDNS;
+    config.dns1 = cleanDNS;
 
     if (wifiUtils.saveConfig(config)) {
         sendResponse("DNS set to: " + cleanDNS);
@@ -653,7 +668,7 @@ void SerialCommandHandler::handleHelpCommand() {
 
 void SerialCommandHandler::handleVersionCommand() {
     DynamicJsonDocument doc(SMALL_JSON_SIZE);
-    ResponseUtils::getSystemInfo(doc);
+    SystemInfo::buildSystemInfo(doc);
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -673,7 +688,7 @@ void SerialCommandHandler::handleAuthorGet() {
 }
 
 void SerialCommandHandler::handleAuthorSet(const String& author) {
-    String cleanAuthor = ResponseUtils::parseQuotedString(author);
+    String cleanAuthor = ValidationUtils::parseQuotedString(author);
     sendResponse("Author set to: " + cleanAuthor + " (Note: This is stored in build config)");
 }
 
@@ -688,7 +703,7 @@ void SerialCommandHandler::handleEndpointList() {
 }
 
 void SerialCommandHandler::handleEndpointTest(const String& endpoint) {
-    String cleanEndpoint = ResponseUtils::parseQuotedString(endpoint);
+    String cleanEndpoint = ValidationUtils::parseQuotedString(endpoint);
     sendResponse("Testing endpoint: " + cleanEndpoint);
     sendResponse("Note: Implement HTTP client test here");
 }
@@ -700,8 +715,8 @@ void SerialCommandHandler::handleEndpointStatus() {
 // System Command Implementations
 void SerialCommandHandler::handleSystemInfo() {
     DynamicJsonDocument doc(MEDIUM_JSON_SIZE);
-    ResponseUtils::getSystemInfo(doc);
-    ResponseUtils::getMemoryInfo(doc);
+    SystemInfo::buildSystemInfo(doc);
+    SystemInfo::buildMemoryInfo(doc);
 
     String jsonString;
     serializeJson(doc, jsonString);

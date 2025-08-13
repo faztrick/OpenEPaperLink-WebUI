@@ -13,6 +13,7 @@
 #define WAKEUP_REASON_WDT_RESET 0xFE
 
 void initTime(void* parameter);
-void logLine(const char* buffer);
-void logLine(const String& text);
-void logStartUp();
+void logSystemStartup();
+
+// Note: General logging functions are available in core_utilities.h
+// Include that header when you need LogUtils functions

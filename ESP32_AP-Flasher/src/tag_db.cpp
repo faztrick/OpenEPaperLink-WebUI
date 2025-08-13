@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core_utilities.h"
+#include "json_config.h"
 #include "language.h"
 #include "storage.h"
 #include "util.h"
@@ -138,7 +140,7 @@ void saveDB(const String& filename) {
         String backupFilename = filename + ".bak";
         if (!contentFS->rename(filename.c_str(), backupFilename.c_str())) {
             xSemaphoreGive(fsMutex);
-            logLine("error renaming tagDB to .bak");
+            LogUtils::logInfo("error renaming tagDB to .bak");
             wsErr("error renaming tagDB to .bak");
             xSemaphoreTake(fsMutex, portMAX_DELAY);
         }
@@ -337,7 +339,7 @@ void initAPconfig() {
     config.discovery = APconfig["discovery"].is<uint8_t>() ? APconfig["discovery"] : 0;
     config.showtimestamp = APconfig["showtimestamp"].is<uint8_t>() ? APconfig["showtimestamp"] : 0;
 #ifdef BLE_ONLY
-        config.ble = true;
+    config.ble = true;
 #endif
     // default wifi power 8.5 dbM
     // see https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/src/WiFiGeneric.h#L111
@@ -352,32 +354,54 @@ void initAPconfig() {
 }
 
 void saveAPconfig() {
-    xSemaphoreTake(fsMutex, portMAX_DELAY);
-    fs::File configFile = contentFS->open("/current/apconfig.json", "w");
-    DynamicJsonDocument APconfig(2048);
-    APconfig["channel"] = config.channel;
-    APconfig["subghzchannel"] = config.subghzchannel;
-    APconfig["alias"] = config.alias;
-    APconfig["led"] = config.led;
-    APconfig["tft"] = config.tft;
-    APconfig["language"] = config.language;
-    APconfig["maxsleep"] = config.maxsleep;
-    APconfig["stopsleep"] = config.stopsleep;
-    APconfig["preview"] = config.preview;
-    APconfig["nightlyreboot"] = config.nightlyreboot;
-    APconfig["lock"] = config.lock;
-    APconfig["wifipower"] = config.wifiPower;
-    APconfig["timezone"] = config.timeZone;
-    APconfig["sleeptime1"] = config.sleepTime1;
-    APconfig["sleeptime2"] = config.sleepTime2;
-    APconfig["ble"] = config.ble;
-    APconfig["repo"] = config.repo;
-    APconfig["env"] = config.env;
-    APconfig["discovery"] = config.discovery;
-    APconfig["showtimestamp"] = config.showtimestamp;
-    serializeJsonPretty(APconfig, configFile);
-    configFile.close();
-    xSemaphoreGive(fsMutex);
+    // Use new simplified storage system
+    AppConfig& appConfig = CONFIG.getConfig();
+
+    // Update system config with current values
+    appConfig.system.deviceName = config.alias;
+    // Map legacy config fields to new system structure
+    // Note: Some legacy fields may not have direct equivalents in new structure
+    appConfig.system.debugMode = config.preview;
+    appConfig.system.timezone = config.timeZone;
+    appConfig.system.nightlyReboot = config.nightlyreboot;
+    appConfig.system.maxSleep = config.maxsleep;
+
+    // Save system config
+    CONFIG.save();
+
+    // Also save as legacy JSON for compatibility if needed
+    if (fsMutex) xSemaphoreTake(fsMutex, portMAX_DELAY);
+
+    if (contentFS) {
+        fs::File configFile = contentFS->open("/current/apconfig.json", "w");
+        if (configFile) {
+            DynamicJsonDocument APconfig(2048);
+            APconfig["channel"] = config.channel;
+            APconfig["subghzchannel"] = config.subghzchannel;
+            APconfig["alias"] = config.alias;
+            APconfig["led"] = config.led;
+            APconfig["tft"] = config.tft;
+            APconfig["language"] = config.language;
+            APconfig["maxsleep"] = config.maxsleep;
+            APconfig["stopsleep"] = config.stopsleep;
+            APconfig["preview"] = config.preview;
+            APconfig["nightlyreboot"] = config.nightlyreboot;
+            APconfig["lock"] = config.lock;
+            APconfig["wifipower"] = config.wifiPower;
+            APconfig["timezone"] = config.timeZone;
+            APconfig["sleeptime1"] = config.sleepTime1;
+            APconfig["sleeptime2"] = config.sleepTime2;
+            APconfig["ble"] = config.ble;
+            APconfig["repo"] = config.repo;
+            APconfig["env"] = config.env;
+            APconfig["discovery"] = config.discovery;
+            APconfig["showtimestamp"] = config.showtimestamp;
+            serializeJsonPretty(APconfig, configFile);
+            configFile.close();
+        }
+    }
+
+    if (fsMutex) xSemaphoreGive(fsMutex);
 }
 
 HwType getHwType(const uint8_t id) {
@@ -520,5 +544,3 @@ void popTagInfo(const uint8_t mac[8]) {
         }
     }
 }
-
-

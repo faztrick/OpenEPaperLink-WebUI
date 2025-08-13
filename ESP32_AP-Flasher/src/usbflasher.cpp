@@ -117,7 +117,12 @@ void sendFlasherAnswer(uint8_t answer_cmd, uint8_t* ans_buff, uint32_t len, uint
     if (transportType == TRANSPORT_USB) {
         cmdSerial.write(answer_buffer, 3 + 2 + 2 + len + 2);
     } else {
+#ifdef HAS_EXT_FLASHER
         sendDataToClient(answer_buffer, 3 + 2 + 2 + len + 2);
+#else
+        // External flasher not available, fallback to USB serial
+        cmdSerial.write(answer_buffer, 3 + 2 + 2 + len + 2);
+#endif
     }
     // for(uint16_t c = 0; c< 3+2+2+len+2; c++){
 
@@ -372,6 +377,7 @@ void processFlasherCommand(struct flasherCommand* cmd, uint8_t transportType) {
                     numPowerPins = sizeof(powerPins);
                     powerControl(cmd->data[0], (uint8_t*)powerPins, numPowerPins);
                     break;
+#ifdef HAS_EXT_FLASHER
                 case 1:
                     numPowerPins = sizeof(powerPins2);
                     powerControl(cmd->data[0], (uint8_t*)powerPins2, numPowerPins);
@@ -380,6 +386,7 @@ void processFlasherCommand(struct flasherCommand* cmd, uint8_t transportType) {
                     numPowerPins = sizeof(powerPins3);
                     powerControl(cmd->data[0], (uint8_t*)powerPins3, numPowerPins);
                     break;
+#endif
             }
             sendFlasherAnswer(CMD_SET_POWER, NULL, 0, transportType);
             break;
@@ -440,6 +447,7 @@ void processFlasherCommand(struct flasherCommand* cmd, uint8_t transportType) {
                     powerControl(true, (uint8_t*)powerPins, numPowerPins);
                     nrfflasherp = new nrfswd(FLASHER_AP_MISO, FLASHER_AP_CLK);
                     break;
+#ifdef HAS_EXT_FLASHER
                 case 1:
                     numPowerPins = sizeof(powerPins2);
                     powerControl(true, (uint8_t*)powerPins2, numPowerPins);
@@ -450,6 +458,7 @@ void processFlasherCommand(struct flasherCommand* cmd, uint8_t transportType) {
                     powerControl(true, (uint8_t*)powerPins3, numPowerPins);
                     nrfflasherp = new nrfswd(FLASHER_ALT_MISO, FLASHER_ALT_CLK);
                     break;
+#endif
             }
             nrfflasherp->init();
             temp_buff[0] = (nrfflasherp->isConnected && !nrfflasherp->isLocked);

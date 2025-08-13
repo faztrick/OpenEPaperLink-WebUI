@@ -1,49 +1,35 @@
+/**
+ * @file storage.h
+ * @brief Legacy Storage System - Minimal Compatibility Layer
+ *
+ * This file provides minimal backward compatibility for existing code.
+ * New code should use json_config.h directly.
+ *
+ * @version 5.0 - Minimal Legacy Support
+ */
+
 #ifndef _DYN_STORAGE_H_
 #define _DYN_STORAGE_H_
 
-#include "FS.h"
+#include "json_config.h"
 
-#ifdef HAS_SDCARD
-#ifndef SD_CARD_SDMMC
-
-#ifndef SD_CARD_SS
-#error SD_CARD_SS UNDEFINED
-#endif
-
-#ifndef SD_CARD_CLK
-#define SD_CARD_CLK 18
-#endif
-
-#ifndef SD_CARD_MISO
-#define SD_CARD_MISO 19
-#endif
-
-#ifndef SD_CARD_MOSI
-#define SD_CARD_MOSI 23
-#endif
-
-#endif
-#endif
-
+// Legacy compatibility class - minimal implementation
 class DynStorage {
    public:
     DynStorage();
     void begin();
     void end();
-    void listFiles();
     uint64_t freeSpace();
 
    private:
     bool isInited;
 };
 
-extern SemaphoreHandle_t fsMutex;
+// Global instances for backward compatibility
 extern DynStorage Storage;
-extern fs::FS *contentFS;
-#ifndef SD_CARD_ONLY
-extern void copyFile(File in, File out);
-#endif
 
-#endif
+// Re-export necessary globals from json_config
+using ::contentFS;
+using ::fsMutex;
 
-
+#endif  // _DYN_STORAGE_H_

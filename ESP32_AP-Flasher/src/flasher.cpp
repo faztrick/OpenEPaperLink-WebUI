@@ -3,14 +3,15 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <MD5Builder.h>
+#include <WiFi.h>
 
 #include "LittleFS.h"
+#include "core_utilities.h"
 #include "leds.h"
 #include "settings.h"
 #include "storage.h"
 #include "time.h"
 #include "zbs_interface.h"
-#include <WiFi.h>
 
 #ifdef HAS_EXT_FLASHER
 #include "webflasher.h"
@@ -109,7 +110,7 @@ bool flasher::connectTag(uint8_t port) {
         default:
             return false;
     }
-    if (!result) Serial.printf("I tried connecting to port %d, but I couldn't establish a link to the tag. That's all I know.\r\n", port);
+    if (!result) LogUtils::logError("I tried connecting to port " + String(port) + ", but I couldn't establish a link to the tag. That's all I know.");
     return result;
 }
 
@@ -506,7 +507,7 @@ bool flasher::writeBlock(uint16_t offset, uint8_t *data, uint16_t len, bool info
     return true;
 }
 
-#ifndef C6_OTA_FLASHING
+#ifndef HAS_C6
 uint16_t getAPUpdateVersion(uint8_t type) {
     DynamicJsonDocument doc(2048);
     fs::File readfile = contentFS->open("/AP_FW_Pack.bin", "r");
@@ -518,7 +519,7 @@ uint16_t getAPUpdateVersion(uint8_t type) {
                 if (jtype == type) {
                     const char *name = elem["name"];
                     uint32_t version = elem["version"];
-                    Serial.printf("AP FW version %04X - %s found in FW pack\r\n", version, name);
+                    LogUtils::logInfo("AP FW version " + String(version, HEX) + " - " + String(name) + " found in FW pack");
                     readfile.close();
                     return version;
                 }
@@ -568,7 +569,7 @@ bool doAPFlash() {
     // This function expects a tag in stock configuration, to be used as an AP. It can also work with 'dead' AP's.
     class flasher *f = new flasher();
     if (!f->connectTag(AP_PROCESS_PORT)) {
-        Serial.printf("Sorry, failed to connect to this tag...\r\n");
+        LogUtils::logError("Sorry, failed to connect to this tag...");
         delete f;
         return false;
     }
@@ -577,7 +578,7 @@ bool doAPFlash() {
 
     if (f->findTagByMD5()) {
         // fresh tag for AP
-        Serial.printf("Found an original fw tag, flashing it for use with OpenEPaperLink\r\n");
+        LogUtils::logInfo("Found an original fw tag, flashing it for use with OpenEPaperLink");
         f->readInfoBlock();
         f->getFirmwareMac();
         f->prepareInfoBlock();
@@ -588,7 +589,7 @@ bool doAPFlash() {
         // unknown tag, bailing out.
         f->backupFlash();
 
-        Serial.printf("Found a tag, but don't know what to do with it. Consider flashing using a file called \"AP_force_flash.bin\"\r\n");
+        LogUtils::logWarning("Found a tag, but don't know what to do with it. Consider flashing using a file called \"AP_force_flash.bin\"");
         delete f;
         return false;
     }
@@ -602,7 +603,7 @@ bool doAPUpdate(uint8_t type) {
     // this function expects the tag to be already flashed with some version of the OpenEpaperLink Firmware, and that it correctly reported its type
     class flasher *f = new flasher();
     if (!f->connectTag(AP_PROCESS_PORT)) {
-        Serial.printf("Sorry, failed to connect to this tag...\r\n");
+        LogUtils::logError("Sorry, failed to connect to this tag...");
         delete f;
         return false;
     }
@@ -686,5 +687,3 @@ bool doTagFlash() {
     return false;
 }
 #endif
-
-

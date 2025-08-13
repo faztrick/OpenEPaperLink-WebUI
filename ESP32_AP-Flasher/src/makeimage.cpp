@@ -67,7 +67,9 @@ void jpg2buffer(String filein, String fileout, imgParam &imageParams) {
         spr.fillSprite(TFT_WHITE);
         TJpgDec.drawFsJpg(0, 0, filein, *contentFS);
 
+#ifdef HAS_TFT
         spr2buffer(spr, fileout, imageParams);
+#endif
         spr.deleteSprite();
     }
 }

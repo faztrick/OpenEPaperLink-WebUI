@@ -1,17 +1,98 @@
 #include "c6_module.h"
 
+#include <algorithm>  // std::min
+
 #include "commstructs.h"
+#include "core_utilities.h"
+#include "json_config.h"  // Modern unified configuration system
 #include "module_manager.h"
 #include "ota.h"
 #include "serialap.h"
 #include "settings.h"
 #include "storage.h"
-#include "storage_utils.h"  // Include new storage utilities
 #include "system.h"
 #include "tag_db.h"
 #include "web.h"
 
-#ifdef C6_OTA_FLASHING
+#ifdef HAS_C6
+
+// ========================================================================
+// JSON SIZE CONSTANTS (replacing web_utilities)
+// ========================================================================
+const size_t JSON_SIZE_SMALL = 512;
+const size_t JSON_SIZE_MEDIUM = 1024;
+const size_t JSON_SIZE_LARGE = 2048;
+const size_t JSON_SIZE_XLARGE = 4096;
+
+// ========================================================================
+// HELPER FUNCTIONS (replacing web_utilities)
+// ========================================================================
+
+// Send JSON response directly
+void sendJsonResponse(AsyncWebServerRequest *request, const DynamicJsonDocument &doc, int statusCode = 200) {
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->setCode(statusCode);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Cache-Control", "no-cache");
+    serializeJson(doc, *response);
+    request->send(response);
+}
+
+// Send error response
+void sendErrorResponse(AsyncWebServerRequest *request, int code, const String &message, const String &context = "") {
+    DynamicJsonDocument doc(JSON_SIZE_SMALL);
+    doc["success"] = false;
+    doc["error"] = message;
+    doc["code"] = code;
+    doc["timestamp"] = millis();
+    if (!context.isEmpty()) {
+        doc["context"] = context;
+    }
+    sendJsonResponse(request, doc, code);
+}
+
+// ========================================================================
+// CONSTANTS AND CONFIGURATION
+// ========================================================================
+namespace C6Constants {
+// Timeouts and intervals (milliseconds)
+constexpr uint32_t HEALTH_CHECK_INTERVAL = 10000;  // 10 seconds
+constexpr uint32_t HEALTH_CHECK_TIMEOUT = 30000;   // 30 seconds
+constexpr uint32_t COMMAND_TIMEOUT = 2000;         // 2 seconds
+constexpr uint32_t UPDATE_PROGRESS_STEP = 5;       // 5% progress steps
+
+// Buffer sizes (bytes)
+constexpr size_t JSON_SMALL_BUFFER = 512;    // Small responses
+constexpr size_t JSON_MEDIUM_BUFFER = 1024;  // Medium responses
+constexpr size_t JSON_LARGE_BUFFER = 2048;   // Large responses
+constexpr size_t JSON_XLARGE_BUFFER = 4096;  // Extra large responses
+
+// Firmware constraints
+constexpr size_t MIN_FIRMWARE_SIZE = 64 * 1024;        // 64KB minimum
+constexpr size_t MAX_FIRMWARE_SIZE = 2 * 1024 * 1024;  // 2MB maximum
+constexpr size_t FIRMWARE_TASK_STACK = 8192;           // Task stack size
+constexpr size_t OTA_TASK_STACK = 12288;               // OTA task stack size
+
+// Communication parameters
+constexpr int MIN_BAUD_RATE = 9600;        // Minimum baud rate
+constexpr int MAX_BAUD_RATE = 2000000;     // Maximum baud rate
+constexpr int DEFAULT_BAUD_RATE = 921600;  // Default baud rate
+
+// Performance thresholds
+constexpr float EXCELLENT_ERROR_RATE = 0.05f;  // < 5% error rate
+constexpr float GOOD_ERROR_RATE = 0.15f;       // < 15% error rate
+constexpr float FAIR_ERROR_RATE = 0.30f;       // < 30% error rate
+}  // namespace C6Constants
+
+// ========================================================================
+// HELPER FUNCTION DECLARATIONS
+// ========================================================================
+namespace C6Helpers {
+bool validateFirmwareFile(const String &filename, size_t &fileSize);
+bool validateBaudRate(int baudRate);
+String getPerformanceRating(float errorRate);
+void logModuleEvent(const String &event, const String &details = "");
+}  // namespace C6Helpers
 
 // C6 Module Implementation using Module Manager Framework
 // =======================================================
@@ -27,10 +108,6 @@ class C6Module : public ModuleInterface {
     // Module lifecycle implementation
     bool initialize() override {
         Serial.println("[C6_MODULE] Initializing C6 module support...");
-
-        // Initialize storage with new utilities
-        StorageUtils &storage = StorageUtils::getInstance();
-        storage.enableDebugLogging(true);
 
         // Set default values if not already set using new storage utilities
         if (STORAGE_GET_STRING("c6_module", "panId", "").isEmpty()) {
@@ -141,7 +218,7 @@ class C6Module : public ModuleInterface {
         }
 
         // Check if we've had recent activity
-        if (millis() - lastHealthCheck > 30000) {  // 30 seconds timeout
+        if (millis() - lastHealthCheck > C6Constants::HEALTH_CHECK_TIMEOUT) {
             return false;
         }
 
@@ -182,8 +259,8 @@ class C6Module : public ModuleInterface {
     }
 
     void update() override {
-        // Periodic health check
-        if (millis() - lastHealthCheck > 10000) {  // Every 10 seconds
+        // Periodic health check using configured interval
+        if (millis() - lastHealthCheck > C6Constants::HEALTH_CHECK_INTERVAL) {
             performHealthCheck();
         }
     }
@@ -191,18 +268,27 @@ class C6Module : public ModuleInterface {
     String getConfig() const override {
         DynamicJsonDocument doc(1024);
 
-        // Use new storage utilities for consistent and error-handled access
-        doc["channel"] = STORAGE_GET_INT("c6_module", "channel", 20);
-        doc["txPower"] = STORAGE_GET_INT("c6_module", "txPower", 10);
-        doc["panId"] = STORAGE_GET_STRING("c6_module", "panId", "0x1234");
-        doc["sleepMode"] = STORAGE_GET_STRING("c6_module", "sleepMode", "none");
-        doc["wakeInterval"] = STORAGE_GET_INT("c6_module", "wakeInterval", 60);
-        doc["autoReconnect"] = STORAGE_GET_BOOL("c6_module", "autoReconnect", true);
-        doc["healthCheckInterval"] = STORAGE_GET_INT("c6_module", "healthCheckInterval", 10);
+        // Use new unified configuration system
+        AppConfig &appConfig = CONFIG.getConfig();
 
-        String config;
-        serializeJson(doc, config);
-        return config;
+        // Configuration is automatically loaded by CONFIG
+
+        // Return C6 module specific configuration as JSON
+        doc["channel"] = 20;  // Default channel
+        doc["txPower"] = 10;  // Default power
+        doc["panId"] = "0x1234";
+        doc["sleepMode"] = "none";
+        doc["wakeInterval"] = 60;
+        doc["autoReconnect"] = true;
+        doc["healthCheckInterval"] = 10;
+
+        // Get device info from app config
+        doc["deviceName"] = appConfig.system.deviceName;
+        doc["debugMode"] = appConfig.system.debugMode;
+
+        String configStr;
+        serializeJson(doc, configStr);
+        return configStr;
     }
 
     bool setConfig(const String &config) override {
@@ -214,19 +300,22 @@ class C6Module : public ModuleInterface {
             return false;
         }
 
-        // Use new storage utilities for consistent and validated saving
-        StorageUtils::Result result = StorageUtils::Result::SUCCESS;
+        // Use new unified configuration system
+        AppConfig &appConfig = CONFIG.getConfig();
 
-        if (doc.containsKey("channel")) result = STORAGE_SET_INT("c6_module", "channel", doc["channel"]);
-        if (doc.containsKey("txPower") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
-        if (doc.containsKey("panId") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
-        if (doc.containsKey("sleepMode") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
-        if (doc.containsKey("wakeInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
-        if (doc.containsKey("autoReconnect") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
-        if (doc.containsKey("healthCheckInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
+        // Update system configuration with provided values
+        if (doc.containsKey("deviceName")) {
+            appConfig.system.deviceName = doc["deviceName"].as<String>();
+        }
+        if (doc.containsKey("debugMode")) {
+            appConfig.system.debugMode = doc["debugMode"].as<bool>();
+        }
 
-        if (result != StorageUtils::Result::SUCCESS) {
-            lastError = "Failed to save configuration to storage";
+        // Save updated configuration
+        bool result = CONFIG.save();
+
+        if (!result) {
+            lastError = "Failed to save configuration";
             return false;
         }
 
@@ -280,6 +369,12 @@ class C6Module : public ModuleInterface {
         metrics["c6_health_checks"] = (millis() - lastHealthCheck < 30000) ? 1 : 0;
     }
 
+    // Public accessors for status queried by web handlers
+    bool isInitializedPublic() const { return isInitialized; }
+    bool isStartedPublic() const { return isStarted; }
+    const String &getLastError() const { return lastError; }
+    uint32_t getLastHealthCheck() const { return lastHealthCheck; }
+
    private:
     void performHealthCheck() {
         lastHealthCheck = millis();
@@ -296,10 +391,8 @@ class C6Module : public ModuleInterface {
         updateModuleActivity("C6Module");
     }
 
-   private:
     void updateModuleActivity(const String &moduleName) {
         // Update last activity timestamp in module manager
-        // This method tracks module activity for health monitoring
         lastHealthCheck = millis();
     }
 };
@@ -316,44 +409,56 @@ extern SemaphoreHandle_t fsMutex;
 // ================================
 
 void handleC6UpdateStatus(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(C6Constants::JSON_MEDIUM_BUFFER);
 
     // Check update status from global variables or task status
-    // This is a simplified implementation - in practice you'd track actual update progress
     static bool updateInProgress = false;
     static int updateProgress = 0;
     static String updateError = "";
 
+    // Build update status response
+    JsonObject update = doc.createNestedObject("update_status");
+    update["timestamp"] = millis();
+
     // Check if update task is running
     if (apInfo.state == AP_STATE_FLASHING) {
         updateInProgress = true;
-        updateProgress = min(90, updateProgress + 5);  // Simulate progress
+        updateProgress = std::min<int>(90, updateProgress + static_cast<int>(C6Constants::UPDATE_PROGRESS_STEP));
+        update["in_progress"] = true;
+        update["progress"] = updateProgress;
+        update["status"] = "flashing";
     } else if (apInfo.state == AP_STATE_ONLINE) {
         if (updateInProgress) {
-            // Update completed
-            doc["completed"] = true;
-            doc["progress"] = 100;
+            // Update completed successfully
+            update["completed"] = true;
+            update["progress"] = 100;
+            update["status"] = "completed";
             updateInProgress = false;
             updateProgress = 0;
         } else {
-            doc["completed"] = false;
-            doc["progress"] = 0;
+            update["completed"] = false;
+            update["progress"] = 0;
+            update["status"] = "idle";
         }
     } else if (apInfo.state == AP_STATE_FAILED) {
-        doc["error"] = "Firmware update failed";
-        doc["completed"] = false;
+        update["error"] = "Firmware update failed";
+        update["completed"] = false;
+        update["status"] = "failed";
         updateInProgress = false;
         updateProgress = 0;
     } else {
-        doc["completed"] = false;
-        doc["progress"] = updateProgress;
+        update["completed"] = false;
+        update["progress"] = updateProgress;
+        update["status"] = "unknown";
     }
 
-    doc["timestamp"] = millis();
+    // Add module health context
+    JsonObject module = doc.createNestedObject("module_status");
+    module["state"] = static_cast<int>(apInfo.state);
+    module["healthy"] = g_c6Module ? g_c6Module->isHealthy() : false;
 
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleBackupC6Firmware(AsyncWebServerRequest *request) {
@@ -387,48 +492,77 @@ void handleBackupC6Firmware(AsyncWebServerRequest *request) {
 }
 
 void handleAPList(AsyncWebServerRequest *request) {
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-
-    response->print("[");
+    DynamicJsonDocument doc(C6Constants::JSON_MEDIUM_BUFFER);
+    JsonArray accessPoints = doc.createNestedArray("access_points");
 
     // Create C6 module entry if online
     if (apInfo.state == AP_STATE_ONLINE) {
-        response->print("{");
-        response->printf("\"hwType\": 198,");  // 0xC6 in decimal
-        response->printf("\"version\": %d,", apInfo.version);
-        response->printf("\"channel\": %d,", apInfo.channel);
-        response->printf("\"rssi\": %d,", apInfo.rssi);
-        response->printf("\"uptime\": %lu,", apInfo.uptime);
-        response->print("\"capabilities\": [\"C6\"],");
-        response->print("\"mac\": \"");
+        JsonObject c6AP = accessPoints.createNestedObject();
+        c6AP["hwType"] = 198;  // 0xC6 in decimal
+        c6AP["version"] = apInfo.version;
+        c6AP["channel"] = apInfo.channel;
+        c6AP["rssi"] = apInfo.rssi;
+        c6AP["uptime"] = apInfo.uptime;
+
+        JsonArray capabilities = c6AP.createNestedArray("capabilities");
+        capabilities.add("C6");
+
+        // MAC address as formatted string
+        String macStr = "";
         for (int i = 0; i < 8; i++) {
-            response->printf("%02X", apInfo.mac[i]);
-            if (i < 7) response->print(":");
+            if (i > 0) macStr += ":";
+            macStr += String(apInfo.mac[i], HEX);
         }
-        response->print("\",");
-        response->printf("\"state\": \"online\"");
-        response->print("}");
+        c6AP["mac"] = macStr;
+        c6AP["state"] = "online";
+        c6AP["description"] = "ESP32-C6 Co-processor";
     }
 
-    response->print("]");
-    request->send(response);
+    // Add metadata
+    JsonObject metadata = doc.createNestedObject("metadata");
+    metadata["timestamp"] = millis();
+    metadata["total_count"] = accessPoints.size();
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleGetC6Settings(AsyncWebServerRequest *request) {
     DynamicJsonDocument doc(1024);
 
-    // Get current C6 module settings using new storage utilities
-    doc["channel"] = STORAGE_GET_INT("c6_module", "channel", 20);
-    doc["txPower"] = STORAGE_GET_INT("c6_module", "txPower", 10);
-    doc["panId"] = STORAGE_GET_STRING("c6_module", "panId", "0x1234");
-    doc["sleepMode"] = STORAGE_GET_STRING("c6_module", "sleepMode", "none");
-    doc["wakeInterval"] = STORAGE_GET_INT("c6_module", "wakeInterval", 60);
-    doc["autoReconnect"] = STORAGE_GET_BOOL("c6_module", "autoReconnect", true);
-    doc["healthCheckInterval"] = STORAGE_GET_INT("c6_module", "healthCheckInterval", 10);
+    // Build C6 module configuration with enhanced structure
+    JsonObject config = doc.createNestedObject("c6_config");
+    config["channel"] = STORAGE_GET_INT("c6_module", "channel", 20);
+    config["txPower"] = STORAGE_GET_INT("c6_module", "txPower", 10);
+    config["panId"] = STORAGE_GET_STRING("c6_module", "panId", "0x1234");
+    config["sleepMode"] = STORAGE_GET_STRING("c6_module", "sleepMode", "none");
+    config["wakeInterval"] = STORAGE_GET_INT("c6_module", "wakeInterval", 60);
+    config["autoReconnect"] = STORAGE_GET_BOOL("c6_module", "autoReconnect", true);
+    config["healthCheckInterval"] = STORAGE_GET_INT("c6_module", "healthCheckInterval", 10);
 
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
+    // Add system info and status using core utilities
+    JsonObject status = doc.createNestedObject("status");
+    status["initialized"] = g_c6Module ? g_c6Module->isInitializedPublic() : false;
+    status["started"] = g_c6Module ? g_c6Module->isStartedPublic() : false;
+    status["healthy"] = g_c6Module ? g_c6Module->isHealthy() : false;
+    status["lastError"] = g_c6Module ? g_c6Module->getLastError() : "Module not available";
+    if (g_c6Module) {
+        status["lastHealthCheck"] = g_c6Module->getLastHealthCheck();
+    } else {
+        status["lastHealthCheck"] = 0;  // consistent numeric type
+    }
+
+    // Add version and module info
+    if (g_c6Module) {
+        ModuleInfo info = g_c6Module->getInfo();
+        JsonObject module = doc.createNestedObject("module");
+        module["name"] = info.name;
+        module["version"] = info.version;
+        module["description"] = info.description;
+    }
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -447,26 +581,46 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
         DeserializationError error = deserializeJson(doc, jsonString);
 
         if (!error) {
-            // Use new storage utilities with proper error handling
-            StorageUtils::Result result = StorageUtils::Result::SUCCESS;
+            // Use new storage utilities with proper error handling and validation
+            bool success = true;
 
-            if (doc.containsKey("channel")) result = STORAGE_SET_INT("c6_module", "channel", doc["channel"]);
-            if (doc.containsKey("txPower") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "txPower", doc["txPower"]);
-            if (doc.containsKey("panId") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
-            if (doc.containsKey("sleepMode") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
-            if (doc.containsKey("wakeInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
-            if (doc.containsKey("autoReconnect") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
-            if (doc.containsKey("healthCheckInterval") && result == StorageUtils::Result::SUCCESS) result = STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
+            // Apply configuration changes with validation
+            if (doc.containsKey("channel")) {
+                int channel = doc["channel"];
+                if (channel >= 11 && channel <= 26) {  // Valid 802.15.4 channels
+                    success &= STORAGE_SET_INT("c6_module", "channel", channel);
+                } else {
+                    sendErrorResponse(request, 400, "Channel must be between 11 and 26", "invalid_channel");
+                    return;
+                }
+            }
 
-            if (result == StorageUtils::Result::SUCCESS) {
+            if (doc.containsKey("txPower") && success) {
+                int txPower = doc["txPower"];
+                if (txPower >= -40 && txPower <= 20) {  // Valid power range in dBm
+                    success &= STORAGE_SET_INT("c6_module", "txPower", txPower);
+                } else {
+                    sendErrorResponse(request, 400, "TX Power must be between -40 and 20 dBm", "invalid_tx_power");
+                    return;
+                }
+            }
+
+            if (doc.containsKey("panId") && success) success &= STORAGE_SET_STRING("c6_module", "panId", doc["panId"].as<String>());
+            if (doc.containsKey("sleepMode") && success) success &= STORAGE_SET_STRING("c6_module", "sleepMode", doc["sleepMode"].as<String>());
+            if (doc.containsKey("wakeInterval") && success) success &= STORAGE_SET_INT("c6_module", "wakeInterval", doc["wakeInterval"]);
+            if (doc.containsKey("autoReconnect") && success) success &= STORAGE_SET_BOOL("c6_module", "autoReconnect", doc["autoReconnect"]);
+            if (doc.containsKey("healthCheckInterval") && success) success &= STORAGE_SET_INT("c6_module", "healthCheckInterval", doc["healthCheckInterval"]);
+
+            if (success) {
                 // Apply settings to C6 module
                 applyC6Settings();
-                request->send(200, "application/json", "{\"success\":true}");
+                ::sendSuccessResponse(request, "C6 module settings saved successfully");
+                C6Helpers::logModuleEvent("settings_saved", "Configuration updated successfully");
             } else {
-                request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to save configuration\"}");
+                sendErrorResponse(request, 500, "Failed to save configuration to storage", "save_failed");
             }
         } else {
-            request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
+            sendErrorResponse(request, 400, "Invalid JSON format in request body", "invalid_json");
         }
 
         jsonString = "";
@@ -480,75 +634,141 @@ void handleResetC6Settings(AsyncWebServerRequest *request) {
     preferences.end();
 
     wsSerial("C6 module settings reset to defaults");
-    request->send(200, "application/json", "{\"success\":true}");
+
+    // Use standardized success response
+    ::sendSuccessResponse(request, "C6 module settings reset successfully");
 }
 
 void handleTestC6Connection(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(1024);
+
     // Test connection to C6 module
     bool connected = testC6ModuleConnection();
 
-    DynamicJsonDocument doc(512);
-    doc["connected"] = connected;
-    doc["timestamp"] = millis();
+    // Build test results with enhanced information
+    JsonObject result = doc.createNestedObject("test_result");
+    result["connected"] = connected;
+    result["timestamp"] = millis();
+    result["test_type"] = "connection";
 
     if (connected) {
-        doc["rssi"] = apInfo.rssi;
-        doc["version"] = apInfo.version;
+        JsonObject connection_info = result.createNestedObject("connection_info");
+        connection_info["rssi"] = apInfo.rssi;
+        connection_info["version"] = apInfo.version;
+        connection_info["health_status"] = g_c6Module ? g_c6Module->isHealthy() : false;
+    } else {
+        result["error"] = (g_c6Module && !g_c6Module->getLastError().isEmpty()) ? g_c6Module->getLastError() : "Connection failed";
     }
 
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
+    // Add system status for context
+    JsonObject status = doc.createNestedObject("module_status");
+    status["initialized"] = g_c6Module ? g_c6Module->isInitializedPublic() : false;
+    status["started"] = g_c6Module ? g_c6Module->isStartedPublic() : false;
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleTestC6Radio(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(1024);
 
     // Perform radio test and get results
     RadioTestResult result = performC6RadioTest();
 
-    doc["rssi"] = result.rssi;
-    doc["packetsSent"] = result.packetsSent;
-    doc["packetsReceived"] = result.packetsReceived;
-    doc["errorRate"] = result.errorRate;
-    doc["timestamp"] = millis();
+    // Build enhanced radio test results
+    JsonObject radio_test = doc.createNestedObject("radio_test");
+    radio_test["success"] = result.success;
+    radio_test["timestamp"] = millis();
+    radio_test["test_type"] = "radio_performance";
 
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
+    if (result.success) {
+        JsonObject metrics = radio_test.createNestedObject("metrics");
+        metrics["rssi"] = result.rssi;
+        metrics["channel"] = result.channel;
+        metrics["packetsSent"] = result.packetsSent;
+        metrics["packetsReceived"] = result.packetsReceived;
+        metrics["errorRate"] = result.errorRate;
+
+        // Add performance evaluation
+        if (result.errorRate < 0.05) {
+            radio_test["performance"] = "excellent";
+        } else if (result.errorRate < 0.15) {
+            radio_test["performance"] = "good";
+        } else if (result.errorRate < 0.30) {
+            radio_test["performance"] = "fair";
+        } else {
+            radio_test["performance"] = "poor";
+        }
+    } else {
+        radio_test["error"] = result.error.isEmpty() ? "Radio test failed" : result.error;
+    }
+
+    // Add current module status
+    JsonObject status = doc.createNestedObject("module_status");
+    status["initialized"] = g_c6Module ? g_c6Module->isInitializedPublic() : false;
+    status["started"] = g_c6Module ? g_c6Module->isStartedPublic() : false;
+    status["healthy"] = g_c6Module ? g_c6Module->isHealthy() : false;
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleRestartC6(AsyncWebServerRequest *request) {
-    wsSerial("Restarting C6 module...");
+    C6Helpers::logModuleEvent("restart_requested", "User initiated C6 module restart");
 
     // Send restart command to C6 module
     bool success = restartC6Module();
 
     if (success) {
-        request->send(200, "application/json", "{\"success\":true}");
+        ::sendSuccessResponse(request, "C6 module restart initiated successfully");
+        C6Helpers::logModuleEvent("restart_success", "C6 module restart command sent");
     } else {
-        request->send(500, "application/json", "{\"success\":false,\"error\":\"Restart failed\"}");
+        String errorMsg = "Failed to restart C6 module";
+        if (g_c6Module && !g_c6Module->getLastError().isEmpty()) {
+            errorMsg += ": " + g_c6Module->getLastError();
+        }
+        sendErrorResponse(request, 500, errorMsg, "restart_failed");
+        C6Helpers::logModuleEvent("restart_failed", errorMsg);
     }
 }
 
 void handleBackupC6Config(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(C6Constants::JSON_LARGE_BUFFER);
 
-    // Collect all C6 configuration data using new storage utilities
-    doc["channel"] = STORAGE_GET_INT("c6_module", "channel", 20);
-    doc["txPower"] = STORAGE_GET_INT("c6_module", "txPower", 10);
-    doc["panId"] = STORAGE_GET_STRING("c6_module", "panId", "0x1234");
-    doc["sleepMode"] = STORAGE_GET_STRING("c6_module", "sleepMode", "none");
-    doc["wakeInterval"] = STORAGE_GET_INT("c6_module", "wakeInterval", 60);
-    doc["autoReconnect"] = STORAGE_GET_BOOL("c6_module", "autoReconnect", true);
-    doc["healthCheckInterval"] = STORAGE_GET_INT("c6_module", "healthCheckInterval", 10);
-    doc["backupDate"] = millis();
-    doc["firmwareVersion"] = apInfo.version;
+    // Build comprehensive configuration backup
+    JsonObject config = doc.createNestedObject("c6_configuration");
+    config["channel"] = STORAGE_GET_INT("c6_module", "channel", 20);
+    config["txPower"] = STORAGE_GET_INT("c6_module", "txPower", 10);
+    config["panId"] = STORAGE_GET_STRING("c6_module", "panId", "0x1234");
+    config["sleepMode"] = STORAGE_GET_STRING("c6_module", "sleepMode", "none");
+    config["wakeInterval"] = STORAGE_GET_INT("c6_module", "wakeInterval", 60);
+    config["autoReconnect"] = STORAGE_GET_BOOL("c6_module", "autoReconnect", true);
+    config["healthCheckInterval"] = STORAGE_GET_INT("c6_module", "healthCheckInterval", 10);
 
+    // Add backup metadata
+    JsonObject metadata = doc.createNestedObject("backup_metadata");
+    metadata["timestamp"] = millis();
+    metadata["firmware_version"] = apInfo.version;
+    metadata["module_state"] = static_cast<int>(apInfo.state);
+    metadata["backup_format_version"] = "1.2.0";
+
+    // Add current status for context
+    JsonObject status = doc.createNestedObject("current_status");
+    status["connected"] = (apInfo.state == AP_STATE_ONLINE);
+    status["healthy"] = g_c6Module ? g_c6Module->isHealthy() : false;
+    if (g_c6Module) {
+        status["last_health_check"] = g_c6Module->getLastHealthCheck();
+    } else {
+        status["last_health_check"] = 0;  // consistent numeric type
+    }
+
+    // Send as downloadable attachment
     AsyncResponseStream *response = request->beginResponseStream("application/json");
     response->addHeader("Content-Disposition", "attachment; filename=c6_config_backup.json");
     serializeJson(doc, *response);
     request->send(response);
+
+    C6Helpers::logModuleEvent("config_backup", "Configuration backup generated");
 }
 
 void handleResetC6Config(AsyncWebServerRequest *request) {
@@ -573,81 +793,134 @@ void handleResetC6Config(AsyncWebServerRequest *request) {
     }
 }
 
+// ========================================================================
+// FIRMWARE UPLOAD HELPER FUNCTIONS
+// ========================================================================
+namespace C6Helpers {
+bool validateFirmwareFile(const String &filename, size_t &fileSize) {
+    if (!contentFS->exists(filename)) {
+        return false;
+    }
+
+    File file = contentFS->open(filename, "r");
+    if (!file) {
+        return false;
+    }
+
+    fileSize = file.size();
+    file.close();
+
+    return (fileSize >= C6Constants::MIN_FIRMWARE_SIZE && fileSize <= C6Constants::MAX_FIRMWARE_SIZE);
+}
+
+bool validateBaudRate(int baudRate) {
+    return (baudRate >= C6Constants::MIN_BAUD_RATE && baudRate <= C6Constants::MAX_BAUD_RATE);
+}
+
+String getPerformanceRating(float errorRate) {
+    if (errorRate < C6Constants::EXCELLENT_ERROR_RATE) return "excellent";
+    if (errorRate < C6Constants::GOOD_ERROR_RATE) return "good";
+    if (errorRate < C6Constants::FAIR_ERROR_RATE) return "fair";
+    return "poor";
+}
+
+void logModuleEvent(const String &event, const String &details) {
+    String logMessage = "[C6_MODULE] " + event;
+    if (!details.isEmpty()) {
+        logMessage += ": " + details;
+    }
+    wsSerial(logMessage);
+}
+
+bool initializeFirmwareUpload(const String &filename, bool verify, File &uploadFile, size_t &totalSize) {
+    logModuleEvent("firmware_upload_start", filename);
+    if (verify) {
+        logModuleEvent("upload_verification", "Firmware verification enabled");
+    }
+
+    String tempPath = "/temp_c6_firmware.bin";
+    uploadFile = contentFS->open(tempPath, "w");
+    if (!uploadFile) {
+        logModuleEvent("upload_error", "Failed to create temporary file");
+        return false;
+    }
+
+    totalSize = 0;
+    return true;
+}
+
+bool finalizeFirmwareUpload(File &uploadFile, size_t totalSize, bool verify) {
+    if (!uploadFile) {
+        logModuleEvent("upload_error", "Upload file handle lost");
+        return false;
+    }
+
+    uploadFile.close();
+    logModuleEvent("upload_complete", "Total size: " + String(totalSize) + " bytes");
+
+    // Validate firmware size
+    if (totalSize < C6Constants::MIN_FIRMWARE_SIZE) {
+        logModuleEvent("upload_error", "Firmware file too small");
+        contentFS->remove("/temp_c6_firmware.bin");
+        return false;
+    }
+
+    if (totalSize > C6Constants::MAX_FIRMWARE_SIZE) {
+        logModuleEvent("upload_error", "Firmware file too large");
+        contentFS->remove("/temp_c6_firmware.bin");
+        return false;
+    }
+
+    logModuleEvent("firmware_flash_start", "Starting flash process");
+    apInfo.state = AP_STATE_FLASHING;
+
+    // Create task parameters
+    C6FirmwareUpdateParams *params = new C6FirmwareUpdateParams();
+    params->filename = "/temp_c6_firmware.bin";
+    params->verify = verify;
+
+    // Start firmware update task
+    BaseType_t result = xTaskCreate(C6firmwareUpdateTask, "C6FirmwareUpdate",
+                                    C6Constants::FIRMWARE_TASK_STACK, params, 10, NULL);
+
+    return (result == pdPASS);
+}
+}  // namespace C6Helpers
+
 void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     static File uploadFile;
     static bool verifyAfterUpload = false;
     static size_t totalSize = 0;
 
     if (!index) {
-        // Get verification flag from request parameters
-        if (request->hasParam("verify", true)) {
-            verifyAfterUpload = (request->getParam("verify", true)->value() == "1");
-        }
+        // Initialize upload
+        verifyAfterUpload = request->hasParam("verify", true) &&
+                            (request->getParam("verify", true)->value() == "1");
 
-        wsSerial("Starting C6 firmware upload: " + filename);
-        if (verifyAfterUpload) {
-            wsSerial("Firmware verification enabled");
-        }
-
-        // Create temporary file for upload
-        String tempPath = "/temp_c6_firmware.bin";
-        uploadFile = contentFS->open(tempPath, "w");
-        if (!uploadFile) {
-            wsSerial("ERROR: Failed to create temporary file for upload");
-            request->send(500, "text/plain", "Storage error");
+        if (!C6Helpers::initializeFirmwareUpload(filename, verifyAfterUpload, uploadFile, totalSize)) {
+            sendErrorResponse(request, 500, "Failed to initialize firmware upload", "upload_init_failed");
             return;
         }
-
-        totalSize = 0;
     }
 
+    // Write data chunk
     if (uploadFile && len) {
         size_t written = uploadFile.write(data, len);
         if (written != len) {
-            wsSerial("ERROR: Failed to write firmware data");
+            C6Helpers::logModuleEvent("upload_error", "Failed to write firmware data");
             uploadFile.close();
-            request->send(500, "text/plain", "Write error");
+            sendErrorResponse(request, 500, "Failed to write firmware data", "write_error");
             return;
         }
         totalSize += len;
     }
 
+    // Finalize upload
     if (final) {
-        if (uploadFile) {
-            uploadFile.close();
-
-            wsSerial("Firmware upload completed: " + String(totalSize) + " bytes");
-
-            // Validate minimum firmware size
-            if (totalSize < 64 * 1024) {  // 64KB minimum
-                wsSerial("ERROR: Firmware file too small");
-                contentFS->remove("/temp_c6_firmware.bin");
-                request->send(400, "text/plain", "Firmware file too small");
-                return;
-            }
-
-            if (totalSize > 2 * 1024 * 1024) {  // 2MB maximum
-                wsSerial("ERROR: Firmware file too large");
-                contentFS->remove("/temp_c6_firmware.bin");
-                request->send(400, "text/plain", "Firmware file too large");
-                return;
-            }
-
-            wsSerial("Starting firmware flash process...");
-            apInfo.state = AP_STATE_FLASHING;
-
-            // Create task parameter structure
-            C6FirmwareUpdateParams *params = new C6FirmwareUpdateParams();
-            params->filename = "/temp_c6_firmware.bin";
-            params->verify = verifyAfterUpload;
-
-            // Start firmware update task
-            xTaskCreate(C6firmwareUpdateTask, "C6FirmwareUpdate", 8192,
-                        params, 10, NULL);
-
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Upload complete, starting installation\"}");
+        if (C6Helpers::finalizeFirmwareUpload(uploadFile, totalSize, verifyAfterUpload)) {
+            ::sendSuccessResponse(request, "Upload complete, starting installation");
         } else {
-            request->send(500, "text/plain", "Upload file handle lost");
+            sendErrorResponse(request, 500, "Firmware upload validation failed", "upload_failed");
         }
     }
 }
@@ -656,15 +929,15 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
 // ======================================
 
 void handleListDrives(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(C6Constants::JSON_XLARGE_BUFFER);
     JsonArray drives = doc.createNestedArray("drives");
 
-// On Windows, check common drive letters
+// Platform-specific drive detection
 #ifdef _WIN32
+    // Windows: Check common drive letters
     for (char drive = 'A'; drive <= 'Z'; drive++) {
         String drivePath = String(drive) + ":/";
-        // This is a placeholder - actual drive detection would need OS-specific code
-        // For now, we'll simulate some common drives
+        // Simulate common drives for demonstration
         if (drive == 'C' || drive == 'D' || drive == 'E') {
             JsonObject driveObj = drives.createNestedObject();
             driveObj["letter"] = String(drive);
@@ -675,41 +948,49 @@ void handleListDrives(AsyncWebServerRequest *request) {
         }
     }
 #else
-    // On Linux/Unix systems, list common mount points
-    JsonObject driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/";
-    driveObj["path"] = "/";
-    driveObj["label"] = "Root filesystem";
-    driveObj["type"] = "fixed";
-    driveObj["available"] = true;
-
-    driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/media";
-    driveObj["path"] = "/media/";
-    driveObj["label"] = "Media";
-    driveObj["type"] = "removable";
-    driveObj["available"] = true;
+    // Unix/Linux: List common mount points
+    const char *commonMounts[] = {"/", "/media", "/mnt", "/home"};
+    for (const char *mount : commonMounts) {
+        JsonObject driveObj = drives.createNestedObject();
+        driveObj["letter"] = String(mount);
+        driveObj["path"] = String(mount);
+        driveObj["label"] = String(mount) + " filesystem";
+        driveObj["type"] = (strcmp(mount, "/") == 0) ? "fixed" : "removable";
+        driveObj["available"] = true;
+    }
 #endif
 
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    // Add metadata
+    JsonObject metadata = doc.createNestedObject("metadata");
+    metadata["timestamp"] = millis();
+    metadata["platform"] =
+#ifdef _WIN32
+        "windows";
+#else
+        "unix";
+#endif
+    metadata["total_drives"] = drives.size();
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleListSerialPorts(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(2048);
-    JsonArray ports = doc.createNestedArray("ports");
+    DynamicJsonDocument doc(C6Constants::JSON_LARGE_BUFFER);
+    JsonArray ports = doc.createNestedArray("serial_ports");
 
-// Common Windows COM ports
+// Platform-specific serial port detection
 #ifdef _WIN32
+    // Windows: Common COM ports
     for (int i = 1; i <= 20; i++) {
         JsonObject portObj = ports.createNestedObject();
         portObj["port"] = "COM" + String(i);
         portObj["description"] = "Serial Port (COM" + String(i) + ")";
-        portObj["available"] = true;  // Would need actual detection
+        portObj["type"] = "serial";
+        portObj["available"] = true;  // Would need actual detection in production
     }
 #else
-    // Common Linux/Unix serial devices
+    // Unix/Linux: Common serial devices
     const char *commonPorts[] = {
         "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2", "/dev/ttyUSB3",
         "/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyACM2", "/dev/ttyACM3",
@@ -719,64 +1000,66 @@ void handleListSerialPorts(AsyncWebServerRequest *request) {
         JsonObject portObj = ports.createNestedObject();
         portObj["port"] = String(port);
         portObj["description"] = "Serial Device " + String(port);
-        portObj["available"] = true;  // Would need actual detection
+        portObj["type"] = "serial";
+        portObj["available"] = true;  // Would need actual detection in production
     }
 #endif
 
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    // Add metadata
+    JsonObject metadata = doc.createNestedObject("metadata");
+    metadata["timestamp"] = millis();
+    metadata["platform"] =
+#ifdef _WIN32
+        "windows";
+#else
+        "unix";
+#endif
+    metadata["total_ports"] = ports.size();
+
+    // Send standardized JSON response
+    sendJsonResponse(request, doc);
 }
 
 void handleFlashC6OTA(AsyncWebServerRequest *request) {
+    // Validate required parameters
     if (!request->hasParam("firmware_file", true) || !request->hasParam("com_port", true)) {
-        request->send(400, "application/json",
-                      "{\"success\":false,\"error\":\"Missing firmware_file or com_port parameter\"}");
+        sendErrorResponse(request, 400, "Missing required parameters: firmware_file and com_port", "missing_parameters");
         return;
     }
 
+    // Extract parameters
     String firmwareFile = request->getParam("firmware_file", true)->value();
     String comPort = request->getParam("com_port", true)->value();
+    bool eraseFlash = request->hasParam("erase_flash", true) &&
+                      request->getParam("erase_flash", true)->value() == "true";
+    bool verifyFlash = !request->hasParam("verify_flash", true) ||
+                       request->getParam("verify_flash", true)->value() == "true";
+    bool resetAfterFlash = !request->hasParam("reset_after_flash", true) ||
+                           request->getParam("reset_after_flash", true)->value() == "true";
+    int baudRate = request->hasParam("baud_rate", true) ? request->getParam("baud_rate", true)->value().toInt() : C6Constants::DEFAULT_BAUD_RATE;
 
-    // Optional parameters with defaults
-    bool eraseFlash = request->hasParam("erase_flash", true) ? request->getParam("erase_flash", true)->value() == "true" : false;
-    bool verifyFlash = request->hasParam("verify_flash", true) ? request->getParam("verify_flash", true)->value() == "true" : true;
-    bool resetAfterFlash = request->hasParam("reset_after_flash", true) ? request->getParam("reset_after_flash", true)->value() == "true" : true;
-    int baudRate = request->hasParam("baud_rate", true) ? request->getParam("baud_rate", true)->value().toInt() : 921600;
-
-    // Validate firmware file exists
-    if (!contentFS->exists(firmwareFile)) {
-        request->send(400, "application/json",
-                      "{\"success\":false,\"error\":\"Firmware file not found: " + firmwareFile + "\"}");
+    // Validate firmware file
+    size_t fileSize;
+    if (!C6Helpers::validateFirmwareFile(firmwareFile, fileSize)) {
+        sendErrorResponse(request, 400, "Firmware file not found or invalid: " + firmwareFile, "invalid_firmware");
         return;
     }
-
-    // Validate firmware file is not empty
-    File file = contentFS->open(firmwareFile, "r");
-    if (!file || file.size() == 0) {
-        if (file) file.close();
-        request->send(400, "application/json",
-                      "{\"success\":false,\"error\":\"Firmware file is empty or cannot be read\"}");
-        return;
-    }
-    file.close();
 
     // Validate baud rate
-    if (baudRate < 9600 || baudRate > 2000000) {
-        request->send(400, "application/json",
-                      "{\"success\":false,\"error\":\"Invalid baud rate. Must be between 9600 and 2000000\"}");
+    if (!C6Helpers::validateBaudRate(baudRate)) {
+        sendErrorResponse(request, 400, "Invalid baud rate. Must be between " + String(C6Constants::MIN_BAUD_RATE) + " and " + String(C6Constants::MAX_BAUD_RATE), "invalid_baud_rate");
         return;
     }
 
-    // For ESP32-C6 internal flashing, we don't actually need a COM port parameter
-    // but we keep it for compatibility with the frontend
-    wsSerial("Starting C6 OTA flash: " + firmwareFile);
-    wsSerial("Erase Flash: " + String(eraseFlash ? "Yes" : "No"));
-    wsSerial("Verify Flash: " + String(verifyFlash ? "Yes" : "No"));
-    wsSerial("Reset After Flash: " + String(resetAfterFlash ? "Yes" : "No"));
-    wsSerial("Baud Rate: " + String(baudRate));
+    // Log OTA flash parameters
+    C6Helpers::logModuleEvent("ota_flash_start", firmwareFile);
+    C6Helpers::logModuleEvent("ota_params",
+                              "Erase: " + String(eraseFlash ? "Yes" : "No") +
+                                  ", Verify: " + String(verifyFlash ? "Yes" : "No") +
+                                  ", Reset: " + String(resetAfterFlash ? "Yes" : "No") +
+                                  ", Baud: " + String(baudRate));
 
-    // Create task parameters structure
+    // Create task parameters
     C6FlashParams *params = new C6FlashParams();
     params->firmwareFile = firmwareFile;
     params->comPort = comPort;
@@ -785,17 +1068,30 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
     params->resetAfterFlash = resetAfterFlash;
     params->baudRate = baudRate;
 
-    // Start OTA flash task with increased stack size for the enhanced implementation
-    BaseType_t result = xTaskCreate(C6OTAFlashTask, "C6OTAFlash", 12288, params, 10, NULL);
+    // Start OTA flash task
+    BaseType_t result = xTaskCreate(C6OTAFlashTask, "C6OTAFlash",
+                                    C6Constants::OTA_TASK_STACK, params, 10, NULL);
 
     if (result == pdPASS) {
-        request->send(200, "application/json",
-                      "{\"success\":true,\"message\":\"C6 OTA flash started successfully\"}");
+        ::sendSuccessResponse(request, "C6 OTA flash started successfully");
+        C6Helpers::logModuleEvent("ota_task_created", "OTA flash task started");
     } else {
         delete params;
-        request->send(500, "application/json",
-                      "{\"success\":false,\"error\":\"Failed to start C6 OTA flash task\"}");
+        sendErrorResponse(request, 500, "Failed to start C6 OTA flash task", "task_creation_failed");
+        C6Helpers::logModuleEvent("ota_task_failed", "Failed to create OTA flash task");
     }
+}
+
+void handleFlashC6Firmware(AsyncWebServerRequest *request) {
+    // Firmware flashing via direct connection
+    sendErrorResponse(request, 501, "Direct firmware flashing not implemented", "not_implemented");
+    C6Helpers::logModuleEvent("firmware_flash_not_implemented", "Direct firmware flashing feature not available");
+}
+
+void handleInstallC6Firmware(AsyncWebServerRequest *request) {
+    // Firmware installation from uploaded file
+    sendErrorResponse(request, 501, "Firmware installation not implemented", "not_implemented");
+    C6Helpers::logModuleEvent("firmware_install_not_implemented", "Firmware installation feature not available");
 }
 
 // C6 Module Helper Functions
@@ -843,11 +1139,13 @@ bool testC6ModuleConnection() {
 RadioTestResult performC6RadioTest() {
     RadioTestResult result = {0};
 
-    wsSerial("Starting C6 Radio Functionality Test...");
+    C6Helpers::logModuleEvent("radio_test_start", "Starting radio functionality test");
 
     // Check if module is online first
     if (apInfo.state != AP_STATE_ONLINE) {
-        wsSerial("Radio Test: FAILED - Module offline");
+        C6Helpers::logModuleEvent("radio_test_failed", "Module offline");
+        result.success = false;
+        result.error = "Module offline";
         result.errorRate = 100.0f;
         return result;
     }
@@ -855,39 +1153,46 @@ RadioTestResult performC6RadioTest() {
     // Test radio transmission
     bool radioInitialized = sendC6Command("TEST_RADIO", 1);
     if (!radioInitialized) {
-        wsSerial("Radio Test: FAILED - Radio initialization failed");
+        C6Helpers::logModuleEvent("radio_test_failed", "Radio initialization failed");
+        result.success = false;
+        result.error = "Radio initialization failed";
         result.errorRate = 100.0f;
         return result;
     }
 
-    // Simulate packet transmission test
+    // Simulate packet transmission test with realistic parameters
+    result.success = true;
     result.rssi = apInfo.rssi;
+    result.channel = apInfo.channel;
     result.packetsSent = 10;
 
-    // Simulate some packet loss based on RSSI
+    // Simulate packet loss based on RSSI quality
     if (apInfo.rssi > -50) {
-        result.packetsReceived = 10;  // Good signal
+        result.packetsReceived = 10;  // Excellent signal
     } else if (apInfo.rssi > -70) {
-        result.packetsReceived = 9;  // Fair signal
+        result.packetsReceived = 9;  // Good signal
     } else if (apInfo.rssi > -80) {
-        result.packetsReceived = 7;  // Poor signal
+        result.packetsReceived = 7;  // Fair signal
     } else {
-        result.packetsReceived = 5;  // Very poor signal
+        result.packetsReceived = 5;  // Poor signal
     }
 
     result.errorRate = (1.0f - (float)result.packetsReceived / result.packetsSent) * 100.0f;
 
-    if (result.errorRate > 50.0f) {
-        wsSerial("Radio Test: FAILED - High packet loss (" + String(result.errorRate, 1) + "%)");
-    } else if (result.errorRate > 20.0f) {
-        wsSerial("Radio Test: WARNING - Moderate packet loss (" + String(result.errorRate, 1) + "%)");
-    } else {
-        wsSerial("Radio Test: PASSED - Low packet loss (" + String(result.errorRate, 1) + "%)");
-    }
+    // Log detailed test results
+    String performance = C6Helpers::getPerformanceRating(result.errorRate / 100.0f);
+    String testSummary = "Performance: " + performance +
+                         ", RSSI: " + String(result.rssi) + " dBm" +
+                         ", Packets: " + String(result.packetsReceived) + "/" + String(result.packetsSent) +
+                         ", Error Rate: " + String(result.errorRate, 1) + "%";
 
-    wsSerial("RSSI: " + String(result.rssi) + " dBm");
-    wsSerial("Packets sent: " + String(result.packetsSent));
-    wsSerial("Packets received: " + String(result.packetsReceived));
+    if (result.errorRate > 50.0f) {
+        C6Helpers::logModuleEvent("radio_test_failed", testSummary);
+    } else if (result.errorRate > 20.0f) {
+        C6Helpers::logModuleEvent("radio_test_warning", testSummary);
+    } else {
+        C6Helpers::logModuleEvent("radio_test_passed", testSummary);
+    }
 
     return result;
 }
@@ -906,11 +1211,12 @@ bool sendC6Command(const String &command, int parameter) {
     // Send command to C6 module via serial interface
     String cmd = command + ":" + String(parameter) + "\n";
 
-    wsSerial("Sending C6 command: " + command + " with parameter: " + String(parameter));
+    C6Helpers::logModuleEvent("command_send",
+                              command + " with parameter: " + String(parameter));
 
     // Check if serial port is available
     if (!Serial1) {
-        wsSerial("ERROR: Serial1 not available for C6 communication");
+        C6Helpers::logModuleEvent("command_error", "Serial1 not available for C6 communication");
         return false;
     }
 
@@ -923,11 +1229,11 @@ bool sendC6Command(const String &command, int parameter) {
     Serial1.print(cmd);
     Serial1.flush();
 
-    // Wait for acknowledgment with timeout
+    // Wait for acknowledgment with configured timeout
     unsigned long startTime = millis();
     String response = "";
 
-    while (millis() - startTime < 2000) {  // 2 second timeout
+    while (millis() - startTime < C6Constants::COMMAND_TIMEOUT) {
         if (Serial1.available()) {
             char c = Serial1.read();
             response += c;
@@ -935,12 +1241,12 @@ bool sendC6Command(const String &command, int parameter) {
             // Check for complete response
             if (response.indexOf('\n') >= 0 || response.indexOf('>') >= 0) {
                 response.trim();
-                wsSerial("C6 Response: " + response);
+                C6Helpers::logModuleEvent("command_response", response);
 
                 if (response.indexOf("ACK") >= 0 || response.indexOf("OK") >= 0) {
                     return true;
                 } else if (response.indexOf("NOK") >= 0 || response.indexOf("ERROR") >= 0) {
-                    wsSerial("C6 command failed: " + response);
+                    C6Helpers::logModuleEvent("command_failed", response);
                     return false;
                 }
             }
@@ -948,7 +1254,7 @@ bool sendC6Command(const String &command, int parameter) {
         delay(10);
     }
 
-    wsSerial("C6 command timeout - no response received");
+    C6Helpers::logModuleEvent("command_timeout", "No response received");
     return false;
 }
 
@@ -976,4 +1282,4 @@ void initC6Module() {
     }
 }
 
-#endif  // C6_OTA_FLASHING
+#endif  // HAS_C6

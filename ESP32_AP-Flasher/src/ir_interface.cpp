@@ -4,6 +4,7 @@
 
 #include <ArduinoJson.h>
 
+#include "core_utilities.h"
 #include "enum_string_utils.h"
 #include "settings.h"
 #include "storage.h"
@@ -100,7 +101,7 @@ bool IRInterface::begin() {
     enabled = true;
     enableReceiver(true);
 
-    Serial.printf("✅ IR Interface initialized (Send: %d, Recv: %d)\n", irSendPin, irRecvPin);
+    LogUtils::logInfo("✅ IR Interface initialized (Send: " + String(irSendPin) + ", Recv: " + String(irRecvPin) + ")");
     return true;
 }
 
@@ -128,8 +129,7 @@ bool IRInterface::sendCommand(IRProtocolType protocol, uint32_t code, uint16_t b
     if (!enabled || !irSender) return false;
 
     if (debugMode) {
-        Serial.printf("📤 Sending IR: Protocol=%s, Code=0x%X, Bits=%d\n",
-                      protocolToString(protocol).c_str(), code, bits);
+        LogUtils::logDebug("📤 Sending IR: Protocol=" + protocolToString(protocol) + ", Code=0x" + String(code, HEX) + ", Bits=" + String(bits));
     }
 
     bool success = false;
@@ -185,7 +185,7 @@ bool IRInterface::sendRaw(uint16_t* rawData, uint16_t length, uint16_t frequency
     if (!enabled || !irSender) return false;
 
     if (debugMode) {
-        Serial.printf("📡 Sending raw IR: %d samples @ %dHz\n", length, frequency);
+        LogUtils::logDebug("📡 Sending raw IR: " + String(length) + " samples @ " + String(frequency) + "Hz");
     }
 
     irSender->sendRaw(rawData, length, frequency);
@@ -301,7 +301,7 @@ bool IRInterface::sendProfileCommand(IRCommandType commandType) {
     }
 
     if (code == 0) {
-        Serial.printf("❌ Command %s not configured in profile\n", getCommandName(commandType).c_str());
+        LogUtils::logWarning("❌ Command " + getCommandName(commandType) + " not configured in profile");
         return false;
     }
 
@@ -331,15 +331,14 @@ IRCommand IRInterface::learnCommand(unsigned long timeoutMs) {
         return {};
     }
 
-    Serial.printf("🎓 Learning command... (timeout: %lums)\n", timeoutMs);
+    LogUtils::logInfo("🎓 Learning command... (timeout: " + String(timeoutMs) + "ms)");
 
     unsigned long startTime = millis();
 
     while (millis() - startTime < timeoutMs) {
         if (hasReceivedCommand()) {
             IRCommand command = getLastCommand();
-            Serial.printf("✅ Learned command: Protocol=%s, Code=0x%X\n",
-                          protocolToString(command.protocol).c_str(), command.code);
+            LogUtils::logInfo("✅ Learned command: Protocol=" + protocolToString(command.protocol) + ", Code=0x" + String(command.code, HEX));
             return command;
         }
         delay(10);
@@ -516,10 +515,7 @@ IRCommandType IRInterface::identifyCommand(uint32_t code) {
 }
 
 void IRInterface::logCommand(const IRCommand& command) {
-    Serial.printf("📡 IR Received: %s (0x%X) - %s\n",
-                  protocolToString(command.protocol).c_str(),
-                  command.code,
-                  command.description.c_str());
+    LogUtils::logDebug("📡 IR Received: " + protocolToString(command.protocol) + " (0x" + String(command.code, HEX) + ") - " + command.description);
 }
 
 String IRInterface::getStatusJSON() {
@@ -541,13 +537,13 @@ String IRInterface::getStatusJSON() {
 void IRInterface::saveProfilesToStorage() {
     // Implementation would save to LittleFS/SPIFFS
     // For now, just log
-    Serial.printf("💾 Saving %d IR profiles to storage\n", profiles.size());
+    LogUtils::logInfo("💾 Saving " + String(profiles.size()) + " IR profiles to storage");
 }
 
 void IRInterface::loadProfilesFromStorage() {
     // Implementation would load from LittleFS/SPIFFS
     // For now, just log
-    Serial.println("📂 Loading IR profiles from storage");
+    LogUtils::logInfo("📂 Loading IR profiles from storage");
 }
 
 void IRInterface::setReceivePin(uint8_t pin) {

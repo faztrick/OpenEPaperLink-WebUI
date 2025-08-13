@@ -14,7 +14,7 @@
    #define SHORT_CHIP_NAME "ELECROW_C6"
    #define OTA_BIN_DIR     "ESP32-C6"
    #define ESP_CHIP_TYPE   ESP32C6_CHIP
-#elif defined C6_OTA_FLASHING
+#elif defined HAS_C6
    #define SHORT_CHIP_NAME "C6"
    #define OTA_BIN_DIR     "ESP32-C6"
    #define ESP_CHIP_TYPE   ESP32C6_CHIP

@@ -6,9 +6,14 @@
 #endif
 
 #include "leds.h"
+#include "serialap.h"
 #include "settings.h"
 #include "tag_db.h"
-#include "serialap.h"
+
+// Fallback definition for FLASHER_LED if not defined in build flags
+#ifndef FLASHER_LED
+#define FLASHER_LED -1
+#endif
 
 QueueHandle_t ledQueue;
 int maxledbrightness = 255;
@@ -98,7 +103,8 @@ void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree) {
     const int patternLengths[] = {600, 120, 200, 120, 200, 120};
     const CRGB patternColors[] = {CRGB::Black, colorone, CRGB::Black, colortwo, CRGB::Black, colorthree};
 
-    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS) { }
+    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS) {
+    }
 
     for (int i = 0; i < sizeof(patternLengths) / sizeof(patternLengths[0]); i++) {
         rgb = new struct ledInstructionRGB;
@@ -176,9 +182,9 @@ void addFadeMono(uint8_t value) {
 }
 
 void showMono(uint8_t brightness) {
-    if (FLASHER_LED != -1) {
-        ledcSet(7, gamma8[brightness]);
-    }
+    // if (FLASHER_LED != -1) {
+    //     ledcSet(7, gamma8[brightness]);
+    // }
 }
 
 void quickBlink(uint8_t repeat) {
@@ -216,6 +222,8 @@ void ledTask(void* parameter) {
     addFadeColor(CRGB::Blue);
     CRGB oldColor = CRGB::Black;
     uint16_t rgbInstructionFadeTime = 0;
+
+    struct ledInstruction* monoled = nullptr;
 #endif
 
     ledQueue = xQueueCreate(30, sizeof(struct ledInstruction*));
@@ -228,9 +236,6 @@ void ledTask(void* parameter) {
         ledcAttachChannel(FLASHER_LED, 1000, 8, 7);
 #endif
     }
-
-    struct ledInstruction* monoled = nullptr;
-
     addFadeMono(0);
 #ifdef HAS_TFT
     addFadeMono(255);
@@ -243,8 +248,8 @@ void ledTask(void* parameter) {
 
     uint16_t monoInstructionFadeTime = 0;
 
-    while (1) {
 #ifdef HAS_RGB_LED
+    while (1) {
         // handle RGB led instructions
         if (rgb == nullptr) {
             // fetch a led instruction
@@ -288,7 +293,7 @@ void ledTask(void* parameter) {
                 rgb = nullptr;
             }
         }
-#endif
+
         // handle flasher LED (single color)
         if (monoled == nullptr) {
             BaseType_t q = xQueueReceive(ledQueue, &monoled, 1);
@@ -313,4 +318,34 @@ void ledTask(void* parameter) {
 
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
+#else
+    // Non-RGB LED case - only for configurations without RGB LED
+    struct ledInstruction* monoled = nullptr;
+
+    while (1) {
+        // handle flasher LED (single color)
+        if (monoled == nullptr) {
+            BaseType_t q = xQueueReceive(ledQueue, &monoled, 1);
+            if (q == pdTRUE) {
+                monoInstructionFadeTime = monoled->fadeTime;
+                if (monoled->fadeTime <= 1) {
+                    showMono(monoled->value);
+                }
+            }
+        } else {
+            if (monoled->fadeTime) {
+                monoled->fadeTime--;
+                showMono(map(monoled->fadeTime, 0, monoInstructionFadeTime, monoled->value, oldBrightness));
+            } else if (monoled->length) {
+                monoled->length--;
+            } else {
+                oldBrightness = monoled->value;
+                delete monoled;
+                monoled = nullptr;
+            }
+        }
+
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+#endif
 }
