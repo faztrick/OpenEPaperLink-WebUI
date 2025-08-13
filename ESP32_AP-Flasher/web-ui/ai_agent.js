@@ -16,7 +16,7 @@ class ESP32AIAgent {
             platform: 'ESP32-S3',
             framework: 'Arduino/ESP-IDF',
             buildSystem: 'PlatformIO',
-            features: ['TFT Display', 'RGB LEDs', 'BLE', 'SubGHz Radio', 'WiFi'],
+            features: ['RGB LEDs', 'BLE', 'SubGHz Radio', 'WiFi'],  // TFT Display removed
             purpose: 'OutdoorAP for OpenEPaperLink system'
         };
 
@@ -146,7 +146,7 @@ CAPABILITIES:
 - Suggest optimizations for performance and memory
 - Help with PlatformIO configuration
 - Provide ESP-IDF and Arduino framework guidance
-- Debug hardware interface problems (TFT, BLE, WiFi, etc.)
+- Debug hardware interface problems (BLE, WiFi, etc.)  // TFT removed
 - Recommend best practices for embedded development
 
 Always provide practical, actionable advice specific to ESP32 development.

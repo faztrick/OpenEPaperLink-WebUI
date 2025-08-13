@@ -37,4 +37,52 @@ void sendDataToClient(uint8_t* data, size_t length) {
     // Simulation stub - do nothing
 }
 
+// Content manager function stubs
+void contentRunner() {
+    // Simulation stub - do nothing
+}
+
+void checkVars() {
+    // Simulation stub - do nothing
+}
+
+// LED function stubs
+void ledTask(void* parameter) {
+    // Simulation stub - do nothing
+    vTaskDelete(NULL);
+}
+
+// Display function stubs
+void yellow_ap_display_init() {
+    // Simulation stub - do nothing
+}
+
+void yellow_ap_display_loop() {
+    // Simulation stub - do nothing
+}
+
+// Config function stub
+void updateBrightnessFromConfig() {
+    // Simulation stub - do nothing
+}
+
+// Flasher function stub
+void flash_binary(String& filename, unsigned int offset) {
+    // Simulation stub - do nothing
+}
+
+// LED effects stub
+void addFadeMono(unsigned char value) {
+    // Simulation stub - do nothing
+}
+
+// IR Interface stub - need to include the header and provide the class stub
+#include "ir_interface.h"
+
+// Provide a stub implementation for IRInterface::getProfileList()
+std::vector<String> IRInterface::getProfileList() {
+    std::vector<String> emptyList;
+    return emptyList;
+}
+
 #endif  // WOKWI_SIMULATION

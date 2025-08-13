@@ -15,6 +15,7 @@
 
 #include "wifi_utils.h"
 
+#include <ArduinoJson.h>  // Include directly to avoid macro conflicts
 #include <ETH.h>
 
 #include <cstring>
@@ -587,9 +588,12 @@ String WiFiUtils::buildScanResultsJson(bool clearAfter) {
         doc["error"] = scanResult.errorMessage;
     }
 
-    JsonArray networks = doc.createNestedArray("networks");
+    // Create networks array - use direct ArduinoJson v6 calls to avoid macro conflicts
+    JsonArray networks = doc["networks"].to<JsonArray>();
     for (const auto& network : scanResult.networks) {
-        JsonObject net = networks.createNestedObject();
+        // Create nested object using native ArduinoJson API to bypass json_compat.h macros
+        JsonVariant netVariant = networks.add();
+        JsonObject net = netVariant.to<JsonObject>();
         net["ssid"] = network.ssid;
         net["rssi"] = network.rssi;
         net["channel"] = network.channel;

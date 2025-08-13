@@ -14,39 +14,39 @@
 #include "util.h"
 #include "web.h"
 
-// Define TFT color constants if not available
-#ifndef TFT_BLUE
-#define TFT_BLUE 0x001F
-#endif
-#ifndef TFT_YELLOW
-#define TFT_YELLOW 0xFFE0
-#endif
-#ifndef TFT_GREEN
-#define TFT_GREEN 0x07E0
-#endif
-#ifndef TFT_RED
-#define TFT_RED 0xF800
-#endif
-#ifndef TFT_WHITE
-#define TFT_WHITE 0xFFFF
-#endif
-#ifndef TFT_PURPLE
-#define TFT_PURPLE 0xF81F
-#endif
-#ifndef TFT_DARKGREEN
-#define TFT_DARKGREEN 0x03E0
-#endif
+// TFT color constants removed - no longer needed
+// #ifndef TFT_BLUE
+// #define TFT_BLUE 0x001F
+// #endif
+// #ifndef TFT_YELLOW
+// #define TFT_YELLOW 0xFFE0
+// #endif
+// #ifndef TFT_GREEN
+// #define TFT_GREEN 0x07E0
+// #endif
+// #ifndef TFT_RED
+// #define TFT_RED 0xF800
+// #endif
+// #ifndef TFT_WHITE
+// #define TFT_WHITE 0xFFFF
+// #endif
+// #ifndef TFT_PURPLE
+// #define TFT_PURPLE 0xF81F
+// #endif
+// #ifndef TFT_DARKGREEN
+// #define TFT_DARKGREEN 0x03E0
+// #endif
 
-// Stub variables if not defined
-#ifdef HAS_TFT
-extern TFT_eSPI tft2;
-extern bool tftOverride;
-extern void sendAvail(uint8_t wakeupReason);
-#else
-TFT_eSPI tft2;
-bool tftOverride = false;
-void sendAvail(uint8_t wakeupReason) {}
-#endif
+// TFT display support and stub variables removed
+// #ifdef HAS_TFT
+// extern TFT_eSPI tft2;
+// extern bool tftOverride;
+// extern void sendAvail(uint8_t wakeupReason);
+// #else
+// TFT_eSPI tft2;
+// bool tftOverride = false;
+// void sendAvail(uint8_t wakeupReason) {}
+// #endif
 #include "zbs_interface.h"
 
 #define FLASHMODE_OFF 0
@@ -100,17 +100,18 @@ size_t Logger::printf(const char* format, ...) {
     va_end(args);
     wsSerial(String(buffer));
 
-#ifdef HAS_TFT
-    if (len >= 6 && strncmp(buffer, "\r[", 2) == 0) {
-        char content[50];
-        strncpy(content, buffer + 2, len - 7);
-        content[len - 7] = '\0';
-        tft2.fillRect(0, 50, tft2.width(), 40, TFT_BLUE);
-        tft2.setCursor(10, 57, 2);
-        tft2.setTextColor(TFT_YELLOW);
-        tft2.print(String(content));
-    }
-#endif
+    // TFT display output removed
+    // #ifdef HAS_TFT
+    //     if (len >= 6 && strncmp(buffer, "\r[", 2) == 0) {
+    //         char content[50];
+    //         strncpy(content, buffer + 2, len - 7);
+    //         content[len - 7] = '\0';
+    //         tft2.fillRect(0, 50, tft2.width(), 40, TFT_BLUE);
+    //         tft2.setCursor(10, 57, 2);
+    //         tft2.setTextColor(TFT_YELLOW);
+    //         tft2.print(String(content));
+    //     }
+    // #endif
 
     return len;
 }
@@ -128,40 +129,43 @@ uint8_t errors = 0;
 
 void infoDisplay(String actionName, uint8_t icon) {
     wsSerial("  " + actionName, "white");
-#ifdef HAS_TFT
-    tftOverride = true;
-    tft2.fillScreen(TFT_PURPLE);
-    tft2.setCursor(0, 0, 4);
-    tft2.setTextColor(TFT_WHITE);
-    tft2.print("Progress:");
-    tft2.setCursor(18, 30, 2);
-    tft2.setTextColor(TFT_WHITE);
-    tft2.print(actionName);
-#endif
+    // TFT display removed
+    // #ifdef HAS_TFT
+    //     tftOverride = true;
+    //     tft2.fillScreen(TFT_PURPLE);
+    //     tft2.setCursor(0, 0, 4);
+    //     tft2.setTextColor(TFT_WHITE);
+    //     tft2.print("Progress:");
+    //     tft2.setCursor(18, 30, 2);
+    //     tft2.setTextColor(TFT_WHITE);
+    //     tft2.print(actionName);
+    // #endif
 }
 
 bool report(bool result) {
     if (result) {
         wsSerial("<✔", "green");
-#ifdef HAS_TFT
-        tft2.setTextColor(TFT_GREEN);
-        tft2.setCursor(5, 30, 2);
-        tft2.print("v");
-        tft2.setCursor(6, 30, 2);
-        tft2.print("v");
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-#endif
+        // TFT display removed
+        // #ifdef HAS_TFT
+        //         tft2.setTextColor(TFT_GREEN);
+        //         tft2.setCursor(5, 30, 2);
+        //         tft2.print("v");
+        //         tft2.setCursor(6, 30, 2);
+        //         tft2.print("v");
+        //         vTaskDelay(100 / portTICK_PERIOD_MS);
+        // #endif
     } else {
         errors++;
         autoFlashStep = AUTOFLASH_STEP_ABORT;
         wsSerial("<✘", "red");
-#ifdef HAS_TFT
-        tft2.setTextColor(TFT_RED);
-        tft2.setCursor(5, 30, 2);
-        tft2.print("x");
-        tft2.setCursor(6, 30, 2);
-        tft2.print("x");
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+// TFT display removed
+// #ifdef HAS_TFT
+//         tft2.setTextColor(TFT_RED);
+//         tft2.setCursor(5, 30, 2);
+//         tft2.print("x");
+//         tft2.setCursor(6, 30, 2);
+//         tft2.print("x");
+//         vTaskDelay(500 / portTICK_PERIOD_MS);
 #endif
     }
     return result;

@@ -9,9 +9,10 @@
 #include "makeimage.h"
 #include "tag_db.h"
 
-#ifdef HAS_TFT
-#include <TFT_eSPI.h>
-#endif
+// TFT support removed
+// #ifdef HAS_TFT
+// #include <TFT_eSPI.h>
+// #endif
 
 // Real function declarations
 void contentRunner();

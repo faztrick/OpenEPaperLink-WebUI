@@ -1,1529 +1,172 @@
 <!DOCTYPE html>
 <!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <!-- Universal Header Include
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
      This file provides a consistent header structure across all pages
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
      Usage: Include this file in all HTML pages for consistent header layout
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <!-- Load universal menu script if not already loaded -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <script>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    if (!document.querySelector('script[src*="universal-menu.js"]')) {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        const script = document.createElement('script');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        script.src = 'universal-menu.js';
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        script.defer = true;
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        document.head.appendChild(script);
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+        if (!document.querySelector('script[src*="universal-menu.js"]')) {
+                const script = document.createElement('script');
+                script.src = 'universal-menu.js';
+                script.defer = true;
+                document.head.appendChild(script);
+        }
 </script>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <!-- Compact Single-Line Header: Logo + Navigation + Status -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <header class="advanced-header compact-header">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    <div class="compact-header-content">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        <!-- Single Line: Logo + Menu + Status -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        <div class="header-single-line">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <!-- Left: Logo -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <div class="header-left">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                <div class="logo-section">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="logo-icon" id="page-icon">⚡</div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="logo-text">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <h1 id="page-title">OpenEPL ESP32</h1>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="version" id="page-version">v3.1</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+        <div class="compact-header-content">
+                <!-- Single Line: Logo + Menu + Status -->
+                <div class="header-single-line">
+                        <!-- Left: Logo -->
+                        <div class="header-left">
+                                <div class="logo-section">
+                                        <div class="logo-icon" id="page-icon">⚡</div>
+                                        <div class="logo-text">
+                                                <h1 id="page-title">OpenEPL ESP32</h1>
+                                                <span class="version" id="page-version">v3.1</span>
+                                        </div>
+                                </div>
+                        </div>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <!-- Center: Navigation Menu -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <div class="header-center">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                <div id="menu-container" class="menu-container"></div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+                        <!-- Center: Navigation Menu -->
+                        <div class="header-center">
+                                <div id="menu-container" class="menu-container"></div>
+                        </div>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <!-- Right: Compact Status -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            <div class="header-right">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                <div class="compact-status">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-group">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <div class="status-dot" id="systemDot"></div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span id="systemStatus">Ready</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-separator">|</div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-group">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">devices</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span id="tagCount">0</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-separator">|</div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-group">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">wifi</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span id="wifiStatus">WiFi</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-separator">|</div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <div class="status-group">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">schedule</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span id="uptimeDisplay">--:--</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+                        <!-- Right: Compact Status -->
+                        <div class="header-right">
+                                <div class="compact-status">
+                                        <div class="status-group">
+                                                <div class="status-dot" id="systemDot"></div>
+                                                <span id="systemStatus">Ready</span>
+                                        </div>
+                                        <div class="status-separator">|</div>
+                                        <div class="status-group">
+                                                <span class="material-symbols-outlined">devices</span>
+                                                <span id="tagCount">0</span>
+                                        </div>
+                                        <div class="status-separator">|</div>
+                                        <div class="status-group">
+                                                <span class="material-symbols-outlined">wifi</span>
+                                                <span id="wifiStatus">WiFi</span>
+                                        </div>
+                                        <div class="status-separator">|</div>
+                                        <div class="status-group">
+                                                <span class="material-symbols-outlined">schedule</span>
+                                                <span id="uptimeDisplay">--:--</span>
+                                        </div>
+                                </div>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                <!-- Quick Actions -->
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                <div class="quick-actions">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <button class="action-btn" onclick="refreshData()" title="Refresh Data">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">refresh</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </button>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <button class="action-btn" onclick="findAllTags()" title="Find All Tags">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">search</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </button>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    <button class="action-btn" onclick="toggleCompactMode()" title="Toggle Compact Mode">
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        <span class="material-symbols-outlined">fullscreen</span>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    </button>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+                                <!-- Quick Actions -->
+                                <div class="quick-actions">
+                                        <button class="action-btn" onclick="refreshData()" title="Refresh Data">
+                                                <span class="material-symbols-outlined">refresh</span>
+                                        </button>
+                                        <button class="action-btn" onclick="findAllTags()" title="Find All Tags">
+                                                <span class="material-symbols-outlined">search</span>
+                                        </button>
+                                        <button class="action-btn" onclick="toggleCompactMode()"
+                                                title="Toggle Compact Mode">
+                                                <span class="material-symbols-outlined">fullscreen</span>
+                                        </button>
+                                </div>
+                        </div>
                 </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
         </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    </div>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 </header>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 <script>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    // Universal Header Configuration
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    // This script allows each page to customize the header content
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    (function () {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        // Page-specific header configuration
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        const pageConfigs = {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'index.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '📱',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'OpenEPL ESP32',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            },
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'settings.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '⚙️',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'OpenEPL Settings',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            },
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'logs.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '📋',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'OpenEPL System Logs',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            },
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'setup.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '�',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'OpenEPL WiFi Setup',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            },
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'esp32_endpoint_checker.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '�',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'ESP32 Endpoint Checker',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            },
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            'network-test.html': {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                icon: '🌐',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                title: 'Network Connection Test',
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                version: 'v3.1'
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        };
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        // Get current page name
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        const config = pageConfigs[currentPage] || pageConfigs['index.html'];
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        // Wait for DOM to be ready
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        if (document.readyState === 'loading') {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            document.addEventListener('DOMContentLoaded', updateHeader);
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        } else {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            updateHeader();
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        function updateHeader() {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            // Update page-specific elements
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            const pageIcon = document.getElementById('page-icon');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            const pageTitle = document.getElementById('page-title');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            const pageVersion = document.getElementById('page-version');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            if (pageIcon) pageIcon.textContent = config.icon;
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            if (pageTitle) pageTitle.textContent = config.title;
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            if (pageVersion) pageVersion.textContent = config.version;
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            // Initialize universal menu if not already loaded
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            if (typeof initializeUniversalMenu === 'function') {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                initializeUniversalMenu();
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            } else {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                // If universal-menu.js hasn't loaded yet, wait for it
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                const checkForMenu = () => {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    if (typeof initializeUniversalMenu === 'function') {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        initializeUniversalMenu();
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    } else {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        setTimeout(checkForMenu, 50);
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+        // Universal Header Configuration
+        // This script allows each page to customize the header content
+        (function () {
+                // Page-specific header configuration
+                const pageConfigs = {
+                        'index.html': {
+                                icon: '📱',
+                                title: 'OpenEPL ESP32',
+                                version: 'v3.1'
+                        },
+                        'settings.html': {
+                                icon: '⚙️',
+                                title: 'OpenEPL Settings',
+                                version: 'v3.1'
+                        },
+                        'logs.html': {
+                                icon: '📋',
+                                title: 'OpenEPL System Logs',
+                                version: 'v3.1'
+                        },
+                        'setup.html': {
+                                icon: '�',
+                                title: 'OpenEPL WiFi Setup',
+                                version: 'v3.1'
+                        },
+                        'esp32_endpoint_checker.html': {
+                                icon: '�',
+                                title: 'ESP32 Endpoint Checker',
+                                version: 'v3.1'
+                        },
+                        'network-test.html': {
+                                icon: '🌐',
+                                title: 'Network Connection Test',
+                                version: 'v3.1'
+                        }
                 };
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                checkForMenu();
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            // Mark current page as active in menu
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            setTimeout(() => {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                const menuBtns = document.querySelectorAll('.menu-btn');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                menuBtns.forEach(btn => {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    const dataPage = btn.getAttribute('data-page');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    if (dataPage && currentPage.includes(dataPage)) {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        btn.classList.add('active');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    } else {
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                        btn.classList.remove('active');
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                    }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-                });
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-            }, 100);
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        }
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+                // Get current page name
+                const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+                const config = pageConfigs[currentPage] || pageConfigs['index.html'];
 
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        // Expose function globally for manual updates
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-        window.updateUniversalHeader = updateHeader;
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-    })();
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
+                // Wait for DOM to be ready
+                if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', updateHeader);
+                } else {
+                        updateHeader();
+                }
+
+                function updateHeader() {
+                        // Update page-specific elements
+                        const pageIcon = document.getElementById('page-icon');
+                        const pageTitle = document.getElementById('page-title');
+                        const pageVersion = document.getElementById('page-version');
+
+                        if (pageIcon) pageIcon.textContent = config.icon;
+                        if (pageTitle) pageTitle.textContent = config.title;
+                        if (pageVersion) pageVersion.textContent = config.version;
+
+                        // Initialize universal menu if not already loaded
+                        if (typeof initializeUniversalMenu === 'function') {
+                                initializeUniversalMenu();
+                        } else {
+                                // If universal-menu.js hasn't loaded yet, wait for it
+                                const checkForMenu = () => {
+                                        if (typeof initializeUniversalMenu === 'function') {
+                                                initializeUniversalMenu();
+                                        } else {
+                                                setTimeout(checkForMenu, 50);
+                                        }
+                                };
+                                checkForMenu();
+                        }
+
+                        // Mark current page as active in menu
+                        setTimeout(() => {
+                                const menuBtns = document.querySelectorAll('.menu-btn');
+                                menuBtns.forEach(btn => {
+                                        const dataPage = btn.getAttribute('data-page');
+                                        if (dataPage && currentPage.includes(dataPage)) {
+                                                btn.classList.add('active');
+                                        } else {
+                                                btn.classList.remove('active');
+                                        }
+                                });
+                        }, 100);
+                }
+
+                // Expose function globally for manual updates
+                window.updateUniversalHeader = updateHeader;
+        })();
 </script>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>
-<!DOCTYPE html>

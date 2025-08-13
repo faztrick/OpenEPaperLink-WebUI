@@ -134,10 +134,11 @@ void setup() {
         }
     }
 
-#ifdef HAS_TFT
-    extern void yellow_ap_display_init(void);
-    yellow_ap_display_init();
-#endif
+    // TFT display initialization removed
+    // #ifdef HAS_TFT
+    //     extern void yellow_ap_display_init(void);
+    //     yellow_ap_display_init();
+    // #endif
 
     // Start LED task with increased stack size and error checking
     TaskHandle_t ledTaskHandle;

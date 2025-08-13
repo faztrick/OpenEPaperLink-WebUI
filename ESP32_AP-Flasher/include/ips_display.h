@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
-#ifdef HAS_TFT
-#include <TFT_eSPI.h>
-#endif
+// TFT support removed
+// #ifdef HAS_TFT
+// #include <TFT_eSPI.h>
+// #endif
 
 #ifdef HAS_LILYGO_TPANEL
 
@@ -25,7 +26,7 @@
 #define ESP32H2_RX 47
 
 //  #define T_Panel_V1_0_RS485
- #define T_Panel_V1_2_RS485
+#define T_Panel_V1_2_RS485
 // #define T_Panel_V1_2_CAN
 
 #if defined T_Panel_V1_0_RS485
@@ -135,13 +136,14 @@ extern Arduino_RGB_Display *gfx;
 
 #endif
 
-#ifdef HAS_TFT
-
-extern TFT_eSPI tft2;
-extern uint8_t YellowSense;
-extern bool tftOverride;
-
-void TFTLog(String text);
+// TFT support removed
+// #ifdef HAS_TFT
+//
+// extern TFT_eSPI tft2;
+// extern uint8_t YellowSense;
+// extern bool tftOverride;
+//
+// void TFTLog(String text);
 void sendAvail(uint8_t wakeupReason);
 
 #endif

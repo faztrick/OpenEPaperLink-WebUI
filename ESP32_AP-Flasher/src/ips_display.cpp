@@ -9,7 +9,8 @@
 #include "tag_db.h"
 #include "wifi_utils.h"  // Use centralized WiFi utilities
 
-#ifdef HAS_TFT
+// TFT display support removed
+// #ifdef HAS_TFT
 
 #include "ips_display.h"
 
@@ -543,4 +544,4 @@ void yellow_ap_display_loop(void) {
     touch_loop();
 }
 
-#endif
+// #endif  // TFT display support removed

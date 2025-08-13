@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <FS.h>
-#include <TFT_eSPI.h>
+// #include <TFT_eSPI.h>  // TFT removed
 #include <TJpg_Decoder.h>
 #include <makeimage.h>
 #include <web.h>
@@ -13,10 +13,10 @@
 #include "util.h"
 
 // Stub definitions if not compiled with display support
-#ifndef HAS_IPS_DISPLAY
-extern TFT_eSPI tft2;
-extern bool tftOverride;
-#endif
+// #ifndef HAS_IPS_DISPLAY
+// extern TFT_eSPI tft2;
+// extern bool tftOverride;
+// #endif
 
 #include "commstructs.h"
 #ifndef SAVE_SPACE
@@ -24,54 +24,58 @@ extern bool tftOverride;
 #include "g5/g5enc.inl"
 #endif
 
-TFT_eSPI tft = TFT_eSPI();
-TFT_eSprite spr = TFT_eSprite(&tft);
+// TFT display objects removed
+// TFT_eSPI tft = TFT_eSPI();
+// TFT_eSprite spr = TFT_eSprite(&tft);
 
-bool spr_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-    spr.pushImage(x, y, w, h, bitmap);
-    return 1;
-}
+// TFT sprite output callback removed
+// bool spr_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
+//     spr.pushImage(x, y, w, h, bitmap);
+//     return 1;
+// }
 
+// jpg2buffer function modified - TFT dependencies removed
 void jpg2buffer(String filein, String fileout, imgParam &imageParams) {
-    TJpgDec.setSwapBytes(true);
-    TJpgDec.setJpgScale(1);
-    TJpgDec.setCallback(spr_output);
+    // TJpgDec.setSwapBytes(true);
+    // TJpgDec.setJpgScale(1);
+    // TJpgDec.setCallback(spr_output);  // spr_output removed
     uint16_t w = 0, h = 0;
     if (filein.c_str()[0] != '/') {
         filein = "/" + filein;
     }
-    TJpgDec.getFsJpgSize(&w, &h, filein, *contentFS);
+    // TJpgDec.getFsJpgSize(&w, &h, filein, *contentFS);  // Commented out - needs TFT
     if (w == 0 && h == 0) {
-        wsErr("invalid jpg");
+        wsErr("invalid jpg - TFT functionality removed");
         return;
     }
-    Serial.println("jpeg conversion " + String(w) + "x" + String(h));
+    Serial.println("jpeg conversion disabled - TFT removed");
 
-#ifdef BOARD_HAS_PSRAM
-    spr.setColorDepth(16);
-#else
-    spr.setColorDepth(8);
-#endif
-    spr.createSprite(w, h);
-    if (spr.getPointer() == nullptr) {
-        wsErr("low on memory. Fallback to 1bpp");
-        util::printLargestFreeBlock();
-        spr.setColorDepth(1);
-        spr.setBitmapColor(TFT_WHITE, TFT_BLACK);
-        imageParams.bufferbpp = 1;
-        spr.createSprite(w, h);
-    }
-    if (spr.getPointer() == nullptr) {
-        wsErr("Failed to create sprite in jpg2buffer");
-    } else {
-        spr.fillSprite(TFT_WHITE);
-        TJpgDec.drawFsJpg(0, 0, filein, *contentFS);
-
-#ifdef HAS_TFT
-        spr2buffer(spr, fileout, imageParams);
-#endif
-        spr.deleteSprite();
-    }
+    // TFT sprite operations removed - all functionality disabled
+    // #ifdef BOARD_HAS_PSRAM
+    //     spr.setColorDepth(16);
+    // #else
+    //     spr.setColorDepth(8);
+    // #endif
+    //     spr.createSprite(w, h);
+    //     if (spr.getPointer() == nullptr) {
+    //         wsErr("low on memory. Fallback to 1bpp");
+    //         util::printLargestFreeBlock();
+    //         spr.setColorDepth(1);
+    //         spr.setBitmapColor(TFT_WHITE, TFT_BLACK);
+    //         imageParams.bufferbpp = 1;
+    //         spr.createSprite(w, h);
+    //     }
+    //     if (spr.getPointer() == nullptr) {
+    //         wsErr("Failed to create sprite in jpg2buffer");
+    //     } else {
+    //         spr.fillSprite(TFT_WHITE);
+    //         TJpgDec.drawFsJpg(0, 0, filein, *contentFS);
+    //
+    // #ifdef HAS_TFT
+    //         spr2buffer(spr, fileout, imageParams);
+    // #endif
+    //         spr.deleteSprite();
+    //     }
 }
 
 struct Error {

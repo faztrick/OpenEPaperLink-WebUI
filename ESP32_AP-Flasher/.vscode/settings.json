@@ -126,5 +126,38 @@
     },
     "[c]": {
         "editor.defaultFormatter": "ms-vscode.cpptools"
-    }
+    },
+    // Disable unwanted extensions for this workspace
+    "extensions.ignoreRecommendations": true,
+    // Enable Python for this workspace
+    "python.defaultInterpreterPath": "python",
+    "python.languageServer": "Pylance",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.formatting.provider": "none",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    "java.enabled": false,
+    // Disable Jupyter functionality
+    "jupyter.askForKernelRestart": false,
+    "jupyter.enableExtendedKernelCompletions": false,
+    "jupyter.experiments.enabled": false,
+    "jupyter.generateSVGPlots": false,
+    "jupyter.interactiveWindow.creationMode": "perFile",
+    "jupyter.notebookFileRoot": "",
+    "jupyter.sendSelectionToInteractiveWindow": false,
+    "jupyter.showCellInputCode": false,
+    "jupyter.showVariableViewWhenDebugging": false,
+    "jupyter.useNotebookEditor": false,
+    "jupyter.widgetScriptSources": [],
+    // Disable auto-updates for better stability
+    "extensions.autoUpdate": false,
+    "extensions.autoCheckUpdates": false
 }

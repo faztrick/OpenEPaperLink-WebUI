@@ -1,15 +1,17 @@
 #include <Arduino.h>
-#ifdef HAS_TFT
-#include <TFT_eSPI.h>
-#endif
+// TFT support removed
+// #ifdef HAS_TFT
+// #include <TFT_eSPI.h>
+// #endif
 
 #pragma once
 
 #include "tag_db.h"
 
-#ifdef HAS_TFT
-extern TFT_eSPI tft;
-#endif
+// TFT support removed
+// #ifdef HAS_TFT
+// extern TFT_eSPI tft;
+// #endif
 
 #define SHORTLUT_DISABLED 0
 #define SHORTLUT_ONLY_BLACK 1

@@ -6,10 +6,11 @@
 #pragma once
 
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 
 #include <vector>
+
+#include "json_compat.h"
 
 // Forward declarations
 class AsyncWebSocket;
@@ -44,7 +45,7 @@ void addStandardHeaders(AsyncResponseStream* response);
 // JSON Response Manager
 // ============================================================================
 namespace JsonResponseManager {
-DynamicJsonDocument createBaseResponse(bool success, const String& message);
+CompatJsonDocument createBaseResponse(bool success, const String& message);
 String createErrorResponse(const String& error, const String& context = "", int code = 0);
 String createSuccessResponse(const String& message, const JsonObject& data = JsonObject());
 
