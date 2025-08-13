@@ -6,12 +6,16 @@
 #include <HTTPClient.h>
 #include <MD5Builder.h>
 #include <Update.h>
+#ifdef HAS_SERIAL_FLASHER
 #include <esp_loader.h>
+#endif
 
 #include "core_utilities.h"
+#ifdef HAS_SERIAL_FLASHER
 #include "esp32_port.h"
 #include "espflasher.h"
 #include "flasher.h"
+#endif
 #include "leds.h"
 #include "serialap.h"
 #include "storage.h"
@@ -37,7 +41,7 @@
 #define LOG(format, ...) Serial.printf(format, ##__VA_ARGS__)
 
 void handleSysinfoRequest(AsyncWebServerRequest* request) {
-    DynamicJsonDocument doc(2048);
+    StaticJsonDocument<2048> doc;
     doc["alias"] = config.alias;
     doc["env"] = STR(BUILD_ENV_NAME);
     doc["buildtime"] = STR(BUILD_TIME);
@@ -80,7 +84,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
     const String filePath = request->getParam("path")->value();
     File file = contentFS->open(filePath, "r");
     if (!file) {
-        DynamicJsonDocument doc(2048);
+        StaticJsonDocument<2048> doc;
         doc["filesize"] = 0;
         doc["md5"] = "";
         String jsonResponse;
@@ -99,7 +103,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
 
     file.close();
 
-    DynamicJsonDocument doc(2048);
+    StaticJsonDocument<2048> doc;
     doc["filesize"] = fileSize;
     doc["md5"] = md5Hash;
     String jsonResponse;
@@ -308,6 +312,7 @@ void handleRollback(AsyncWebServerRequest* request) {
 #ifdef HAS_C6
 void C6firmwareUpdateTask(void* parameter) {
     char* urlPtr = reinterpret_cast<char*>(parameter);
+    bool result = false;  // Initialize result variable
 
     LOG("C6firmwareUpdateTask: url '%s'\n", urlPtr);
     wsSerial("Stopping AP service");
@@ -375,7 +380,9 @@ void C6firmwareUpdateTask(void* parameter) {
     vTaskDelay(30000 / portTICK_PERIOD_MS);
     vTaskDelete(NULL);
 }
+#endif  // HAS_C6
 
+#ifdef HAS_SERIAL_FLASHER
 void C6OTAFlashTask(void* parameter) {
     struct FlashParams {
         String firmwareFile;
@@ -451,14 +458,14 @@ void C6OTAFlashTask(void* parameter) {
     const loader_esp32_config_t loaderConfig = {
         .baud_rate = static_cast<uint32_t>(params->baudRate),
         .uart_port = 2,  // Using UART2 for C6 communication
-        .uart_rx_pin = FLASHER_DEBUG_RXD,
-        .uart_tx_pin = FLASHER_DEBUG_TXD,
-        .reset_trigger_pin = FLASHER_DEBUG_PROG,  // Reset pin for C6
-        .gpio0_trigger_pin = FLASHER_DEBUG_PROG,  // Boot pin for C6
-        .rx_buffer_size = 0,                      // Use default
-        .tx_buffer_size = 0,                      // Use default
-        .queue_size = 0,                          // Use default
-        .uart_queue = NULL                        // Not needed
+        .uart_rx_pin = static_cast<uint32_t>(FLASHER_DEBUG_RXD >= 0 ? FLASHER_DEBUG_RXD : 0),
+        .uart_tx_pin = static_cast<uint32_t>(FLASHER_DEBUG_TXD >= 0 ? FLASHER_DEBUG_TXD : 0),
+        .reset_trigger_pin = static_cast<uint32_t>(FLASHER_DEBUG_PROG >= 0 ? FLASHER_DEBUG_PROG : 0),  // Reset pin for C6
+        .gpio0_trigger_pin = static_cast<uint32_t>(FLASHER_DEBUG_PROG >= 0 ? FLASHER_DEBUG_PROG : 0),  // Boot pin for C6
+        .rx_buffer_size = 0,                                                                           // Use default
+        .tx_buffer_size = 0,                                                                           // Use default
+        .queue_size = 0,                                                                               // Use default
+        .uart_queue = NULL                                                                             // Not needed
     };
 
     wsSerial("Initializing ESP32-C6 serial connection...");
@@ -624,7 +631,7 @@ void handleUpdateActions(AsyncWebServerRequest* request) {
         request->send(200, "No update actions needed");
         return;
     }
-    DynamicJsonDocument doc(2048);
+    StaticJsonDocument<2048> doc;
     DeserializationError error = deserializeJson(doc, file);
     const JsonArray deleteFiles = doc["deletefile"].as<JsonArray>();
     for (const auto& filePath : deleteFiles) {
