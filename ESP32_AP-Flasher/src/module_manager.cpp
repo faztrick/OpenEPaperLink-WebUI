@@ -1,6 +1,7 @@
 #include "module_manager.h"
 
 #include <ArduinoJson.h>
+#include "JsonDocumentz.h"
 #include <Preferences.h>
 
 // Global module manager instance
@@ -207,7 +208,7 @@ void ModuleManager::registerAllWebHandlers(AsyncWebServer& server) {
 void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
     // Module list endpoint
     server.on("/api/modules", HTTP_GET, [this](AsyncWebServerRequest* request) {
-        DynamicJsonDocument doc(4096);
+        JsonDocumentz doc(4096);
         JsonArray moduleArray = doc.createNestedArray("modules");
 
         for (const auto& regModule : modules) {
@@ -271,7 +272,7 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             return;
         }
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = success;
         doc["message"] = message;
         doc["module"] = moduleName;
@@ -289,7 +290,7 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             moduleName = request->getParam("module")->value();
         }
 
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
 
         if (moduleName.length() > 0) {
             // Get specific module status
@@ -347,7 +348,7 @@ std::vector<String> ModuleManager::getUnhealthyModules() const {
 }
 
 String ModuleManager::getDiagnostics() const {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
 
     doc["uptime"] = getUptime();
     doc["totalModules"] = modules.size();

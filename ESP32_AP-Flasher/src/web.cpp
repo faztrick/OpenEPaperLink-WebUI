@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "AsyncJson.h"
+#include "JsonDocumentz.h"
 #include "SPIFFSEditor.h"
 #include "c6_module.h"
 #include "commstructs.h"
@@ -75,7 +76,7 @@ static bool sendWSMessage(const JsonDocument &doc, uint32_t timeout_ms = WEBSOCK
 void wsLog(const String &text) {
     if (text.isEmpty() || ws.count() == 0) return;
 
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
+    JsonDocumentz doc;
     doc["logMsg"] = text;
     sendWSMessage(doc);
 }
@@ -83,7 +84,7 @@ void wsLog(const String &text) {
 void wsErr(const String &text) {
     if (text.isEmpty() || ws.count() == 0) return;
 
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
+    JsonDocumentz doc;
     doc["errMsg"] = text;
     sendWSMessage(doc);
 }
@@ -113,7 +114,7 @@ size_t dbSize() {
 void wsSendSysteminfo() {
     if (ws.count() == 0) return;  // No clients connected
 
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
+    JsonDocumentz doc;
     JsonObject sys = doc["sys"].to<JsonObject>();
     time_t now;
     time(&now);
@@ -272,7 +273,7 @@ void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
 void wsSendAPitem(struct APlist *apitem) {
     if (!apitem || ws.count() == 0) return;
 
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
+    JsonDocumentz doc;
     JsonObject ap = doc["apitem"].to<JsonObject>();
 
     char version_str[6];
@@ -293,8 +294,7 @@ void wsSerial(const String &text) {
 
 void wsSerial(const String &text, const String &color) {
     if (text.isEmpty()) return;
-
-    DynamicJsonDocument doc(JSON_BUFFER_SIZE);
+    JsonDocumentz doc;
     doc["console"] = text;
     if (!color.isEmpty()) doc["color"] = color;
 
@@ -751,7 +751,7 @@ void init_web() {
     });
     server.on("/set_vars", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (request->hasParam("json", true)) {
-            DynamicJsonDocument jsonDocument(2048);
+            JsonDocumentz jsonDocument;
             DeserializationError error = deserializeJson(jsonDocument, request->getParam("json", true)->value());
             if (error) {
                 request->send(400, "text/plain", "Failed to parse JSON");
@@ -778,7 +778,7 @@ void init_web() {
     server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
         Preferences preferences;
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc;
         preferences.begin("wifi", false);
         const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
         const size_t numKeys = sizeof(keys) / sizeof(keys[0]);
@@ -795,7 +795,7 @@ void init_web() {
         response->addHeader("Cache-Control", "max-age=30");  // Cache for 30 seconds
 
         // Increased buffer size for better compatibility
-        DynamicJsonDocument doc(4096);
+        JsonDocumentz doc;
 
         // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
@@ -954,7 +954,7 @@ void init_web() {
 
     // Add WiFi config retrieval endpoint for debugging
     server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         Preferences preferences;
 
         if (preferences.begin("wifi", true)) {  // Read-only mode
@@ -1009,7 +1009,7 @@ void init_web() {
     });
 
     server.on("/api/features", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["HAS_RGB_LED"] = false;
         doc["HAS_TFT"] = false;
         doc["HAS_BLE_WRITER"] = false;
@@ -1163,7 +1163,7 @@ void init_web() {
         irInterface.stopLearning();
 
         if (learned.code != 0) {
-            DynamicJsonDocument doc(512);
+            JsonDocumentz doc(512);
             doc["success"] = true;
             doc["protocol"] = irProtocolTypeToString(learned.protocol);
             doc["code"] = "0x" + String(learned.code, HEX);
@@ -1180,7 +1180,7 @@ void init_web() {
 
     server.on("/ir/profiles", HTTP_GET, [](AsyncWebServerRequest *request) {
         std::vector<String> profiles = irInterface.getProfileList();
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         JsonArray profileArray = doc.createNestedArray("profiles");
 
         for (const String &profile : profiles) {
@@ -1199,7 +1199,7 @@ void init_web() {
         if (irInterface.hasReceivedCommand()) {
             IRCommand cmd = irInterface.getLastCommand();
 
-            DynamicJsonDocument doc(512);
+            JsonDocumentz doc(512);
             doc["hasCommand"] = true;
             doc["protocol"] = irProtocolTypeToString(cmd.protocol);
             doc["code"] = "0x" + String(cmd.code, HEX);
@@ -1231,7 +1231,7 @@ void init_web() {
         if (cardFound) {
             RFIDCardInfo card = rc522Interface.getCardInfo();
 
-            DynamicJsonDocument doc(1024);
+            JsonDocumentz doc(1024);
             doc["success"] = true;
             doc["cardPresent"] = true;
             doc["uid"] = card.uid;
@@ -1261,7 +1261,7 @@ void init_web() {
             String text;
             RFIDResult result = rc522Interface.readText(text);
 
-            DynamicJsonDocument doc(1024);
+            JsonDocumentz doc(1024);
             doc["success"] = result.success;
             doc["message"] = result.message;
             if (result.success) {
@@ -1285,7 +1285,7 @@ void init_web() {
 
             RFIDResult result = rc522Interface.readBlock(blockNumber, buffer, bufferSize);
 
-            DynamicJsonDocument doc(512);
+            JsonDocumentz doc(512);
             doc["success"] = result.success;
             doc["message"] = result.message;
             doc["block"] = blockNumber;
@@ -1324,7 +1324,7 @@ void init_web() {
 
             RFIDResult result = rc522Interface.writeText(text, sector);
 
-            DynamicJsonDocument doc(512);
+            JsonDocumentz doc(512);
             doc["success"] = result.success;
             doc["message"] = result.message;
             doc["text"] = text;
@@ -1345,7 +1345,7 @@ void init_web() {
     server.on("/rfid/cards", HTTP_GET, [](AsyncWebServerRequest *request) {
         std::vector<RFIDCardInfo> cards = rc522Interface.getDetectedCards();
 
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         JsonArray cardArray = doc.createNestedArray("cards");
 
         for (const RFIDCardInfo &card : cards) {
@@ -1491,7 +1491,7 @@ void init_web() {
             dir = "/" + dir;
         }
 
-        DynamicJsonDocument doc(4096);
+        JsonDocumentz doc(4096);
         JsonArray files = doc.createNestedArray("files");
 
         File root = contentFS->open(dir);
@@ -1544,7 +1544,7 @@ void init_web() {
     });
 
     server.on("/get_function_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         doc["runStatus"] = config.runStatus;
         doc["runStatusText"] = (config.runStatus == RUNSTATUS_RUN) ? "Running" : (config.runStatus == RUNSTATUS_STOP) ? "Stopped"
                                                                              : (config.runStatus == RUNSTATUS_PAUSE)  ? "Paused"
@@ -1564,7 +1564,7 @@ void init_web() {
 
     // System Control Endpoints
     server.on("/system_info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         doc["success"] = true;
         doc["chipModel"] = ESP.getChipModel();
         doc["chipRevision"] = ESP.getChipRevision();
@@ -1593,7 +1593,7 @@ void init_web() {
             delay = request->getParam("delay", true)->value().toInt();
         }
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["message"] = "System will restart in " + String(delay) + " seconds";
 
@@ -1616,7 +1616,7 @@ void init_web() {
             level = request->getParam("level", true)->value();
         }
 
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         doc["success"] = true;
         doc["level"] = level;
         doc["heap"]["free"] = ESP.getFreeHeap();
@@ -1640,7 +1640,7 @@ void init_web() {
 
     // Tag Control Endpoints
     server.on("/tag_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["success"] = true;
         doc["tagCount"] = tagDB.size();
         doc["pendingCount"] = pendingQueue.size();
@@ -1667,7 +1667,7 @@ void init_web() {
         String action = request->getParam("action", true)->value();
         String data = request->hasParam("data", true) ? request->getParam("data", true)->value() : "";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["tagId"] = tagId;
         doc["action"] = action;
@@ -1698,7 +1698,7 @@ void init_web() {
         String imageData = request->getParam("imageData", true)->value();
         String imageType = request->hasParam("imageType", true) ? request->getParam("imageType", true)->value() : "bmp";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["tagId"] = tagId;
         doc["imageType"] = imageType;
@@ -1718,7 +1718,7 @@ void init_web() {
         }
 
         String action = request->getParam("action", true)->value();
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
 
@@ -1759,7 +1759,7 @@ void init_web() {
 
     // Network Endpoints
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["success"] = true;
         doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
         doc["wifi"]["ssid"] = WiFi.SSID();
@@ -1779,7 +1779,7 @@ void init_web() {
 
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request) {
         // Increased buffer size for better memory handling
-        DynamicJsonDocument doc(4096);
+        JsonDocumentz doc(4096);
 
         // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
@@ -1911,7 +1911,7 @@ void init_web() {
         String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value() : "";
         String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
 
@@ -1943,7 +1943,7 @@ void init_web() {
     server.on("/ota_check", HTTP_GET, [](AsyncWebServerRequest *request) {
         String target = request->hasParam("target") ? request->getParam("target")->value() : "all";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["target"] = target;
         doc["currentVersion"] = "3.0.0";
@@ -1965,7 +1965,7 @@ void init_web() {
         String target = request->getParam("target", true)->value();
         String version = request->hasParam("version", true) ? request->getParam("version", true)->value() : "latest";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["target"] = target;
         doc["version"] = version;
@@ -1978,7 +1978,7 @@ void init_web() {
 
     // Additional Enhanced Endpoints
     server.on("/ble_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["bleEnabled"] = false;  // BLE not implemented yet
         doc["connectedDevices"] = 0;
@@ -1992,7 +1992,7 @@ void init_web() {
 
     server.on("/ble_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "BLE action queued (not implemented)";
@@ -2003,7 +2003,7 @@ void init_web() {
     });
 
     server.on("/serial_ap_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["state"] = apInfo.state;
         doc["online"] = apInfo.isOnline;
@@ -2020,7 +2020,7 @@ void init_web() {
 
     server.on("/serial_ap_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
 
@@ -2044,7 +2044,7 @@ void init_web() {
 
     server.on("/zbs_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "ZBS interface action queued (hardware dependent)";
@@ -2056,7 +2056,7 @@ void init_web() {
 
     server.on("/swd_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "SWD programming action queued (hardware dependent)";
@@ -2068,7 +2068,7 @@ void init_web() {
 
     server.on("/spiffs_manage", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["success"] = true;
         doc["action"] = action;
 
@@ -2138,7 +2138,7 @@ void init_web() {
             // When we have the complete body
             if (index + len == total) {
                 // Parse the request
-                DynamicJsonDocument requestDoc(8192);
+                JsonDocumentz requestDoc(8192);
                 DeserializationError error = deserializeJson(requestDoc, requestBody);
 
                 if (error) {
@@ -2148,7 +2148,7 @@ void init_web() {
 
                 // Load OpenAI configuration
                 String configPath = "/openai_config.json";
-                DynamicJsonDocument configDoc(4096);
+                JsonDocumentz configDoc(4096);
 
                 if (contentFS->exists(configPath)) {
                     File configFile = contentFS->open(configPath, "r");
@@ -2480,7 +2480,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
 
     // Module list endpoint - GET /api/modules
     server.on("/api/modules", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
 
         // Get module manager instance
         ModuleManager &manager = ModuleManager::getInstance();
@@ -2531,7 +2531,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
 
     // Module status endpoint - GET /api/modules/status
     server.on("/api/modules/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         ModuleManager &manager = ModuleManager::getInstance();
 
         doc["systemHealthy"] = manager.isSystemHealthy();
@@ -2565,7 +2565,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
         String moduleName = request->getParam("module", true)->value();
         String action = request->getParam("action", true)->value();
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["module"] = moduleName;
         doc["action"] = action;
 

@@ -18,6 +18,7 @@
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"
+#include "JsonDocumentz.h"
 #include "udp.h"
 #include "util.h"
 #include "web.h"
@@ -833,7 +834,7 @@ bool checkMirror(struct tagRecord* taginfo, struct pendingData* pending) {
     for (int16_t c = 0; c < tagDB.size(); c++) {
         tagRecord* taginfo2 = tagDB.at(c);
         if (taginfo2->contentMode == 20 && taginfo2->version == 0) {
-            DynamicJsonDocument doc(2048);
+            JsonDocumentz doc(2048);
             deserializeJson(doc, taginfo2->modeConfigJson);
             JsonObject cfgobj = doc.as<JsonObject>();
             uint8_t mac[8] = {0};
@@ -1006,7 +1007,7 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
         // in case of an image (no preload), remove already queued images
         pendingQueue.erase(std::remove_if(pendingQueue.begin(), pendingQueue.end(),
                                           [pending](const PendingItem& item) {
-                                              bool macMatches = memcmp(item.pendingdata.targetMac, pending->targetMac, sizeof(item.pendingdata.targetMac)) == 0;
+                                              bool macMatches = memcmp(item.pendingdata.targetMac, pending->targetMac, sizeof(pending->targetMac)) == 0;
                                               bool dataTypeArgumentMatches = (pending->availdatainfo.dataType == item.pendingdata.availdatainfo.dataType) && ((item.pendingdata.availdatainfo.dataTypeArgument & 0xF8) == 0x00);
                                               return macMatches && dataTypeArgumentMatches;
                                           }),

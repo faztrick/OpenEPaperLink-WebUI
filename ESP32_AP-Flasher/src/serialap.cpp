@@ -13,8 +13,8 @@
 #include "settings.h"
 #include "storage.h"
 #include "web.h"
-#include "zbs_interface.h"
 #include "wifimanager.h"
+#include "zbs_interface.h"
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
 
@@ -34,7 +34,7 @@ volatile bool rxSerialStopTask2 = false;
 #endif
 
 uint8_t channelList[6];
-struct espSetChannelPower curChannel = {0, 11, 10};
+struct espSetChannelPower curChannel = {{0, 0, 0, 0, 0, 0, 0, 0}, 0, 11, 10};
 
 #define RX_CMD_RQB 0x01
 #define RX_CMD_ADR 0x02
@@ -224,13 +224,14 @@ uint16_t sendBlock(const void* data, const uint16_t len) {
 blksend:
     uint8_t blockbuffer[sizeof(struct blockData)];
     struct blockData* bd = (struct blockData*)blockbuffer;
-    bd->size = len;
-    bd->checksum = 0;
+    // set size in header (field name in protocol is 'bytes')
+    bd->bytes = len;
 
-    // calculate checksum
+    // calculate checksum locally (protocol header does not contain a checksum field)
     const uint8_t* dataBytes = reinterpret_cast<const uint8_t*>(data);
+    uint16_t checksum = 0;
     for (uint16_t c = 0; c < len; c++) {
-        bd->checksum += dataBytes[c];
+        checksum += dataBytes[c];
     }
 
     // send blockData header
@@ -273,7 +274,7 @@ blksend:
     if (apInfo.type != ESP32_C6) delay(10);
     txEnd();
     Serial.println("Sendblock complete, " + String(millis() - timeCanary) + "ms");
-    return bd->checksum;
+    return checksum;
 }
 
 bool sendDataAvail(struct pendingData* pending) {

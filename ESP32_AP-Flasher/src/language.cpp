@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "JsonDocumentz.h"
 #include <FS.h>
 
 #include "settings.h"
@@ -29,8 +30,8 @@ void updateLanguageFromConfig() {
         return;
     }
 
-    DynamicJsonDocument doc(2048);
-    DynamicJsonDocument filter(2048);
+    JsonDocumentz doc(2048);
+    JsonDocumentz filter(2048);
     filter[String(currentLanguage)] = true;
     const DeserializationError error = deserializeJson(doc, file, DeserializationOption::Filter(filter));
     file.close();

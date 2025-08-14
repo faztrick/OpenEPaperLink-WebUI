@@ -85,7 +85,7 @@ The web interface source code is located in the `wwwroot` directory. It's a sing
     - **WiFi Credentials:** Stored in NVS using the `Preferences` library.
     - **Tag Database:** `tagDB.json` in LittleFS.
 - **Asynchronous Operations:** The web server is fully asynchronous. Avoid using `delay()` in web request handlers; use `vTaskDelay` or non-blocking code instead.
-- **Memory Management:** Pay attention to memory usage, especially when dealing with JSON and file operations. Use `DynamicJsonDocument` with appropriate sizing. For large files, use streaming responses.
+- **Memory Management:** Pay attention to memory usage, especially when dealing with JSON and file operations. Use `JsonDocument` with appropriate sizing. For large files, use streaming responses.
 - **Security Best Practices:**
     - Use `snprintf()` instead of `sprintf()` to prevent buffer overflows
     - Use `strncpy()` instead of `strcpy()` for string operations

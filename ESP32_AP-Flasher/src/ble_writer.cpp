@@ -36,7 +36,7 @@ int BLE_upload_state = BLE_UPLOAD_STATE_INIT;
 #define BLE_CMD_ACK_FW_UPDATED 201
 
 struct AvailDataInfo BLEavaildatainfo = {0};
-struct blockRequest BLEblkRequst = {0};
+struct espBlockRequest BLEblkRequst = {0};
 
 bool BLE_connected = false;
 bool BLE_new_notify = false;
@@ -402,9 +402,9 @@ void BLETask(void* parameter) {
                             Serial.println("BLE CMD " + String(notifyCMD));
                             switch (notifyCMD) {
                                 case BLE_CMD_REQ:
-                                    if (notifyLen == (sizeof(struct blockRequest) + 2)) {
+                                    if (notifyLen == (sizeof(struct espBlockRequest) + 2)) {
                                         Serial.println("We got a request for a BLK");
-                                        memcpy(&BLEblkRequst, &BLE_notify_buffer[3], sizeof(struct blockRequest));
+                                        memcpy(&BLEblkRequst, &BLE_notify_buffer[3], sizeof(struct espBlockRequest));
                                         BLE_curr_part = 0;
                                         ATC_BLE_OEPL_PrepareBlk(BLEblkRequst.blockId);
                                         ATC_BLE_OEPL_SendPart(BLEblkRequst.blockId, BLE_curr_part);

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "JsonDocumentz.h"
 #include <MD5Builder.h>
 #include <WiFi.h>
 
@@ -179,7 +180,7 @@ bool flasher::getInfoBlockType() {
 }
 
 bool flasher::findTagByMD5() {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     fs::File readfile = contentFS->open("/tag_md5_db.json", "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
@@ -208,7 +209,7 @@ bool flasher::findTagByMD5() {
 }
 
 bool flasher::findTagByType(uint8_t type) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     fs::File readfile = contentFS->open("/tag_md5_db.json", "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
@@ -448,7 +449,7 @@ bool flasher::writeFlashFromPackOffset(fs::File *file, uint16_t length) {
 }
 
 bool flasher::writeFlashFromPack(String filename, uint8_t type) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     fs::File readfile = contentFS->open(filename, "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
@@ -508,7 +509,7 @@ bool flasher::writeBlock(uint16_t offset, uint8_t *data, uint16_t len, bool info
 
 #ifndef C6_OTA_FLASHING
 uint16_t getAPUpdateVersion(uint8_t type) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     fs::File readfile = contentFS->open("/AP_FW_Pack.bin", "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {

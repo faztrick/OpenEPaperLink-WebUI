@@ -4,6 +4,7 @@
 
 #include <ArduinoJson.h>
 
+#include "JsonDocumentz.h"
 #include "settings.h"
 #include "storage.h"
 
@@ -538,7 +539,7 @@ void RC522Interface::logOperation(const String& operation, bool success, const S
 }
 
 String RC522Interface::getStatusJSON() {
-    DynamicJsonDocument doc(1024);
+    JsonDocumentz doc(1024);
 
     doc["enabled"] = enabled;
     doc["monitoring"] = monitoring;

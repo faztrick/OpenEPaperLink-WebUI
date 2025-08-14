@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
+#include "JsonDocumentz.h"
+
 // WiFi Module Implementation
 // ==========================
 
@@ -129,7 +131,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
 
     // WiFi status endpoint
     server.on("/api/wifi/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc;
 
         doc["connected"] = (WiFi.status() == WL_CONNECTED);
         doc["ssid"] = WiFi.SSID();
@@ -153,7 +155,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
     server.on("/api/wifi/scan", HTTP_GET, [this](AsyncWebServerRequest *request) {
         performWiFiScan();
 
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc;
         doc["success"] = true;
         doc["scanning"] = true;
         doc["message"] = "WiFi scan initiated";
@@ -183,7 +185,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
         // Attempt connection
         WiFi.begin(ssid.c_str(), password.c_str());
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc;
         doc["success"] = true;
         doc["message"] = "WiFi connection initiated";
         doc["ssid"] = ssid;
@@ -197,7 +199,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
     server.on("/api/wifi/disconnect", HTTP_POST, [this](AsyncWebServerRequest *request) {
         WiFi.disconnect();
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc;
         doc["success"] = true;
         doc["message"] = "WiFi disconnected";
 
@@ -233,7 +235,7 @@ void WiFiModule::update() {
 }
 
 String WiFiModule::getConfig() const {
-    DynamicJsonDocument doc(512);
+    JsonDocumentz doc;
 
     Preferences prefs;
     prefs.begin("wifi", true);
@@ -252,7 +254,7 @@ String WiFiModule::getConfig() const {
 }
 
 bool WiFiModule::setConfig(const String &config) {
-    DynamicJsonDocument doc(512);
+    JsonDocumentz doc;
     DeserializationError error = deserializeJson(doc, config);
 
     if (error) {
@@ -263,10 +265,10 @@ bool WiFiModule::setConfig(const String &config) {
     Preferences prefs;
     prefs.begin("wifi", false);
 
-    if (doc.containsKey("autoReconnect")) prefs.putBool("autoReconnect", doc["autoReconnect"]);
-    if (doc.containsKey("powerSave")) prefs.putBool("powerSave", doc["powerSave"]);
-    if (doc.containsKey("channel")) prefs.putInt("channel", doc["channel"]);
-    if (doc.containsKey("hostname")) prefs.putString("hostname", doc["hostname"].as<String>());
+    if (doc["autoReconnect"].is<bool>()) prefs.putBool("autoReconnect", doc["autoReconnect"]);
+    if (doc["powerSave"].is<bool>()) prefs.putBool("powerSave", doc["powerSave"]);
+    if (doc["channel"].is<int>()) prefs.putInt("channel", doc["channel"]);
+    if (doc["hostname"].is<const char *>()) prefs.putString("hostname", doc["hostname"].as<String>());
 
     prefs.end();
 
@@ -279,7 +281,7 @@ bool WiFiModule::setConfig(const String &config) {
 }
 
 String WiFiModule::getStatus() const {
-    DynamicJsonDocument doc(1024);
+    JsonDocumentz doc;
 
     doc["status"] = WiFi.status();
     doc["connected"] = (WiFi.status() == WL_CONNECTED);

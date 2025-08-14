@@ -1,4 +1,23 @@
 {
   "idf.currentSetup": "C:\\Users\\faztrick\\esp\\v5.3.1\\esp-idf",
-  "cmake.sourceDirectory": "D:/projects/opel/OpenEPaperLink-WebUI/ESP32_AP-Flasher"
+  "cmake.sourceDirectory": "D:/projects/opel/OpenEPaperLink-WebUI/ESP32_AP-Flasher",
+  "files.associations": {
+    "chrono": "cpp",
+    "system_error": "cpp",
+    "xlocale": "cpp",
+    "bitset": "cpp",
+    "deque": "cpp",
+    "format": "cpp",
+    "initializer_list": "cpp",
+    "list": "cpp",
+    "queue": "cpp",
+    "random": "cpp",
+    "regex": "cpp",
+    "utility": "cpp",
+    "vector": "cpp",
+    "xhash": "cpp",
+    "xstring": "cpp",
+    "xtree": "cpp",
+    "xutility": "cpp"
+  }
 }

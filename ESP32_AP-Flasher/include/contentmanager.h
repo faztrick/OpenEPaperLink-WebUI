@@ -7,6 +7,8 @@
 
 #include "makeimage.h"
 #include "tag_db.h"
+// Include minimal stub definitions to satisfy other modules when full contentmanager is removed
+#include "contentmanager_stub_defs.h"
 
 struct contentTypes {
     uint16_t id;
@@ -44,7 +46,7 @@ int getJsonTemplateUrl(String &filename, String URL, time_t fetched, String MAC,
 void drawJsonStream(Stream &stream, String &filename, tagRecord *&taginfo, imgParam &imageParams);
 #ifdef HAS_TFT
 void rotateBuffer(uint8_t rotation, uint8_t &currentOrientation, TFT_eSprite &spr, imgParam &imageParams);
-void drawElement(const JsonObject &element, TFT_eSprite &spr,  imgParam &imageParams, uint8_t &currentOrientation);
+void drawElement(const JsonObject &element, TFT_eSprite &spr, imgParam &imageParams, uint8_t &currentOrientation);
 #endif
 uint16_t getColor(const String &color);
 char *formatHttpDate(const time_t t);
@@ -57,4 +59,3 @@ void prepareLUTreq(const uint8_t *dst, const String &input);
 void prepareConfigFile(const uint8_t *dst, const JsonObject &config);
 void prepareTIME_RAW(const uint8_t *dst, time_t now);
 void getTemplate(JsonDocument &json, const uint8_t id, const uint8_t hwtype);
-

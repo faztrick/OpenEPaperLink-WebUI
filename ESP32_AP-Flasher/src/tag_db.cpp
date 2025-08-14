@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "JsonDocumentz.h"
 #include <FS.h>
 
 #include <unordered_map>
@@ -67,7 +68,7 @@ bool hex2mac(const String& hexString, uint8_t* mac) {
 }
 
 String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     JsonArray tags = doc["tags"].to<JsonArray>();
 
     for (uint32_t c = startPos; c < tagDB.size(); ++c) {
@@ -125,7 +126,7 @@ void fillNode(JsonObject& tag, const tagRecord* taginfo) {
 }
 
 void saveDB(const String& filename) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
 
     const long t = millis();
 
@@ -187,7 +188,7 @@ bool loadDB(const String& filename) {
     bool parsing = true;
 
     if (readfile.find("[")) {
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         while (parsing) {
             DeserializationError err = deserializeJson(doc, readfile);
             if (!err) {
@@ -309,7 +310,7 @@ void clearPending(tagRecord* taginfo) {
 }
 
 void initAPconfig() {
-    DynamicJsonDocument APconfig(2048);
+    JsonDocumentz APconfig(2048);
     File configFile = contentFS->open("/current/apconfig.json", "r");
     if (configFile) {
         DeserializationError error = deserializeJson(APconfig, configFile);
@@ -354,7 +355,7 @@ void initAPconfig() {
 void saveAPconfig() {
     xSemaphoreTake(fsMutex, portMAX_DELAY);
     fs::File configFile = contentFS->open("/current/apconfig.json", "w");
-    DynamicJsonDocument APconfig(2048);
+    JsonDocumentz APconfig(2048);
     APconfig["channel"] = config.channel;
     APconfig["subghzchannel"] = config.subghzchannel;
     APconfig["alias"] = config.alias;
@@ -391,7 +392,7 @@ HwType getHwType(const uint8_t id) {
         File jsonFile = contentFS->open(filename, "r");
 
         if (jsonFile) {
-            DynamicJsonDocument filter(2048);
+            JsonDocumentz filter(2048);
             filter["width"] = true;
             filter["height"] = true;
             filter["rotatebuffer"] = true;
@@ -401,7 +402,7 @@ HwType getHwType(const uint8_t id) {
             filter["g5_compression"] = true;
             filter["highlight_color"] = true;
             filter["colortable"] = true;
-            DynamicJsonDocument doc(2048);
+            JsonDocumentz doc(2048);
             DeserializationError error = deserializeJson(doc, jsonFile, DeserializationOption::Filter(filter));
             jsonFile.close();
             if (error) {

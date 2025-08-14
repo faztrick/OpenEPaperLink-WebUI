@@ -39,3 +39,22 @@ void addFadeColor(CRGB cname);
 
 void quickBlink(uint8_t repeat);
 void addFadeMono(uint8_t value);
+
+// Structure used for LED flash commands sent to tags
+struct ledFlash {
+    uint8_t mode;
+    uint8_t flashDuration;
+    uint8_t color1;
+    uint8_t color2;
+    uint8_t color3;
+    uint8_t flashCount1;
+    uint8_t flashCount2;
+    uint8_t flashCount3;
+    uint8_t delay1;
+    uint8_t delay2;
+    uint8_t delay3;
+    uint8_t flashSpeed1;
+    uint8_t flashSpeed2;
+    uint8_t flashSpeed3;
+    uint8_t repeats;
+};

@@ -1,5 +1,6 @@
 #include "c6_module.h"
 
+#include "JsonDocumentz.h"
 #include "commstructs.h"
 #include "module_manager.h"
 #include "ota.h"
@@ -195,12 +196,10 @@ class C6Module : public ModuleInterface {
     }
 
     String getConfig() const override {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
 
         Preferences preferences;
         preferences.begin("c6_module", true);
-
-        doc["channel"] = preferences.getInt("channel", 20);
         doc["txPower"] = preferences.getInt("txPower", 10);
         doc["panId"] = preferences.getString("panId", "0x1234");
         doc["sleepMode"] = preferences.getString("sleepMode", "none");
@@ -216,7 +215,7 @@ class C6Module : public ModuleInterface {
     }
 
     bool setConfig(const String &config) override {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         DeserializationError error = deserializeJson(doc, config);
 
         if (error) {
@@ -227,7 +226,7 @@ class C6Module : public ModuleInterface {
         Preferences preferences;
         preferences.begin("c6_module", false);
 
-        if (doc.containsKey("channel")) preferences.putInt("channel", doc["channel"]);
+        // reuse parsed document 'doc'
         if (doc.containsKey("txPower")) preferences.putInt("txPower", doc["txPower"]);
         if (doc.containsKey("panId")) preferences.putString("panId", doc["panId"].as<String>());
         if (doc.containsKey("sleepMode")) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
@@ -246,7 +245,7 @@ class C6Module : public ModuleInterface {
     }
 
     String getStatus() const override {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
 
         doc["connected"] = (apInfo.state != AP_STATE_OFFLINE);
         doc["state"] = static_cast<int>(apInfo.state);
@@ -323,7 +322,7 @@ extern SemaphoreHandle_t fsMutex;
 // ================================
 
 void handleC6UpdateStatus(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(512);
+    JsonDocumentz doc(512);
 
     // Check update status from global variables or task status
     // This is a simplified implementation - in practice you'd track actual update progress
@@ -422,7 +421,7 @@ void handleAPList(AsyncWebServerRequest *request) {
 }
 
 void handleGetC6Settings(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(1024);
+    JsonDocumentz doc(1024);
 
     // Get current C6 module settings from preferences or defaults
     Preferences preferences;
@@ -453,7 +452,7 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
     }
 
     if (index + len == total) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         DeserializationError error = deserializeJson(doc, jsonString);
 
         if (!error) {
@@ -494,7 +493,7 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
     // Test connection to C6 module
     bool connected = testC6ModuleConnection();
 
-    DynamicJsonDocument doc(512);
+    JsonDocumentz doc(512);
     doc["connected"] = connected;
     doc["timestamp"] = millis();
 
@@ -509,7 +508,7 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
 }
 
 void handleTestC6Radio(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(512);
+    JsonDocumentz doc(512);
 
     // Perform radio test and get results
     RadioTestResult result = performC6RadioTest();
@@ -539,7 +538,7 @@ void handleRestartC6(AsyncWebServerRequest *request) {
 }
 
 void handleBackupC6Config(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
 
     // Collect all C6 configuration data
     Preferences preferences;
@@ -666,7 +665,7 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
 // ======================================
 
 void handleListDrives(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(4096);
+    JsonDocumentz doc(4096);
     JsonArray drives = doc.createNestedArray("drives");
 
 // On Windows, check common drive letters
@@ -707,7 +706,7 @@ void handleListDrives(AsyncWebServerRequest *request) {
 }
 
 void handleListSerialPorts(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(2048);
+    JsonDocumentz doc(2048);
     JsonArray ports = doc.createNestedArray("ports");
 
 // Common Windows COM ports
@@ -996,7 +995,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
     // Enhanced C6 Module Status and Control Endpoints
     server.on("/api/c6/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["success"] = true;
         doc["c6Connected"] = apInfo.isOnline;
         doc["c6State"] = apInfo.state;
@@ -1036,7 +1035,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
         String action = request->getParam("action", true)->value();
         String moduleId = request->hasParam("moduleId", true) ? request->getParam("moduleId", true)->value() : "primary";
 
-        DynamicJsonDocument doc(512);
+        JsonDocumentz doc(512);
         doc["success"] = true;
         doc["action"] = action;
         doc["moduleId"] = moduleId;
@@ -1072,7 +1071,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
     server.on("/api/c6/config", HTTP_GET, [](AsyncWebServerRequest *request) {
         auto moduleInfo = moduleManager.getModuleInfo("C6Module");
 
-        DynamicJsonDocument doc(1024);
+        JsonDocumentz doc(1024);
         doc["success"] = true;
         doc["moduleFound"] = (moduleInfo.name.length() > 0);
 

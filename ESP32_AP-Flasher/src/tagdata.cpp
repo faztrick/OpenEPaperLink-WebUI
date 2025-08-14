@@ -4,6 +4,7 @@
 
 #include "tag_db.h"
 #include "util.h"
+#include "JsonDocumentz.h"
 
 std::unordered_map<size_t, TagData::Parser> TagData::parsers = {};
 
@@ -20,7 +21,7 @@ void TagData::loadParsers(const String& filename) {
     Serial.println("Reading parsers from file");
 
     if (file.find("[")) {
-        DynamicJsonDocument doc(2048);
+        JsonDocumentz doc(2048);
         bool parsing = true;
         while (parsing) {
             DeserializationError err = deserializeJson(doc, file);
