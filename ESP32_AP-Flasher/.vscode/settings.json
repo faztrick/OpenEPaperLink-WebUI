@@ -152,12 +152,12 @@
     "jupyter.generateSVGPlots": false,
     "jupyter.interactiveWindow.creationMode": "perFile",
     "jupyter.notebookFileRoot": "",
-    "jupyter.sendSelectionToInteractiveWindow": false,
     "jupyter.showCellInputCode": false,
     "jupyter.showVariableViewWhenDebugging": false,
     "jupyter.useNotebookEditor": false,
     "jupyter.widgetScriptSources": [],
     // Disable auto-updates for better stability
     "extensions.autoUpdate": false,
-    "extensions.autoCheckUpdates": false
+    "extensions.autoCheckUpdates": false,
+    "jupyter.interactiveWindow.textEditor.executeSelection": false
 }

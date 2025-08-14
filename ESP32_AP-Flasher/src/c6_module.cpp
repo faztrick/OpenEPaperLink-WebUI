@@ -399,6 +399,474 @@ class C6Module : public ModuleInterface {
 
 // Global C6 module instance
 static std::unique_ptr<C6Module> g_c6Module;
+static std::unique_ptr<C6Enhanced> g_c6Enhanced;
+
+// ============================================================================
+// Enhanced C6 Module Implementation
+// ============================================================================
+
+C6Enhanced *C6Enhanced::instance = nullptr;
+
+C6Enhanced::C6Enhanced() {
+    displaySerial = nullptr;
+}
+
+C6Enhanced &C6Enhanced::getInstance() {
+    if (!instance) {
+        instance = new C6Enhanced();
+    }
+    return *instance;
+}
+
+bool C6Enhanced::initialize() {
+    Serial.println("[C6_ENHANCED] Initializing enhanced C6 module...");
+
+    if (initialized) {
+        Serial.println("[C6_ENHANCED] Already initialized");
+        return true;
+    }
+
+    // Initialize default pin configurations
+    initializeDefaultPins();
+
+    // Setup display communication
+    displaySerial = &Serial1;
+    displaySerial->begin(displayConfig.baudRate, SERIAL_8N1, displayConfig.rxPin, displayConfig.txPin);
+
+    initialized = true;
+    lastStatsUpdate = millis();
+    lastPinScan = millis();
+
+    Serial.println("[C6_ENHANCED] Enhanced C6 module initialized successfully");
+    return true;
+}
+
+void C6Enhanced::initializeDefaultPins() {
+    // Clear existing configurations
+    pinConfigs.clear();
+
+    // Add default pin configurations for ESP32-C6
+    C6PinConfig config;
+
+    // GPIO pins 0-23 (ESP32-C6 has 24 GPIO pins)
+    for (uint8_t pin = 0; pin <= 23; pin++) {
+        config.pin = pin;
+        config.name = "GPIO" + String(pin);
+        config.function = "General Purpose I/O";
+        config.mode = INPUT;
+        config.isDigital = true;
+        config.isAnalog = (pin >= 0 && pin <= 6);  // ADC1 channels
+        config.isInterruptCapable = true;
+        config.description = "General purpose pin " + String(pin);
+        config.monitorEnabled = false;  // Disabled by default to save resources
+
+        // Special function pins
+        if (pin == 16 || pin == 17) {
+            config.function = "UART";
+            config.description = "UART communication pin";
+            config.isSpecialFunction = true;
+        } else if (pin == 4 || pin == 5) {
+            config.function = "SPI";
+            config.description = "SPI communication pin";
+            config.isSpecialFunction = true;
+        } else if (pin == 21 || pin == 22) {
+            config.function = "I2C";
+            config.description = "I2C communication pin";
+            config.isSpecialFunction = true;
+        }
+
+        pinConfigs.push_back(config);
+    }
+
+    Serial.printf("[C6_ENHANCED] Initialized %d pin configurations\n", pinConfigs.size());
+}
+
+bool C6Enhanced::addPinConfig(const C6PinConfig &config) {
+    // Check if pin already exists
+    for (auto &pin : pinConfigs) {
+        if (pin.pin == config.pin) {
+            pin = config;  // Update existing
+            return true;
+        }
+    }
+
+    // Add new configuration
+    pinConfigs.push_back(config);
+    return true;
+}
+
+C6PinConfig *C6Enhanced::getPinConfig(uint8_t pin) {
+    for (auto &config : pinConfigs) {
+        if (config.pin == pin) {
+            return &config;
+        }
+    }
+    return nullptr;
+}
+
+String C6Enhanced::getPinStatusJson() {
+    DynamicJsonDocument doc(4096);
+    JsonArray pins = doc.createNestedArray("pins");
+
+    for (const auto &config : pinConfigs) {
+        JsonObject pinObj = pins.createNestedObject();
+        pinObj["pin"] = config.pin;
+        pinObj["name"] = config.name;
+        pinObj["function"] = config.function;
+        pinObj["mode"] = pinModeToString(config.mode);
+        pinObj["digitalValue"] = config.digitalValue;
+        pinObj["analogValue"] = config.analogValue;
+        pinObj["voltage"] = config.voltage;
+        pinObj["isAnalog"] = config.isAnalog;
+        pinObj["isDigital"] = config.isDigital;
+        pinObj["monitorEnabled"] = config.monitorEnabled;
+        pinObj["lastChange"] = config.lastChange;
+    }
+
+    JsonObject metadata = doc.createNestedObject("metadata");
+    metadata["timestamp"] = millis();
+    metadata["totalPins"] = pinConfigs.size();
+    metadata["lastScan"] = lastPinScan;
+
+    String result;
+    serializeJson(doc, result);
+    return result;
+}
+
+bool C6Enhanced::setPinMode(uint8_t pin, uint8_t mode) {
+    if (!isValidPin(pin)) {
+        return false;
+    }
+
+    pinMode(pin, mode);
+
+    // Update configuration
+    C6PinConfig *config = getPinConfig(pin);
+    if (config) {
+        config->mode = mode;
+    }
+
+    return true;
+}
+
+bool C6Enhanced::digitalWrite(uint8_t pin, uint8_t value) {
+    if (!isValidPin(pin)) {
+        return false;
+    }
+
+    ::digitalWrite(pin, value);
+
+    // Update configuration
+    C6PinConfig *config = getPinConfig(pin);
+    if (config) {
+        config->digitalValue = value;
+        config->lastChange = millis();
+        config->hasChanged = true;
+        statistics.pinStateChanges++;
+    }
+
+    return true;
+}
+
+int C6Enhanced::digitalRead(uint8_t pin) {
+    if (!isValidPin(pin)) {
+        return -1;
+    }
+
+    int value = ::digitalRead(pin);
+
+    // Update statistics
+    statistics.digitalReadings++;
+
+    // Update configuration
+    C6PinConfig *config = getPinConfig(pin);
+    if (config) {
+        if (config->digitalValue != value) {
+            config->digitalValue = value;
+            config->lastChange = millis();
+            config->hasChanged = true;
+            statistics.pinStateChanges++;
+        }
+    }
+
+    return value;
+}
+
+int C6Enhanced::analogRead(uint8_t pin) {
+    if (!isValidPin(pin) || !isPinAnalogCapable(pin)) {
+        return -1;
+    }
+
+    int value = ::analogRead(pin);
+
+    // Update statistics
+    statistics.analogReadings++;
+
+    // Update configuration
+    C6PinConfig *config = getPinConfig(pin);
+    if (config) {
+        config->analogValue = value;
+        config->voltage = (value * 3.3) / 4095.0;  // ESP32 ADC reference
+        config->lastChange = millis();
+        config->hasChanged = true;
+    }
+
+    return value;
+}
+
+float C6Enhanced::readVoltage(uint8_t pin) {
+    int adcValue = analogRead(pin);
+    if (adcValue < 0) {
+        return -1.0;
+    }
+
+    return (adcValue * 3.3) / 4095.0;
+}
+
+bool C6Enhanced::enableDisplayComm(bool enable) {
+    displayCommEnabled = enable;
+
+    if (enable && displaySerial) {
+        if (!displaySerial->available()) {
+            displaySerial->begin(displayConfig.baudRate, SERIAL_8N1, displayConfig.rxPin, displayConfig.txPin);
+        }
+    }
+
+    return true;
+}
+
+bool C6Enhanced::configureDisplayComm(const C6DisplayCommConfig &config) {
+    displayConfig = config;
+
+    if (displayCommEnabled && displaySerial) {
+        displaySerial->end();
+        displaySerial->begin(config.baudRate, SERIAL_8N1, config.rxPin, config.txPin);
+    }
+
+    return true;
+}
+
+bool C6Enhanced::sendDisplayCommand(const String &command) {
+    if (!displayCommEnabled || !displaySerial) {
+        return false;
+    }
+
+    String cmd = command + "\n";
+    displaySerial->print(cmd);
+    displaySerial->flush();
+
+    statistics.displayCommPackets++;
+    statistics.lastDisplayComm = millis();
+
+    return true;
+}
+
+String C6Enhanced::receiveDisplayResponse(uint32_t timeoutMs) {
+    if (!displayCommEnabled || !displaySerial) {
+        return "";
+    }
+
+    String response = "";
+    uint32_t startTime = millis();
+
+    while (millis() - startTime < timeoutMs) {
+        if (displaySerial->available()) {
+            char c = displaySerial->read();
+            response += c;
+
+            if (c == '\n') {
+                break;
+            }
+        }
+        delay(1);
+    }
+
+    if (response.isEmpty()) {
+        statistics.displayCommTimeout++;
+    }
+
+    return response.trim();
+}
+
+bool C6Enhanced::displayReset() {
+    return sendDisplayCommand("RESET");
+}
+
+bool C6Enhanced::displayWakeup() {
+    return sendDisplayCommand("WAKEUP");
+}
+
+bool C6Enhanced::displaySleep() {
+    return sendDisplayCommand("SLEEP");
+}
+
+bool C6Enhanced::displaySetBrightness(uint8_t brightness) {
+    return sendDisplayCommand("BRIGHTNESS:" + String(brightness));
+}
+
+bool C6Enhanced::displayClear() {
+    return sendDisplayCommand("CLEAR");
+}
+
+bool C6Enhanced::displayShowText(const String &text, uint16_t x, uint16_t y) {
+    return sendDisplayCommand("TEXT:" + String(x) + "," + String(y) + "," + text);
+}
+
+bool C6Enhanced::displayRefresh() {
+    return sendDisplayCommand("REFRESH");
+}
+
+String C6Enhanced::getDisplayStatus() {
+    sendDisplayCommand("STATUS");
+    return receiveDisplayResponse(2000);
+}
+
+void C6Enhanced::updateStatistics() {
+    statistics.uptime = millis();
+    statistics.freeHeap = ESP.getFreeHeap();
+    statistics.totalHeap = ESP.getHeapSize();
+    statistics.minFreeHeap = ESP.getMinFreeHeap();
+
+    // CPU temperature (if available)
+#ifdef ESP32_C6
+    statistics.temperature = temperatureRead();
+#endif
+
+    lastStatsUpdate = millis();
+}
+
+String C6Enhanced::getStatisticsJson() {
+    DynamicJsonDocument doc(2048);
+
+    JsonObject stats = doc.createNestedObject("statistics");
+    stats["uptime"] = statistics.uptime;
+    stats["freeHeap"] = statistics.freeHeap;
+    stats["totalHeap"] = statistics.totalHeap;
+    stats["minFreeHeap"] = statistics.minFreeHeap;
+    stats["temperature"] = statistics.temperature;
+    stats["voltage"] = statistics.voltage;
+
+    JsonObject comm = stats.createNestedObject("communication");
+    comm["displayPackets"] = statistics.displayCommPackets;
+    comm["displayErrors"] = statistics.displayCommErrors;
+    comm["displayTimeouts"] = statistics.displayCommTimeout;
+    comm["lastDisplayComm"] = statistics.lastDisplayComm;
+
+    JsonObject pins = stats.createNestedObject("pins");
+    pins["stateChanges"] = statistics.pinStateChanges;
+    pins["analogReadings"] = statistics.analogReadings;
+    pins["digitalReadings"] = statistics.digitalReadings;
+    pins["interruptEvents"] = statistics.interruptEvents;
+
+    String result;
+    serializeJson(doc, result);
+    return result;
+}
+
+String C6Enhanced::getSystemInfoJson() {
+    DynamicJsonDocument doc(1024);
+
+    JsonObject system = doc.createNestedObject("system");
+    system["chipModel"] = ESP.getChipModel();
+    system["chipRevision"] = ESP.getChipRevision();
+    system["chipCores"] = ESP.getChipCores();
+    system["cpuFreq"] = ESP.getCpuFreqMHz();
+    system["flashSize"] = ESP.getFlashChipSize();
+    system["sketchSize"] = ESP.getSketchSize();
+    system["freeSketchSpace"] = ESP.getFreeSketchSpace();
+
+    JsonObject config = doc.createNestedObject("configuration");
+    config["displayCommEnabled"] = displayCommEnabled;
+    config["displayBaudRate"] = displayConfig.baudRate;
+    config["pinCount"] = pinConfigs.size();
+    config["monitorInterval"] = pinScanInterval;
+
+    String result;
+    serializeJson(doc, result);
+    return result;
+}
+
+void C6Enhanced::scanPinStates() {
+    if (millis() - lastPinScan < pinScanInterval) {
+        return;
+    }
+
+    for (auto &config : pinConfigs) {
+        if (!config.monitorEnabled) {
+            continue;
+        }
+
+        // Read digital state
+        if (config.isDigital) {
+            int newValue = ::digitalRead(config.pin);
+            if (newValue != config.digitalValue) {
+                config.digitalValue = newValue;
+                config.lastChange = millis();
+                config.hasChanged = true;
+                statistics.pinStateChanges++;
+            }
+        }
+
+        // Read analog state
+        if (config.isAnalog) {
+            int newValue = ::analogRead(config.pin);
+            if (abs(newValue - config.analogValue) > config.changeThreshold) {
+                config.analogValue = newValue;
+                config.voltage = (newValue * 3.3) / 4095.0;
+                config.lastChange = millis();
+                config.hasChanged = true;
+            }
+        }
+    }
+
+    lastPinScan = millis();
+}
+
+void C6Enhanced::poll() {
+    // Update statistics periodically
+    if (millis() - lastStatsUpdate > statsUpdateInterval) {
+        updateStatistics();
+    }
+
+    // Scan pin states if monitoring is enabled
+    scanPinStates();
+}
+
+String C6Enhanced::pinModeToString(uint8_t mode) {
+    switch (mode) {
+        case INPUT:
+            return "INPUT";
+        case OUTPUT:
+            return "OUTPUT";
+        case INPUT_PULLUP:
+            return "INPUT_PULLUP";
+        case INPUT_PULLDOWN:
+            return "INPUT_PULLDOWN";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+bool C6Enhanced::isValidPin(uint8_t pin) {
+    // ESP32-C6 has GPIO 0-23
+    return (pin <= 23);
+}
+
+bool C6Enhanced::isPinAnalogCapable(uint8_t pin) {
+    // ESP32-C6 ADC1 channels: GPIO 0-6
+    return (pin >= 0 && pin <= 6);
+}
+
+std::vector<uint8_t> C6Enhanced::getAvailablePins() {
+    std::vector<uint8_t> pins;
+    for (uint8_t i = 0; i <= 23; i++) {
+        pins.push_back(i);
+    }
+    return pins;
+}
+
+// Global C6 enhanced instance
+C6Enhanced &c6Enhanced = C6Enhanced::getInstance();
 
 // External references needed by C6 module
 extern AsyncWebServer server;
