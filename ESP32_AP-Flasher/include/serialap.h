@@ -1,6 +1,7 @@
 #include <Arduino.h>
+#include "commstructs.h"
 
-extern struct espSetChannelPower curChannel;
+extern espSetChannelPower curChannel;
 
 #define AP_STATE_OFFLINE 0
 #define AP_STATE_ONLINE 1
@@ -44,11 +45,11 @@ extern volatile ApSerialState gSerialTaskState;
 
 void APTask(void* parameter);
 
-bool sendCancelPending(struct pendingData* pending);
-bool sendDataAvail(struct pendingData* pending);
+bool sendCancelPending(pendingData* pending);
+bool sendDataAvail(pendingData* pending);
 bool sendPing();
 void APEnterEarlyReset();
-bool sendChannelPower(struct espSetChannelPower* scp);
+bool sendChannelPower(espSetChannelPower* scp);
 void rxSerialTask2(void* parameter);
 void APTagReset();
 bool bringAPOnline(uint8_t newState = AP_STATE_ONLINE);

@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <HTTPClient.h>
-#include <WiFi.h>
 #include <MD5Builder.h>
+#include <WiFi.h>
 #include <time.h>
 
 #include <algorithm>
@@ -452,8 +452,7 @@ void processXferComplete(struct espXferComplete* xfc, bool local) {
             uint8_t dataType = queueItem->pendingdata.availdatainfo.dataType;
             if (config.preview && dataType != DATATYPE_FW_UPDATE && dataType != DATATYPE_NOUPDATE) {
                 contentFS->rename(queueItem->filename, String(dst_path));
-                }
-            else {
+            } else {
                 if (queueItem->pendingdata.availdatainfo.dataType != DATATYPE_FW_UPDATE) contentFS->remove(queueItem->filename);
             }
         }
@@ -608,7 +607,7 @@ void processDataReq(struct espAvailDataReq* eadr, bool local, IPAddress remoteIP
     if (local) {
         sprintf(buffer, "<ADR %02X%02X%02X%02X%02X%02X%02X%02X\r\n\0", eadr->src[7], eadr->src[6], eadr->src[5], eadr->src[4], eadr->src[3], eadr->src[2], eadr->src[1], eadr->src[0]);
         Serial.print(buffer);
-        checkQueue(eadr->src);   // experiemental 3/26/25: redundant check
+        checkQueue(eadr->src);  // experiemental 3/26/25: redundant check
     }
 
     if (local) {
@@ -760,7 +759,6 @@ bool sendTagMac(const uint8_t* dst, const uint64_t newmac, bool local) {
     pending.availdatainfo.dataType = DATATYPE_COMMAND_DATA;
     pending.availdatainfo.dataTypeArgument = 0x23;
     pending.availdatainfo.nextCheckIn = 0;
-    
 
     pending.availdatainfo.dataVer = newmac;
     pending.availdatainfo.dataSize = 0;
@@ -931,7 +929,7 @@ bool dequeueItem(const uint8_t* targetMac, const uint64_t dataVer) {
 uint16_t countQueueItem(const uint8_t* targetMac) {
     std::unique_lock<std::mutex> lock(queueMutex);
     int count = std::count_if(pendingQueue.begin(), pendingQueue.end(),
-                              [targetMac](const PendingItem& item) {
+                              [targetMac](const PendingItem& item) -> bool {
                                   return memcmp(item.pendingdata.targetMac, targetMac, sizeof(item.pendingdata.targetMac)) == 0;
                               });
     return count;
@@ -988,8 +986,8 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
         taginfo->data = nullptr;
     } else {
         newPending.data = nullptr;
-        
-        if (pendingQueue.size() < 5) {   // maximized to 5 to save some memory
+
+        if (pendingQueue.size() < 5) {  // maximized to 5 to save some memory
             // optional: read data early, don't wait for block request.
             fs::File file = contentFS->open(newPending.filename);
             if (file) {
@@ -1029,6 +1027,3 @@ bool queueDataAvail(struct pendingData* pending, bool local) {
 
     return true;
 }
-
-
-

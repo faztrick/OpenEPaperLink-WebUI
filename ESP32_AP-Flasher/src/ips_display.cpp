@@ -399,7 +399,7 @@ int32_t findId(uint8_t mac[8]) {
 }
 
 void sendAvail(uint8_t wakeupReason) {
-    struct espAvailDataReq eadr = {0};
+    espAvailDataReq eadr = {0};
     uint8_t mac[6];
     WiFi.macAddress(mac);
     memcpy(&eadr.src, mac, 6);
@@ -535,7 +535,7 @@ void yellow_ap_display_loop(void) {
 
             tftLogscreen = false;
 
-            struct espXferComplete xfc = {0};
+            espXferComplete xfc = {0};
             memcpy(xfc.src, tag->mac, 8);
             processXferComplete(&xfc, true);
         }

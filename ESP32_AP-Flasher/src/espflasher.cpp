@@ -1,3 +1,5 @@
+#include "espflasher.h"
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <FS.h>
@@ -9,11 +11,10 @@
 #include "esp_littlefs.h"
 #include "storage.h"
 #include "tag_db.h"
-#include "web.h"
-#include "espflasher.h"
 #include "util.h"
+#include "web.h"
 
-#define LOG(format, ... ) Serial.printf(format,## __VA_ARGS__)
+#define LOG(format, ...) Serial.printf(format, ##__VA_ARGS__)
 
 #ifndef FLASHER_DEBUG_PORT
 #define FLASHER_DEBUG_PORT 2
@@ -132,25 +133,25 @@ bool downloadAndWriteBinary(String &filename, const char *url) {
     bool Ret = false;
     bool bHaveFsMutex = false;
 
-    LOG("downloadAndWriteBinary: url %s\n",url);
+    LOG("downloadAndWriteBinary: url %s\n", url);
     binaryHttp.begin(url);
     binaryHttp.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     do {
         int binaryResponseCode = binaryHttp.GET();
-        if(binaryResponseCode != HTTP_CODE_OK) {
+        if (binaryResponseCode != HTTP_CODE_OK) {
             wsSerial("http error " + String(binaryResponseCode) + " fetching " + String(url));
             break;
         }
         int contentLength = binaryHttp.getSize();
-        LOG("contentLength %d\r\n",contentLength);
-        if(contentLength < 0) {
+        LOG("contentLength %d\r\n", contentLength);
+        if (contentLength < 0) {
             wsSerial("Couldn't get contentLength");
             break;
         }
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         bHaveFsMutex = true;
         File file = contentFS->open(filename, "wb");
-        if(!file) {
+        if (!file) {
             wsSerial("file open error " + String(filename));
             break;
         }
@@ -158,15 +159,15 @@ bool downloadAndWriteBinary(String &filename, const char *url) {
         WiFiClient *stream = binaryHttp.getStreamPtr();
         uint8_t buffer[1024];
         size_t totalBytesRead = 0;
-     // timeout if we don't average at least 1k bytes/second
+        // timeout if we don't average at least 1k bytes/second
         unsigned long timeOut = millis() + contentLength;
-        while(stream->connected() && totalBytesRead < contentLength) {
+        while (stream->connected() && totalBytesRead < contentLength) {
             size_t bytesRead;
             size_t bytesToRead;
-            if(stream->available()) {
-                bytesToRead = min(sizeof(buffer), (size_t) stream->available());
+            if (stream->available()) {
+                bytesToRead = min(sizeof(buffer), (size_t)stream->available());
                 bytesRead = stream->readBytes(buffer, bytesToRead);
-                if(bytesRead == 0 || millis() > timeOut) {
+                if (bytesRead == 0 || millis() > timeOut) {
                     wsSerial("Download time out");
                     break;
                 }
@@ -179,25 +180,25 @@ bool downloadAndWriteBinary(String &filename, const char *url) {
         }
         file.close();
 
-        if(!stream->connected()) {
-           wsSerial("Connection dropped during transfer");
-           break;
+        if (!stream->connected()) {
+            wsSerial("Connection dropped during transfer");
+            break;
         }
         file = contentFS->open(filename, "r");
-        if(!file) {
+        if (!file) {
             wsSerial("file open error " + String(filename));
             break;
         }
-        if(file.size() == contentLength) {
+        if (file.size() == contentLength) {
             Ret = true;
         } else {
             wsSerial("Download failed, " + String(file.size()) + " bytes");
         }
         file.close();
-    } while(false);
+    } while (false);
     binaryHttp.setReuse(false);
     binaryHttp.end();
-    if(bHaveFsMutex) {
+    if (bHaveFsMutex) {
         xSemaphoreGive(fsMutex);
     }
 
@@ -205,124 +206,123 @@ bool downloadAndWriteBinary(String &filename, const char *url) {
 }
 
 bool FlashC6_H2(const char *RepoUrl) {
-    String JsonFilename = "/firmware_" SHORT_CHIP_NAME ".json" ;
+    String JsonFilename = "/firmware_" SHORT_CHIP_NAME ".json";
     bool Ret = false;
     bool bLoaderInit = false;
     bool bDownload = strlen(RepoUrl) > 0;
     int retry;
     DynamicJsonDocument jsonDoc(2048);
 
-    LOG("%s#%d: ",__FUNCTION__,__LINE__); util::printHeap();
+    LOG("%s#%d: ", __FUNCTION__, __LINE__);
+    util::printHeap();
 
     do {
-        if(bDownload) {
-           String FileUrl = RepoUrl + JsonFilename;
-            if(!downloadAndWriteBinary(JsonFilename, FileUrl.c_str())) {
-               LOG("%s#%d: ",__FUNCTION__,__LINE__); util::printHeap();
+        if (bDownload) {
+            String FileUrl = RepoUrl + JsonFilename;
+            if (!downloadAndWriteBinary(JsonFilename, FileUrl.c_str())) {
+                LOG("%s#%d: ", __FUNCTION__, __LINE__);
+                util::printHeap();
                 break;
             }
         }
 
         File readfile = contentFS->open(JsonFilename, "r");
-        if(!readfile) {
+        if (!readfile) {
             wsSerial("load " + JsonFilename + ": Failed to open file");
             return true;
         }
         DeserializationError jsonError = deserializeJson(jsonDoc, readfile);
 
-        if(jsonError) {
+        if (jsonError) {
             wsSerial(String("json error parsing") + JsonFilename);
             break;
         }
 
-        if(!bDownload) {
-           Ret = true;
-           break;
+        if (!bDownload) {
+            Ret = true;
+            break;
         }
 
         JsonArray jsonArray = jsonDoc.as<JsonArray>();
-        for(JsonObject obj : jsonArray) {
+        for (JsonObject obj : jsonArray) {
             String filename = "/" + obj["filename"].as<String>();
             String binaryUrl = RepoUrl + filename;
 
-            for(retry = 0; retry < 10; retry++) {
-                if(downloadAndWriteBinary(filename, binaryUrl.c_str())) {
+            for (retry = 0; retry < 10; retry++) {
+                if (downloadAndWriteBinary(filename, binaryUrl.c_str())) {
                     break;
                 }
                 wsSerial("Retry " + String(retry));
-                if(retry < 9) {
+                if (retry < 9) {
                     delay(1000);
                 }
             }
-            if(retry == 10) {
+            if (retry == 10) {
                 break;
             }
         }
-        if(retry < 10) {
-           Ret = true;
+        if (retry < 10) {
+            Ret = true;
         }
-    } while(false);
+    } while (false);
 
-    if(Ret == true) do {
-       Ret = false;
-        const loader_esp32_config_t config = {
-            .baud_rate = 115200,
-            .uart_port = FLASHER_DEBUG_PORT,
-            .uart_rx_pin = FLASHER_DEBUG_TXD,
-            .uart_tx_pin = FLASHER_DEBUG_RXD,
-            .reset_trigger_pin = FLASHER_AP_RESET,
-            .gpio0_trigger_pin = FLASHER_DEBUG_PROG,
-        };
+    if (Ret == true) do {
+            Ret = false;
+            const loader_esp32_config_t config = {
+                .baud_rate = 115200,
+                .uart_port = FLASHER_DEBUG_PORT,
+                .uart_rx_pin = FLASHER_DEBUG_TXD,
+                .uart_tx_pin = FLASHER_DEBUG_RXD,
+                .reset_trigger_pin = FLASHER_AP_RESET,
+                .gpio0_trigger_pin = FLASHER_DEBUG_PROG,
+            };
 
-        bLoaderInit = true;
-        if(loader_port_esp32_init(&config) != ESP_LOADER_SUCCESS) {
-            wsSerial("Serial initialization failed");
-            break;
-        }
+            bLoaderInit = true;
+            if (loader_port_esp32_init(&config) != ESP_LOADER_SUCCESS) {
+                wsSerial("Serial initialization failed");
+                break;
+            }
 
-        if(connect_to_target(115200) != ESP_LOADER_SUCCESS) {
-            wsSerial("Connection to the " SHORT_CHIP_NAME " failed");
-            break;
-        }
+            if (connect_to_target(115200) != ESP_LOADER_SUCCESS) {
+                wsSerial("Connection to the " SHORT_CHIP_NAME " failed");
+                break;
+            }
 
-        if(esp_loader_get_target() != ESP_CHIP_TYPE) {
-            wsSerial("Connected to wrong ESP32 type");
-            break;
-        }
-        wsSerial("Connected to ESP32-" SHORT_CHIP_NAME);
-        int maxRetries = 5;
-        esp_loader_error_t err;
+            if (esp_loader_get_target() != ESP_CHIP_TYPE) {
+                wsSerial("Connected to wrong ESP32 type");
+                break;
+            }
+            wsSerial("Connected to ESP32-" SHORT_CHIP_NAME);
+            int maxRetries = 5;
+            esp_loader_error_t err;
 
-        JsonArray jsonArray = jsonDoc.as<JsonArray>();
-        for(JsonObject obj : jsonArray) {
-            String filename = "/" + obj["filename"].as<String>();
-            const char *addressStr = obj["address"];
-            uint32_t address = strtoul(addressStr, NULL, 16);
+            JsonArray jsonArray = jsonDoc.as<JsonArray>();
+            for (JsonObject obj : jsonArray) {
+                String filename = "/" + obj["filename"].as<String>();
+                const char *addressStr = obj["address"];
+                uint32_t address = strtoul(addressStr, NULL, 16);
 
-            for(int retry = 0; retry < maxRetries; retry++) {
-                err = flash_binary(filename, address);
-                if(err == ESP_LOADER_SUCCESS) {
-                   Ret = true;
-                   break;
+                for (int retry = 0; retry < maxRetries; retry++) {
+                    err = flash_binary(filename, address);
+                    if (err == ESP_LOADER_SUCCESS) {
+                        Ret = true;
+                        break;
+                    }
+                    Serial.printf("Flash failed with error %d. Retrying...\n", err);
+                    delay(1000);
                 }
-                Serial.printf("Flash failed with error %d. Retrying...\n", err);
-                delay(1000);
+                if (err != ESP_LOADER_SUCCESS) {
+                    break;
+                }
             }
-            if(err != ESP_LOADER_SUCCESS) {
-                break;
-            }
-        }
-        Serial.println("Done!");
-    } while(false);
+            Serial.println("Done!");
+        } while (false);
 
-    if(bLoaderInit) {
+    if (bLoaderInit) {
         loader_port_esp32_deinit();
     }
 
-    LOG("%s#%d: ",__FUNCTION__,__LINE__); util::printHeap();
+    LOG("%s#%d: ", __FUNCTION__, __LINE__);
+    util::printHeap();
     return Ret;
 }
-
-
-
-

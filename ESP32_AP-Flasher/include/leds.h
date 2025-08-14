@@ -5,6 +5,25 @@
 #include <FastLED.h>
 #endif
 
+// LED flash control structure
+struct ledFlash {
+    uint8_t mode;
+    uint8_t flashDuration;
+    uint8_t color1;
+    uint8_t color2;
+    uint8_t color3;
+    uint8_t flashCount1;
+    uint8_t flashCount2;
+    uint8_t flashCount3;
+    uint8_t delay1;
+    uint8_t delay2;
+    uint8_t delay3;
+    uint8_t flashSpeed1;
+    uint8_t flashSpeed2;
+    uint8_t flashSpeed3;
+    uint8_t repeats;
+} __attribute__((packed));
+
 const uint8_t PROGMEM gamma8[] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
@@ -22,7 +41,7 @@ const uint8_t PROGMEM gamma8[] = {
     144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
     177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255};
-    
+
 void ledTask(void* parameter);
 void setBrightness(int brightness);
 void updateBrightnessFromConfig();

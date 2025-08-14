@@ -9,8 +9,8 @@
 #ifndef WIFI_MANAGER_H
 #define WIFI_MANAGER_H
 
-#include <esp_wifi.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 enum WifiStatus {
     NOINIT,
@@ -43,7 +43,7 @@ class WifiManager {
     bool waitForConnection();
     void pollSerial();
     static void terminalLog(String text);
-    static String buildHostname(esp_mac_type_t mac_type);
+    static String buildHostname(wifi_interface_t mac_type);
 
    public:
     WifiManager();

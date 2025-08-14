@@ -1,12 +1,12 @@
 #ifndef NEWPROTO_H
-#define NEWPROTO_H 
+#define NEWPROTO_H
 
-#include<Arduino.h>
+#include <Arduino.h>
 #pragma pack(push, 1)
 
-#include "../../oepl-definitions.h"
-#include "../../oepl-proto.h"
-#include "../../oepl-esp-ap-proto.h"
+#include "../oepl-definitions.h"
+#include "../oepl-esp-ap-proto.h"
+#include "../oepl-proto.h"
 
 #define BLOCK_XFER_BUFFER_SIZE BLOCK_DATA_SIZE + sizeof(struct blockData)
 
@@ -47,6 +47,32 @@ struct TagInfo {
     uint8_t reserved[8];
 } __packed;
 
+// Missing structures needed for compilation
+struct AvailDataInfo {
+    uint8_t checksum;
+    uint8_t dataType;
+    uint8_t dataTypeArgument;
+    uint64_t dataVer;
+    uint32_t dataSize;
+    uint16_t nextCheckIn;
+} __packed;
+
+struct pendingData {
+    uint8_t targetMac[8];
+    struct AvailDataInfo availdatainfo;
+} __packed;
+
+// Extended blockRequest with blockId alias for compatibility
+typedef struct {
+    uint8_t opcode;
+    uint8_t tagid;
+    union {
+        uint16_t block;
+        uint16_t blockId;  // Alias for block field
+    };
+    uint16_t blocks;
+} blockRequestExt;
+
 #pragma pack(pop)
 
-#endif // NEWPROTO_H
+#endif  // NEWPROTO_H
