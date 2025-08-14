@@ -1,5 +1,9 @@
 #include <Arduino.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+
 #ifdef HAS_RGB_LED
 #define FASTLED_INTERNAL
 #include <FastLED.h>

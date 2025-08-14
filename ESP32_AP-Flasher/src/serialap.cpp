@@ -5,7 +5,6 @@
 #include <system.h>
 
 #include "commstructs.h"
-#include "contentmanager.h"
 #include "flasher.h"
 #include "leds.h"
 #include "newproto.h"
@@ -13,7 +12,7 @@
 #include "settings.h"
 #include "storage.h"
 #include "web.h"
-#include "wifi_utils.h"
+#include "wifi_unified_module.h"
 #include "zbs_interface.h"
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
@@ -1127,7 +1126,7 @@ void checkWaitPowerCycle() {
 #endif
 }
 void segmentedShowIp() {
-    IPAddress IP = wifiUtils.localIP();
+    IPAddress IP = IPAddress(wifiUnified.getIP());
     char temp[IP_DISPLAY_BUFFER_SIZE];
 
     vTaskDelay(pdMS_TO_TICKS(SEGMENTED_NOTIFICATION_DELAY));

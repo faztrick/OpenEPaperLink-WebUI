@@ -145,5 +145,3 @@ extern Arduino_RGB_Display *gfx;
 //
 // void TFTLog(String text);
 void sendAvail(uint8_t wakeupReason);
-
-#endif

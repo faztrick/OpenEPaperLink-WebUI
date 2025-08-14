@@ -10,11 +10,9 @@
 
 // Core utilities - consolidated
 #include "core_utilities.h"
-#include "json_config.h"  // Modern unified configuration system
-
-// Main application modules
-#include "contentmanager.h"
 #include "flasher.h"
+#include "json_config.h"  // Modern unified configuration system
+// content manager removed
 #include "serial_commands.h"
 #include "serialap.h"
 #include "settings.h"
@@ -22,7 +20,7 @@
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"
-#include "wifi_utils.h"
+#include "wifi_unified_module.h"
 
 // Optional hardware modules
 #ifdef HAS_EXT_FLASHER
@@ -223,7 +221,7 @@ void setup() {
     }
     */
 
-    wifiUtils.initEth();
+    wifiUnified.initialize();
     initAPconfig();
 
     updateLanguageFromConfig();
@@ -333,7 +331,7 @@ void loop() {
     }
 
     ws.cleanupClients();
-    wifiUtils.poll();
+    // wifiUnified.poll();
 
     // Process serial commands
     SerialCommandHandler& serialCmdHandler = SerialCommandHandler::getInstance();
@@ -343,17 +341,13 @@ void loop() {
         wsSendSysteminfo();
     }
     if (intervalVars.doRun() && config.runStatus != RUNSTATUS_STOP) {
-#ifndef USE_DUMMY_CONTENT_MANAGER
-        checkVars();
-#endif
+        // content manager removed: no-op
     }
     if (intervalSaveDB.doRun() && config.runStatus != RUNSTATUS_STOP) {
         saveDB("/current/tagDB.json");
     }
     if (intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO)) {
-#ifndef USE_DUMMY_CONTENT_MANAGER
-        contentRunner();
-#endif
+        // content manager removed: no-op
     }
 
 #ifdef HAS_TFT

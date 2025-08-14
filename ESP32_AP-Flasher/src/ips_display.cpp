@@ -7,7 +7,7 @@
 #include "newproto.h"
 #include "storage.h"
 #include "tag_db.h"
-#include "wifi_utils.h"  // Use centralized WiFi utilities
+#include "wifi_unified_module.h"  // Use centralized WiFi utilities
 
 // TFT display support removed
 // #ifdef HAS_TFT
@@ -402,7 +402,7 @@ void sendAvail(uint8_t wakeupReason) {
     memcpy(&eadr.src, mac, 6);
 
     // Use centralized WiFi utilities for RSSI
-    WiFiConnectionInfo displayInfo = WiFiUtils::getInstance().getConnectionInfo();
+    ConnectionInfo displayInfo = wifiUnified.getModule()->getConnectionInfo();
     eadr.adr.lastPacketRSSI = displayInfo.rssi;
     eadr.adr.currentChannel = config.channel;
 #ifdef TFT_HW_TYPE

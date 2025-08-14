@@ -74,7 +74,7 @@ enum class HttpStatus : uint16_t {
 // ============================================================================
 
 template <typename T>
-class Result {
+class FrameworkResult {
    private:
     bool _success;
     T _value;
@@ -82,12 +82,11 @@ class Result {
     uint32_t _errorCode;
 
    public:
-    Result(const T& value) : _success(true), _value(value), _errorCode(0) {}
-    Result(const String& error, uint32_t code = 0) : _success(false), _error(error), _errorCode(code) {}
+    FrameworkResult(const T& value) : _success(true), _value(value), _errorCode(0) {}
+    FrameworkResult(const String& error, uint32_t code = 0) : _success(false), _error(error), _errorCode(code) {}
 
     bool isSuccess() const { return _success; }
     bool isError() const { return !_success; }
-
     const T& getValue() const { return _value; }
     const String& getError() const { return _error; }
     uint32_t getErrorCode() const { return _errorCode; }
@@ -99,7 +98,7 @@ class Result {
 };
 
 // Specialized Result for operations that don't return a value
-using OperationResult = Result<bool>;
+using OperationResult = FrameworkResult<bool>;
 
 // ============================================================================
 // Configuration Management Framework
@@ -439,7 +438,7 @@ bool getBoolParameter(AsyncWebServerRequest* request, const String& param, bool 
 int getIntParameter(AsyncWebServerRequest* request, const String& param, int defaultValue = 0);
 
 // JSON parsing helpers
-Result<DynamicJsonDocument> parseJsonBody(const String& body, size_t maxSize = Framework::JSON_LARGE_BUFFER);
+FrameworkResult<DynamicJsonDocument> parseJsonBody(const String& body, size_t maxSize = Framework::JSON_LARGE_BUFFER);
 bool validateJsonSchema(const JsonObject& json, const std::vector<String>& requiredFields);
 
 // CORS and headers

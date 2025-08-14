@@ -1,12 +1,10 @@
 /**
  * @file serial_commands.cpp
- * @brief Optimized serial command handler for OpenEPaperLink ESP32 AP-Flasher
+ * @brief Serial command handlers for the ESP32 AP Flasher
  *
- * This implementation uses WiFiUtils for all WiFi operations to eliminate code duplication.
- * Focus is on serial protocol handling and command parsing only.
+ * This implementation uses UnifiedWiFiModule for all WiFi operations to eliminate code duplication.
  *
- * @author OpenEPaperLink Contributors
- * @version Optimized implementation using WiFiUtils
+ * @version Optimized implementation using UnifiedWiFiModule
  */
 
 #include "serial_commands.h"
@@ -39,7 +37,7 @@ void SerialCommandHandler::initialize() {
 }
 
 void SerialCommandHandler::setDefaultWiFiCredentials() {
-    // Add safety check to ensure WiFiUtils is ready
+    // Add safety check to ensure UnifiedWiFiModule is ready
     if (!CoreUtils::isInitialized()) {
         SAFE_LOG("⚠️ Core utilities not initialized, skipping WiFi defaults\n");
         return;
@@ -77,7 +75,7 @@ void SerialCommandHandler::setDefaultWiFiCredentials() {
     config.dns1 = "8.8.8.8";
     config.useStaticIP = true;
 
-    wifiUtils.saveConfig(config);
+    wifiModule->setConfiguration(config);
 
     SAFE_LOG("✅ WiFi defaults set (Faztrick/192.168.29.200)\n");
 
@@ -173,16 +171,14 @@ void SerialCommandHandler::handleCommand(const String& command) {
     } else if (mainCmd == "version") {
         handleVersionCommand();
     } else if (mainCmd == "status") {
-        // Use WiFiUtils for status
-        String statusJson = wifiUtils.getConnectionInfoJson();
-        sendJsonResponse(statusJson);
+        handleGetStatus(params);
     } else {
         sendErrorResponse("Unknown command: " + mainCmd + ". Type 'help' for available commands.");
     }
 }
 
 // ========================================================================
-// WIFI COMMAND HANDLERS (Using WiFiUtils)
+// WIFI COMMAND HANDLERS (Using UnifiedWiFiModule)
 // ========================================================================
 
 void SerialCommandHandler::handleWiFiCommand(const String& subCommand, const String& params) {
@@ -224,13 +220,13 @@ void SerialCommandHandler::handleWiFiCommand(const String& subCommand, const Str
 }
 
 void SerialCommandHandler::handleWiFiStatus() {
-    String statusJson = wifiUtils.getConnectionInfoJson();
+    String statusJson = wifiModule->getConnectionInfo().toJson();
     sendJsonResponse(statusJson);
 }
 
 void SerialCommandHandler::handleWiFiScan() {
     sendResponse("Starting WiFi scan...");
-    bool scanStarted = wifiUtils.performAsyncScan(true, 10000);
+    bool scanStarted = wifiModule->scanNetworks(true);
 
     if (scanStarted) {
         // Wait for scan completion with timeout
@@ -784,4 +780,163 @@ void SerialCommandHandler::sendErrorResponse(const String& error) {
 
 void SerialCommandHandler::sendJsonResponse(const String& json) {
     SerialUtils::sendJsonResponse(json, responseCallback);
+}
+
+void SerialCommands::handleSetConfig(const JsonObject& data) {
+    // Add safety check to ensure UnifiedWiFiModule is ready
+    if (!wifiModule) {
+        sendError("WiFi module not initialized");
+        return;
+    }
+
+    UnifiedWiFiConfig config = wifiModule->getConfiguration();
+
+    // Update configuration with new values
+    if (data.containsKey("ssid")) {
+        String ssid = data["ssid"];
+        if (ValidationUtils::isValidSSID(ssid)) {
+            config.ssid = ssid;
+        } else {
+            sendError("Invalid SSID (empty or too long)");
+            return;
+        }
+    }
+
+    if (data.containsKey("password")) {
+        String password = data["password"];
+        if (ValidationUtils::isValidPassword(password)) {
+            config.password = password;
+        } else {
+            sendError("Invalid password (too short for WPA2)");
+            return;
+        }
+    }
+
+    if (data.containsKey("static_ip")) {
+        String staticIP = data["static_ip"];
+        if (ValidationUtils::isValidIP(staticIP)) {
+            config.staticIP = staticIP;
+            config.useStaticIP = true;
+        } else {
+            sendError("Invalid static IP address format");
+            return;
+        }
+    }
+
+    if (data.containsKey("gateway")) {
+        String gateway = data["gateway"];
+        if (ValidationUtils::isValidIP(gateway)) {
+            config.gateway = gateway;
+        } else {
+            sendError("Invalid gateway IP address format");
+            return;
+        }
+    }
+
+    if (data.containsKey("subnet")) {
+        String subnet = data["subnet"];
+        if (ValidationUtils::isValidIP(subnet)) {
+            config.subnet = subnet;
+        } else {
+            sendError("Invalid subnet mask format");
+            return;
+        }
+    }
+
+    if (data.containsKey("dns")) {
+        String dns = data["dns"];
+        if (ValidationUtils::isValidIP(dns)) {
+            config.dns1 = dns;
+        } else {
+            sendError("Invalid DNS IP address format");
+            return;
+        }
+    }
+
+    // Save the updated configuration
+    wifiModule->setConfiguration(config);
+    sendSuccess("Configuration saved");
+}
+
+void SerialCommands::handleGetStatus(const JsonObject& data) {
+    if (wifiModule) {
+        // Use UnifiedWiFiModule for status
+        String statusJson = wifiModule->getConnectionInfo().toJson();
+        sendResponse("status", statusJson);
+    } else {
+        sendError("WiFi module not initialized");
+    }
+}
+
+void SerialCommands::handleConnect(const JsonObject& data) {
+    if (!CoreUtils::isInitialized()) {
+        sendError("System not ready for WiFi operations");
+        return;
+    }
+
+    WiFiConfig config = wifiUtils.loadConfig();
+
+    if (config.ssid.length() == 0) {
+        sendError("No SSID configured. Use wifi.setssid first.");
+        return;
+    }
+
+    // Log connection attempt without exposing password
+    sendResponse("Connecting to WiFi: " + config.ssid +
+                 " with password: " + (config.password.length() > 0 ? "***configured***" : "not set") +
+                 " IP: " + config.ip() +
+                 " Gateway: " + config.gateway +
+                 " Subnet: " + config.mask() +
+                 " DNS: " + config.dns());
+
+    // Use WiFiUtils for connection
+    bool connected = wifiUtils.connectToWifi(config.ssid, config.password, true);
+
+    if (connected) {
+        WiFiConnectionInfo info = wifiUtils.getConnectionInfo();
+
+        DynamicJsonDocument doc(SMALL_JSON_SIZE);
+        doc["connected"] = true;
+        doc["ssid"] = info.ssid;
+        doc["ip"] = info.ip;
+        doc["rssi"] = info.rssi;
+        doc["gateway"] = info.gateway;
+        doc["quality"] = WiFiHelpers::calculateSignalQuality(info.rssi);
+
+        String jsonString;
+        serializeJson(doc, jsonString);
+        sendJsonResponse(jsonString);
+
+        // Test connectivity and endpoints
+        testConnectivityAndEndpoints();
+    } else {
+        sendError("Failed to connect to WiFi");
+    }
+}
+
+void SerialCommands::handleDisconnect(const JsonObject& data) {
+    WiFi.disconnect();
+    sendResponse("WiFi disconnected");
+}
+
+void SerialCommands::handleGetWifiStatus(const JsonObject& data) {
+    if (wifiModule) {
+        String statusJson = wifiModule->getConnectionInfo().toJson();
+        sendResponse("wifi_status", statusJson);
+    } else {
+        sendError("WiFi module not initialized");
+    }
+}
+
+void SerialCommands::handleScanWifi(const JsonObject& data) {
+    if (wifiModule) {
+        bool scanStarted = wifiModule->scanNetworks(true);
+        if (scanStarted) {
+            sendSuccess("WiFi scan started");
+        } else {
+            sendError("Failed to start WiFi scan");
+        }
+    } else {
+        sendError("WiFi module not initialized");
+    }
 }

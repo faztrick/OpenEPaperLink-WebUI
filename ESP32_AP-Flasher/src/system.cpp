@@ -6,7 +6,7 @@
 
 #include "core_utilities.h"
 #include "json_config.h"
-#include "wifi_utils.h"
+#include "wifi_unified_module.h"
 
 void timeSyncCallback(struct timeval* tv) {
     LogUtils::logInfo("Time successfully synced");
@@ -87,4 +87,9 @@ void logSystemStartup() {
     AppConfig& config = CONFIG.getConfig();
     config.system.bootCount++;
     CONFIG.save();
+}
+
+bool isWifiConnected() {
+    // Check both general WiFi status and the unified module's status
+    return (WiFi.status() == WL_CONNECTED) || wifiUnified.isConnected();
 }

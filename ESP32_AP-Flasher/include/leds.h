@@ -1,5 +1,10 @@
 #include <Arduino.h>
 
+// If building for simulation or explicitly requesting dummy leds, include
+// the small dummy header which provides no-op implementations.
+#if defined(USE_DUMMY_LEDS) || defined(WOKWI_SIMULATION)
+#include "leds_dummy.h"
+#else
 #ifdef HAS_RGB_LED
 #define FASTLED_INTERNAL
 #include <FastLED.h>
@@ -39,3 +44,4 @@ void addFadeColor(CRGB cname);
 
 void quickBlink(uint8_t repeat);
 void addFadeMono(uint8_t value);
+#endif  // USE_DUMMY_LEDS || WOKWI_SIMULATION

@@ -6,11 +6,11 @@
 #include <functional>
 
 #include "core_utilities.h"
-#include "wifi_utils.h"
+#include "wifi_unified_module.h"
 
 // Serial Command Handler for ESP32_AP-Flasher
 // Provides custom serial commands for WiFi management and author endpoints
-// Uses WiFiUtils for all WiFi operations to avoid code duplication
+// Uses UnifiedWiFiModule for all WiFi operations to avoid code duplication
 
 class SerialCommandHandler {
    public:
@@ -38,7 +38,7 @@ class SerialCommandHandler {
     unsigned long lastApCheck = 0;
 
     // WiFi utilities reference
-    WiFiUtils& wifiUtils = WiFiUtils::getInstance();
+    UnifiedWiFiModule* wifiModule = wifiUnified.getModule();
 
     // Initialization helper
     void setDefaultWiFiCredentials();
@@ -52,7 +52,7 @@ class SerialCommandHandler {
     void handleHelpCommand();
     void handleVersionCommand();
 
-    // WiFi-specific handlers (using WiFiUtils)
+    // WiFi-specific handlers (using UnifiedWiFiModule)
     void handleWiFiStatus();
     void handleWiFiScan();
     void handleWiFiConnect(const String& params);
