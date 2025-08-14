@@ -923,7 +923,7 @@ void init_web() {
             preferences.putString("ssid", "");
             preferences.putString("pw", "");
             preferences.end();
-            
+
             destroyDB();
             cleanupCurrent();
             contentFS->remove("/AP_FW_Pack.bin");
@@ -2125,31 +2125,31 @@ void init_web() {
               NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             // Handle OpenAI API proxy request
             static String requestBody = "";
-            
+
             // Accumulate the request body
             if (index == 0) {
                 requestBody = "";
             }
-            
+
             for (size_t i = 0; i < len; i++) {
                 requestBody += (char)data[i];
             }
-            
+
             // When we have the complete body
             if (index + len == total) {
                 // Parse the request
                 DynamicJsonDocument requestDoc(8192);
                 DeserializationError error = deserializeJson(requestDoc, requestBody);
-                
+
                 if (error) {
                     request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
                     return;
                 }
-                
+
                 // Load OpenAI configuration
                 String configPath = "/openai_config.json";
                 DynamicJsonDocument configDoc(4096);
-                
+
                 if (contentFS->exists(configPath)) {
                     File configFile = contentFS->open(configPath, "r");
                     if (configFile) {
@@ -2157,31 +2157,31 @@ void init_web() {
                         configFile.close();
                     }
                 }
-                
+
                 // Extract config values
                 String apiKey = configDoc["openai"]["api_key"].as<String>();
                 String apiUrl = configDoc["openai"]["api_url"].as<String>();
-                
+
                 if (apiKey.isEmpty()) {
                     request->send(500, "application/json", "{\"error\":\"OpenAI API key not configured\"}");
                     return;
                 }
-                
+
                 if (apiUrl.isEmpty()) {
                     apiUrl = "https://api.openai.com/v1/chat/completions";
                 }
-                
+
                 // Make HTTP request to OpenAI
                 WiFiClientSecure client;
                 client.setInsecure(); // For simplicity - in production you should verify certificates
-                
+
                 HTTPClient http;
                 http.begin(client, apiUrl);
                 http.addHeader("Content-Type", "application/json");
                 http.addHeader("Authorization", "Bearer " + apiKey);
-                
+
                 int httpCode = http.POST(requestBody);
-                
+
                 if (httpCode > 0) {
                     String response = http.getString();
                     request->send(httpCode, "application/json", response);
@@ -2189,7 +2189,7 @@ void init_web() {
                     String errorMsg = "{\"error\":\"HTTP request failed: " + String(httpCode) + "\"}";
                     request->send(500, "application/json", errorMsg);
                 }
-                
+
                 http.end();
                 requestBody = ""; // Clear for next request
             } });

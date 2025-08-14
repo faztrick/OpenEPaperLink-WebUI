@@ -929,7 +929,7 @@ bool dequeueItem(const uint8_t* targetMac, const uint64_t dataVer) {
 uint16_t countQueueItem(const uint8_t* targetMac) {
     std::unique_lock<std::mutex> lock(queueMutex);
     int count = std::count_if(pendingQueue.begin(), pendingQueue.end(),
-                              [targetMac](const PendingItem& item) -> bool {
+                              [targetMac](const PendingItem& item) {
                                   return memcmp(item.pendingdata.targetMac, targetMac, sizeof(item.pendingdata.targetMac)) == 0;
                               });
     return count;

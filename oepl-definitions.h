@@ -12,11 +12,11 @@
 
 // overflow
 #define SOLUM_M2_BWR_16 0x20
-#define SOLUM_M2_BW_29_LOWTEMP 0x21  // low temperature version of the 2.9 M2 tag
+#define SOLUM_M2_BW_29_LOWTEMP 0x21	// low temperature version of the 2.9 M2 tag
 #define SOLUM_M2_BWR_27 0x22
 #define SOLUM_M2_BWR_29 0x23
 #define SOLUM_M2_BWR_42 0x24
-#define SOLUM_M2_BW_16 0x25
+#define SOLUM_M2_BW_16  0x25
 #define SOLUM_M2_BW_75 0x26
 #define SOLUM_M2_BW_29 0x27
 
@@ -30,7 +30,7 @@
 #define SOLUM_M3_BWY_22 0x39
 #define SOLUM_M3_BWR_26 0x32
 #define SOLUM_M3_BWY_26 0x3A
-#define SOLUM_M3_BWR_29 0x33  // the 'standard' SSD1619 version
+#define SOLUM_M3_BWR_29 0x33	// the 'standard' SSD1619 version
 #define SOLUM_M3_BWY_29 0x3B
 #define SOLUM_M3_BW_29 0x40
 #define SOLUM_M3_BWR_42 0x34
@@ -100,6 +100,8 @@
 #define ACEP_40 0xC1
 #define SPECTRA_73 0xC2
 
+
+
 // Capability flags
 #define CAPABILITY_HAS_LED 0x01
 #define CAPABILITY_SUPPORTS_COMPRESSION 0x02
@@ -112,29 +114,29 @@
 #define CAPABILITY_IS_BLE 0x0100
 
 #define DATATYPE_NOUPDATE 0
-#define DATATYPE_IMG_BMP 2  // ** deprecated
+#define DATATYPE_IMG_BMP 2			// ** deprecated
 #define DATATYPE_FW_UPDATE 3
-#define DATATYPE_IMG_DIFF 0x10      // always 1BPP ** deprecated
-#define DATATYPE_IMG_RAW_1BPP 0x20  // 2888 bytes for 1.54"  / 4736 2.9" / 15000 4.2"
-#define DATATYPE_IMG_RAW_2BPP 0x21  // 5776 bytes for 1.54"  / 9472 2.9" / 30000 4.2"
-#define DATATYPE_IMG_RAW_3BPP 0x22  // ACEP
-#define DATATYPE_IMG_RAW_4BPP 0x23  // Spectra
-#define DATATYPE_IMG_ZLIB 0x30      // compressed format.
-                                    // [uint32_t uncompressed size][2 byte zlib header][zlib compressed image]
-                                    // image format: [uint8_t header length][uint16_t width][uint16_t height][uint8_t bpp (lower 4)][img data]
+#define DATATYPE_IMG_DIFF 0x10             // always 1BPP ** deprecated
+#define DATATYPE_IMG_RAW_1BPP 0x20         // 2888 bytes for 1.54"  / 4736 2.9" / 15000 4.2"
+#define DATATYPE_IMG_RAW_2BPP 0x21         // 5776 bytes for 1.54"  / 9472 2.9" / 30000 4.2"
+#define DATATYPE_IMG_RAW_3BPP 0x22         // ACEP
+#define DATATYPE_IMG_RAW_4BPP 0x23         // Spectra
+#define DATATYPE_IMG_ZLIB 0x30             // compressed format.
+                                                    // [uint32_t uncompressed size][2 byte zlib header][zlib compressed image]
+                                                    // image format: [uint8_t header length][uint16_t width][uint16_t height][uint8_t bpp (lower 4)][img data]
 
-#define DATATYPE_IMG_G5 0x31  // G5 compressed 1BPP
+#define DATATYPE_IMG_G5 0x31          // G5 compressed 1BPP
 
-#define DATATYPE_UK_SEGMENTED 0x51      // Segmented data for the UK Segmented display type (contained in availableData Reply)
-#define DATATYPE_EU_SEGMENTED 0x52      // Segmented data for the EU/DE Segmented display type (contained in availableData Reply)
-#define DATATYPE_NFC_RAW_CONTENT 0xA0   // raw memory content for the NT3H1101
-#define DATATYPE_NFC_URL_DIRECT 0xA1    // URL format for NT3H1101
-#define DATATYPE_TAG_CONFIG_DATA 0xA8   // Config data for tag
-#define DATATYPE_COMMAND_DATA 0xAF      // Command for the tag to execute  (contained in availableData Reply)
-#define DATATYPE_CUSTOM_LUT_OTA 0xB0    // Custom OTA updated LUT
-#define DATATYPE_TIME_RAW_DATA 0xC0     // Used for showning the time and preparation for more data
-#define DATATYPE_CONFIG_DATA_TEST 0xC1  // Used to receive Display configurations to test
-#define DATATYPE_CONFIG_DATA_SAVE 0xC2  // Used to receive Display configurations to save in flash an reboot
+#define DATATYPE_UK_SEGMENTED 0x51         // Segmented data for the UK Segmented display type (contained in availableData Reply)
+#define DATATYPE_EU_SEGMENTED 0x52         // Segmented data for the EU/DE Segmented display type (contained in availableData Reply)
+#define DATATYPE_NFC_RAW_CONTENT 0xA0      // raw memory content for the NT3H1101
+#define DATATYPE_NFC_URL_DIRECT 0xA1       // URL format for NT3H1101
+#define DATATYPE_TAG_CONFIG_DATA 0xA8      // Config data for tag
+#define DATATYPE_COMMAND_DATA 0xAF         // Command for the tag to execute  (contained in availableData Reply)
+#define DATATYPE_CUSTOM_LUT_OTA 0xB0       // Custom OTA updated LUT
+#define DATATYPE_TIME_RAW_DATA 0xC0        // Used for showning the time and preparation for more data
+#define DATATYPE_CONFIG_DATA_TEST 0xC1	   // Used to receive Display configurations to test
+#define DATATYPE_CONFIG_DATA_SAVE 0xC2	   // Used to receive Display configurations to save in flash an reboot
 
 #define CMD_DO_REBOOT 0
 #define CMD_DO_SCAN 1
@@ -173,7 +175,7 @@
 #define CUSTOM_IMAGE_LOST_CONNECTION 0x02  // this image will be shown (if it exists on the tag) if the tag looses its connection
 #define CUSTOM_IMAGE_APFOUND 0x03          // this image will be shown during bootup if an AP was found
 #define CUSTOM_IMAGE_NOAPFOUND 0x04        // shown if during bootup no AP was found
-#define CUSTOM_IMAGE_LONGTERMSLEEP 0x05    // shown if long term sleep is entered via command
+#define CUSTOM_IMAGE_LONGTERMSLEEP 0x05     // shown if long term sleep is entered via command
 // UNUSED: 0x06-0x0F
 #define CUSTOM_IMAGE_SLIDESHOW 0x0F  // image is part of a slideshow
 #define CUSTOM_IMAGE_BUTTON1 0x10
@@ -190,4 +192,4 @@
 #define TAG_CUSTOM_SLIDESHOW_GLACIAL 0x09
 #define TAG_CUSTOM_MODE_WAIT_RFWAKE 0x20
 
-#endif  // OEPL_DEFINITIONS_H
+#endif // OEPL_DEFINITIONS_H

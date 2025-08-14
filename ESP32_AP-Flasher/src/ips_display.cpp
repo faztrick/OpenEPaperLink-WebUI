@@ -310,7 +310,7 @@ void touch_loop()
         last_touch_read = millis();
         ts.read();
         if (ts.isTouched)
-        {            
+        {
             touch_last_x = map(ts.points[0].x, 480, 0, 0, 480 - 1);
             touch_last_y = map(ts.points[0].y, 480, 0, 0, 480 - 1);
             Serial.printf("Touch position X: %i Y: %i\r\n", touch_last_x, touch_last_y);
@@ -399,7 +399,7 @@ int32_t findId(uint8_t mac[8]) {
 }
 
 void sendAvail(uint8_t wakeupReason) {
-    espAvailDataReq eadr = {0};
+    struct espAvailDataReq eadr = {0};
     uint8_t mac[6];
     WiFi.macAddress(mac);
     memcpy(&eadr.src, mac, 6);
@@ -535,7 +535,7 @@ void yellow_ap_display_loop(void) {
 
             tftLogscreen = false;
 
-            espXferComplete xfc = {0};
+            struct espXferComplete xfc = {0};
             memcpy(xfc.src, tag->mac, 8);
             processXferComplete(&xfc, true);
         }

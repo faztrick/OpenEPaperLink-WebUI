@@ -51,7 +51,3 @@ void updateLanguageFromConfig() {
         languageDateFormat[i] = languageObject["date_format"][i].as<String>();
     }
 }
-
-
-
-

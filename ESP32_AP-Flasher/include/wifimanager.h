@@ -43,7 +43,7 @@ class WifiManager {
     bool waitForConnection();
     void pollSerial();
     static void terminalLog(String text);
-    static String buildHostname(wifi_interface_t mac_type);
+    static String buildHostname(wifi_interface_t interface);
 
    public:
     WifiManager();

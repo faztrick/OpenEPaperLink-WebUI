@@ -8,8 +8,8 @@
 #define TAG_TYPE_M3_42 0x04
 
 // capabilities
-#define TAG_CAP_LED (1 << 0)
-#define TAG_CAP_COMP (1 << 1)
-#define TAG_CAP_CUSTOM_LUT (1 << 2)
+#define TAG_CAP_LED (1<<0)
+#define TAG_CAP_COMP (1<<1)
+#define TAG_CAP_CUSTOM_LUT (1<<2)
 
-#endif  // TAG_TYPES_H
+#endif // TAG_TYPES_H

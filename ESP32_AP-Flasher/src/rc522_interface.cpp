@@ -2,28 +2,27 @@
 
 #ifdef HAS_RC522
 
-#include "storage.h"
-#include "settings.h"
 #include <ArduinoJson.h>
+
+#include "settings.h"
+#include "storage.h"
 
 // Global instance
 RC522Interface rc522Interface;
 
-RC522Interface::RC522Interface() :
-    mfrc522(nullptr),
-    spiInterface(nullptr),
-    enabled(false),
-    monitoring(false),
-    autoRead(true),
-    debugMode(false),
-    rstPin(RC522_RST_PIN),
-    ssPin(RC522_SS_PIN),
-    sckPin(RC522_SCK_PIN),
-    misoPin(RC522_MISO_PIN),
-    mosiPin(RC522_MOSI_PIN),
-    readTimeout(1000),
-    lastCardCheck(0)
-{
+RC522Interface::RC522Interface() : mfrc522(nullptr),
+                                   spiInterface(nullptr),
+                                   enabled(false),
+                                   monitoring(false),
+                                   autoRead(true),
+                                   debugMode(false),
+                                   rstPin(RC522_RST_PIN),
+                                   ssPin(RC522_SS_PIN),
+                                   sckPin(RC522_SCK_PIN),
+                                   misoPin(RC522_MISO_PIN),
+                                   mosiPin(RC522_MOSI_PIN),
+                                   readTimeout(1000),
+                                   lastCardCheck(0) {
     // Initialize empty card info
     currentCard = {};
 }
@@ -34,23 +33,23 @@ RC522Interface::~RC522Interface() {
 
 bool RC522Interface::begin() {
     if (enabled) return true;
-    
+
     Serial.println("🔷 Initializing RC522 RFID Interface...");
-    
+
     // Initialize SPI interface for MFRC522
     spiInterface = &SPI;
     spiInterface->begin(sckPin, misoPin, mosiPin, ssPin);
-    
+
     // Initialize MFRC522 (pin, reset pin)
     mfrc522 = new MFRC522(ssPin, rstPin);
     if (!mfrc522) {
         Serial.println("❌ Failed to create MFRC522 instance");
         return false;
     }
-    
+
     // Initialize the MFRC522 with our SPI interface
     mfrc522->PCD_Init();
-    
+
     // Perform self-test
     if (!selfTest()) {
         Serial.println("❌ RC522 self-test failed");
@@ -58,62 +57,62 @@ bool RC522Interface::begin() {
         mfrc522 = nullptr;
         return false;
     }
-    
+
     // Initialize default keys
     initializeDefaultKeys();
-    
+
     // Load saved cards
     loadCardsFromStorage();
-    
+
     enabled = true;
-    
+
     Serial.printf("✅ RC522 RFID Interface initialized (SS: %d, RST: %d)\n", ssPin, rstPin);
     return true;
 }
 
 void RC522Interface::end() {
     if (!enabled) return;
-    
+
     stopMonitoring();
-    
+
     if (mfrc522) {
         mfrc522->PCD_SoftPowerDown();
         delete mfrc522;
         mfrc522 = nullptr;
     }
-    
+
     enabled = false;
     Serial.println("RC522 Interface stopped");
 }
 
 bool RC522Interface::isCardPresent() {
     if (!enabled || !mfrc522) return false;
-    
+
     // Check if a new card is present
     if (!mfrc522->PICC_IsNewCardPresent()) {
         return false;
     }
-    
+
     // Select the card
     if (!mfrc522->PICC_ReadCardSerial()) {
         return false;
     }
-    
+
     return true;
 }
 
 bool RC522Interface::readCard() {
     if (!enabled || !mfrc522) return false;
-    
+
     if (!isCardPresent()) {
         currentCard.isPresent = false;
         return false;
     }
-    
+
     // Read card information
     currentCard.uidSize = mfrc522->uid.size;
     memcpy(currentCard.uidBytes, mfrc522->uid.uidByte, currentCard.uidSize);
-    
+
     // Convert UID to string formats
     currentCard.uid = "";
     currentCard.uidHex = "";
@@ -127,11 +126,11 @@ bool RC522Interface::readCard() {
     }
     currentCard.uid.toUpperCase();
     currentCard.uidHex.toUpperCase();
-    
+
     // Determine card type
     currentCard.type = getCardType(mfrc522->PICC_GetType(mfrc522->uid.sak));
     currentCard.typeName = getCardTypeName(currentCard.type);
-    
+
     // Calculate block and sector counts based on card type
     switch (currentCard.type) {
         case CARD_TYPE_MIFARE_MINI:
@@ -147,27 +146,27 @@ bool RC522Interface::readCard() {
             currentCard.sectorCount = 40;
             break;
         default:
-            currentCard.blockCount = 64; // Default assumption
+            currentCard.blockCount = 64;  // Default assumption
             currentCard.sectorCount = 16;
             break;
     }
-    
+
     currentCard.isPresent = true;
     currentCard.lastSeen = millis();
-    
+
     if (debugMode) {
         printCardInfo();
     }
-    
+
     // Add to detected cards if monitoring
     if (monitoring) {
         updateCardDatabase(currentCard);
     }
-    
+
     // Halt card communication
     mfrc522->PICC_HaltA();
     mfrc522->PCD_StopCrypto1();
-    
+
     return true;
 }
 
@@ -177,27 +176,27 @@ void RC522Interface::clearCard() {
 
 RFIDResult RC522Interface::readBlock(uint8_t blockNumber, uint8_t* buffer, uint8_t bufferSize) {
     RFIDResult result = {false, "", "", 0};
-    
+
     if (!enabled || !mfrc522) {
         result.message = "RC522 not initialized";
         return result;
     }
-    
+
     if (!isCardPresent()) {
         result.message = "No card present";
         return result;
     }
-    
+
     // Authenticate before reading
     if (!authenticateWithAvailableKeys(blockNumber)) {
         result.message = "Authentication failed";
         result.errorCode = 1;
         return result;
     }
-    
+
     // Read the block
     MFRC522::StatusCode status = mfrc522->MIFARE_Read(blockNumber, buffer, &bufferSize);
-    
+
     if (status == MFRC522::STATUS_OK) {
         result.success = true;
         result.message = "Block read successfully";
@@ -206,39 +205,39 @@ RFIDResult RC522Interface::readBlock(uint8_t blockNumber, uint8_t* buffer, uint8
         result.message = "Read failed: " + String(mfrc522->GetStatusCodeName(status));
         result.errorCode = status;
     }
-    
+
     logOperation("ReadBlock", result.success, "Block " + String(blockNumber));
     return result;
 }
 
 RFIDResult RC522Interface::writeBlock(uint8_t blockNumber, const uint8_t* data, uint8_t dataSize) {
     RFIDResult result = {false, "", "", 0};
-    
+
     if (!enabled || !mfrc522) {
         result.message = "RC522 not initialized";
         return result;
     }
-    
+
     if (!isCardPresent()) {
         result.message = "No card present";
         return result;
     }
-    
+
     if (dataSize != 16) {
         result.message = "Data must be exactly 16 bytes";
         return result;
     }
-    
+
     // Authenticate before writing
     if (!authenticateWithAvailableKeys(blockNumber)) {
         result.message = "Authentication failed";
         result.errorCode = 1;
         return result;
     }
-    
+
     // Write the block
     MFRC522::StatusCode status = mfrc522->MIFARE_Write(blockNumber, (uint8_t*)data, dataSize);
-    
+
     if (status == MFRC522::STATUS_OK) {
         result.success = true;
         result.message = "Block written successfully";
@@ -246,7 +245,7 @@ RFIDResult RC522Interface::writeBlock(uint8_t blockNumber, const uint8_t* data, 
         result.message = "Write failed: " + String(mfrc522->GetStatusCodeName(status));
         result.errorCode = status;
     }
-    
+
     logOperation("WriteBlock", result.success, "Block " + String(blockNumber));
     return result;
 }
@@ -254,17 +253,17 @@ RFIDResult RC522Interface::writeBlock(uint8_t blockNumber, const uint8_t* data, 
 RFIDResult RC522Interface::readText(String& text) {
     RFIDResult result = {false, "", "", 0};
     text = "";
-    
+
     if (!isCardPresent()) {
         result.message = "No card present";
         return result;
     }
-    
+
     // Read sectors 1-15 (sector 0 contains manufacturing data)
     for (uint8_t sector = 1; sector < currentCard.sectorCount; sector++) {
         String sectorData;
         RFIDResult sectorResult = readSector(sector, sectorData);
-        
+
         if (sectorResult.success) {
             text += sectorData;
         } else {
@@ -272,12 +271,12 @@ RFIDResult RC522Interface::readText(String& text) {
             break;
         }
     }
-    
+
     // Remove trailing null characters and clean up
     while (text.length() > 0 && (text.charAt(text.length() - 1) == '\0' || text.charAt(text.length() - 1) == ' ')) {
         text.remove(text.length() - 1);
     }
-    
+
     if (text.length() > 0) {
         result.success = true;
         result.message = "Text read successfully";
@@ -285,62 +284,62 @@ RFIDResult RC522Interface::readText(String& text) {
     } else {
         result.message = "No readable text found";
     }
-    
+
     return result;
 }
 
 RFIDResult RC522Interface::writeText(const String& text, uint8_t startSector) {
     RFIDResult result = {false, "", "", 0};
-    
+
     if (!isCardPresent()) {
         result.message = "No card present";
         return result;
     }
-    
+
     if (startSector == 0) {
         result.message = "Cannot write to sector 0 (manufacturer block)";
         return result;
     }
-    
+
     // Convert text to bytes
     uint8_t textBytes[text.length() + 1];
     text.getBytes(textBytes, sizeof(textBytes));
-    
+
     uint16_t bytesWritten = 0;
     uint16_t totalBytes = text.length();
     uint8_t sector = startSector;
-    
+
     while (bytesWritten < totalBytes && sector < currentCard.sectorCount) {
         // Write to first 3 blocks of each sector (4th block is trailer)
         for (uint8_t block = 0; block < 3 && bytesWritten < totalBytes; block++) {
             uint8_t blockNumber = calculateBlockNumber(sector, block);
             uint8_t blockData[16] = {0};
-            
+
             // Copy up to 16 bytes
             uint8_t copyBytes = min(16, totalBytes - bytesWritten);
             memcpy(blockData, &textBytes[bytesWritten], copyBytes);
-            
+
             RFIDResult writeResult = writeBlock(blockNumber, blockData, 16);
             if (!writeResult.success) {
                 result.message = "Write failed at sector " + String(sector) + ", block " + String(block);
                 return result;
             }
-            
+
             bytesWritten += copyBytes;
         }
         sector++;
     }
-    
+
     result.success = true;
     result.message = "Text written successfully";
     result.data = String(bytesWritten) + " bytes written";
-    
+
     return result;
 }
 
 void RC522Interface::startMonitoring() {
     if (!enabled) return;
-    
+
     monitoring = true;
     Serial.println("📡 RC522 monitoring started");
 }
@@ -352,19 +351,19 @@ void RC522Interface::stopMonitoring() {
 
 bool RC522Interface::selfTest() {
     if (!mfrc522) return false;
-    
+
     // Perform RC522 self-test
     bool result = mfrc522->PCD_PerformSelfTest();
-    
+
     if (result) {
         Serial.println("✅ RC522 self-test passed");
     } else {
         Serial.println("❌ RC522 self-test failed");
     }
-    
+
     // Re-initialize after self-test
     mfrc522->PCD_Init();
-    
+
     return result;
 }
 
@@ -375,20 +374,20 @@ void RC522Interface::initializeDefaultKeys() {
     defaultKeyA.description = "Factory default key A (FF FF FF FF FF FF)";
     memset(defaultKeyA.keyA, 0xFF, 6);
     memset(defaultKeyA.keyB, 0xFF, 6);
-    
+
     RFIDKey defaultKeyB = {};
     defaultKeyB.name = "Default Key B";
     defaultKeyB.description = "Factory default key B (FF FF FF FF FF FF)";
     memset(defaultKeyB.keyA, 0xFF, 6);
     memset(defaultKeyB.keyB, 0xFF, 6);
-    
+
     RFIDKey transportKey = {};
     transportKey.name = "Transport Key";
     transportKey.description = "NFC Forum transport key (D3 F7 D3 F7 D3 F7)";
     uint8_t transportKeyBytes[] = {0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7};
     memcpy(transportKey.keyA, transportKeyBytes, 6);
     memcpy(transportKey.keyB, transportKeyBytes, 6);
-    
+
     keys.clear();
     keys.push_back(defaultKeyA);
     keys.push_back(defaultKeyB);
@@ -422,17 +421,28 @@ RC522CardType RC522Interface::getCardType(MFRC522::PICC_Type piccType) {
 
 String RC522Interface::getCardTypeName(RC522CardType type) {
     switch (type) {
-        case CARD_TYPE_MIFARE_MINI: return "MIFARE Mini";
-        case CARD_TYPE_MIFARE_1K: return "MIFARE 1K";
-        case CARD_TYPE_MIFARE_4K: return "MIFARE 4K";
-        case CARD_TYPE_MIFARE_UL: return "MIFARE Ultralight";
-        case CARD_TYPE_MIFARE_PLUS: return "MIFARE Plus";
-        case CARD_TYPE_MIFARE_DESFIRE: return "MIFARE DESFire";
-        case CARD_TYPE_TNP3XXX: return "TNP3XXX";
-        case CARD_TYPE_ISO_14443_4: return "ISO 14443-4";
-        case CARD_TYPE_ISO_18092: return "ISO 18092";
-        case CARD_TYPE_MIFARE_CLASSIC: return "MIFARE Classic";
-        default: return "Unknown";
+        case CARD_TYPE_MIFARE_MINI:
+            return "MIFARE Mini";
+        case CARD_TYPE_MIFARE_1K:
+            return "MIFARE 1K";
+        case CARD_TYPE_MIFARE_4K:
+            return "MIFARE 4K";
+        case CARD_TYPE_MIFARE_UL:
+            return "MIFARE Ultralight";
+        case CARD_TYPE_MIFARE_PLUS:
+            return "MIFARE Plus";
+        case CARD_TYPE_MIFARE_DESFIRE:
+            return "MIFARE DESFire";
+        case CARD_TYPE_TNP3XXX:
+            return "TNP3XXX";
+        case CARD_TYPE_ISO_14443_4:
+            return "ISO 14443-4";
+        case CARD_TYPE_ISO_18092:
+            return "ISO 18092";
+        case CARD_TYPE_MIFARE_CLASSIC:
+            return "MIFARE Classic";
+        default:
+            return "Unknown";
     }
 }
 
@@ -449,39 +459,37 @@ String RC522Interface::bytesToHex(uint8_t* buffer, uint8_t bufferSize) {
 
 bool RC522Interface::authenticateWithAvailableKeys(uint8_t blockNumber) {
     if (!mfrc522) return false;
-    
+
     // Calculate which sector this block is in
     uint8_t sector = blockNumber / 4;
-    
+
     // Try all available keys
     for (const RFIDKey& key : keys) {
         MFRC522::MIFARE_Key mifareKey;
         memcpy(mifareKey.keyByte, key.keyA, 6);
-        
+
         // Try Key A
         MFRC522::StatusCode status = mfrc522->PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_A, 
-            blockNumber, 
-            &mifareKey, 
-            &(mfrc522->uid)
-        );
-        
+            MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+            blockNumber,
+            &mifareKey,
+            &(mfrc522->uid));
+
         if (status == MFRC522::STATUS_OK) {
             if (debugMode) {
                 Serial.printf("🔑 Authenticated block %d with key: %s\n", blockNumber, key.name.c_str());
             }
             return true;
         }
-        
+
         // Try Key B
         memcpy(mifareKey.keyByte, key.keyB, 6);
         status = mfrc522->PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_B, 
-            blockNumber, 
-            &mifareKey, 
-            &(mfrc522->uid)
-        );
-        
+            MFRC522::PICC_CMD_MF_AUTH_KEY_B,
+            blockNumber,
+            &mifareKey,
+            &(mfrc522->uid));
+
         if (status == MFRC522::STATUS_OK) {
             if (debugMode) {
                 Serial.printf("🔑 Authenticated block %d with key: %s (Key B)\n", blockNumber, key.name.c_str());
@@ -489,7 +497,7 @@ bool RC522Interface::authenticateWithAvailableKeys(uint8_t blockNumber) {
             return true;
         }
     }
-    
+
     if (debugMode) {
         Serial.printf("❌ Failed to authenticate block %d with any available key\n", blockNumber);
     }
@@ -512,10 +520,10 @@ void RC522Interface::updateCardDatabase(const RFIDCardInfo& card) {
             return;
         }
     }
-    
+
     // Add new card
     detectedCards.push_back(card);
-    
+
     // Limit database size
     if (detectedCards.size() > 100) {
         detectedCards.erase(detectedCards.begin());
@@ -531,7 +539,7 @@ void RC522Interface::logOperation(const String& operation, bool success, const S
 
 String RC522Interface::getStatusJSON() {
     DynamicJsonDocument doc(1024);
-    
+
     doc["enabled"] = enabled;
     doc["monitoring"] = monitoring;
     doc["autoRead"] = autoRead;
@@ -541,7 +549,7 @@ String RC522Interface::getStatusJSON() {
     doc["cardPresent"] = currentCard.isPresent;
     doc["detectedCardsCount"] = detectedCards.size();
     doc["keysCount"] = keys.size();
-    
+
     if (currentCard.isPresent) {
         JsonObject cardObj = doc.createNestedObject("currentCard");
         cardObj["uid"] = currentCard.uid;
@@ -549,7 +557,7 @@ String RC522Interface::getStatusJSON() {
         cardObj["blockCount"] = currentCard.blockCount;
         cardObj["sectorCount"] = currentCard.sectorCount;
     }
-    
+
     String json;
     serializeJson(doc, json);
     return json;
@@ -560,7 +568,7 @@ void RC522Interface::printCardInfo() {
         Serial.println("No card present");
         return;
     }
-    
+
     Serial.println("📧 RFID Card Information:");
     Serial.printf("  UID: %s\n", currentCard.uid.c_str());
     Serial.printf("  Type: %s\n", currentCard.typeName.c_str());
@@ -572,19 +580,19 @@ void RC522Interface::printCardInfo() {
 RFIDResult RC522Interface::readSector(uint8_t sector, String& data) {
     RFIDResult result = {false, "", "", 0};
     data = "";
-    
+
     // Read first 3 blocks of the sector (4th block is trailer)
     for (uint8_t block = 0; block < 3; block++) {
         uint8_t blockNumber = calculateBlockNumber(sector, block);
         uint8_t buffer[18];
         uint8_t bufferSize = sizeof(buffer);
-        
+
         RFIDResult blockResult = readBlock(blockNumber, buffer, bufferSize);
         if (blockResult.success) {
             // Convert bytes to string, stopping at null terminator
             for (uint8_t i = 0; i < 16; i++) {
                 if (buffer[i] == 0) break;
-                if (buffer[i] >= 32 && buffer[i] <= 126) { // Printable ASCII
+                if (buffer[i] >= 32 && buffer[i] <= 126) {  // Printable ASCII
                     data += (char)buffer[i];
                 }
             }
@@ -593,7 +601,7 @@ RFIDResult RC522Interface::readSector(uint8_t sector, String& data) {
             return result;
         }
     }
-    
+
     result.success = true;
     result.message = "Sector read successfully";
     result.data = data;
@@ -637,4 +645,4 @@ bool compareCards(const RFIDCardInfo& card1, const RFIDCardInfo& card2) {
     return card1.uid == card2.uid;
 }
 
-#endif // HAS_RC522
+#endif  // HAS_RC522

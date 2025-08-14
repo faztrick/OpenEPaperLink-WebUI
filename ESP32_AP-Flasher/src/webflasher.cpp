@@ -460,7 +460,7 @@ void webFlasherTask(void* parameter) {
             vTaskDelay(1 / portTICK_PERIOD_MS);
         } else {
         */
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
         // }
     }
 }
@@ -562,5 +562,3 @@ void handleWSdata(uint8_t* data, size_t len, AsyncWebSocketClient* client) {
 }
 
 #endif
-
-

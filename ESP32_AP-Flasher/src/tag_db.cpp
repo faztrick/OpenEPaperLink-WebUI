@@ -337,7 +337,7 @@ void initAPconfig() {
     config.discovery = APconfig["discovery"].is<uint8_t>() ? APconfig["discovery"] : 0;
     config.showtimestamp = APconfig["showtimestamp"].is<uint8_t>() ? APconfig["showtimestamp"] : 0;
 #ifdef BLE_ONLY
-        config.ble = true;
+    config.ble = true;
 #endif
     // default wifi power 8.5 dbM
     // see https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/src/WiFiGeneric.h#L111
@@ -520,5 +520,3 @@ void popTagInfo(const uint8_t mac[8]) {
         }
     }
 }
-
-

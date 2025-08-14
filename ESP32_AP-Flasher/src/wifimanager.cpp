@@ -117,16 +117,15 @@ void WifiManager::terminalLog(String text) {
 }
 
 void WifiManager::poll() {
-
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
 
     if (eth_connected) {
         wifiStatus = ETHERNET;
-        if(!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000) {
+        if (!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000) {
             eth_timeout = 0;
             eth_connected = false;
         }
-    } else if(!eth_connected && wifiStatus == ETHERNET) {
+    } else if (!eth_connected && wifiStatus == ETHERNET) {
         wifiStatus = NOINIT;
         _APstarted = false;
         WiFi.mode(WIFI_STA);
@@ -232,7 +231,7 @@ void WifiManager::poll() {
 
 void WifiManager::initEth() {
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if(!eth_init) {
+    if (!eth_init) {
         eth_init = true;
         ETH.begin(
             ETH_PHY_ADDR,
@@ -323,7 +322,7 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     vTaskDelay(pdMS_TO_TICKS(200));
 
     // Set hostname before connecting
-    String hostname = buildHostname(ESP_MAC_WIFI_STA);
+    String hostname = buildHostname(WIFI_IF_STA);
     if (!WiFi.setHostname(hostname.c_str())) {
         Serial.printf("WARNING: Failed to set hostname: %s\n", hostname.c_str());
     }
@@ -534,10 +533,10 @@ void WifiManager::startManagementServer() {
     }
 }
 
-String WifiManager::buildHostname(esp_mac_type_t mac_type) {
+String WifiManager::buildHostname(wifi_interface_t interface) {
     char hostname[32] = "OpenEpaperLink-";
     uint8_t mac[6];
-    esp_read_mac(mac, mac_type);
+    esp_wifi_get_mac(interface, mac);
     char lastTwoBytes[5];
     snprintf(lastTwoBytes, sizeof(lastTwoBytes), "%02X%02X", mac[4], mac[5]);
 
@@ -606,7 +605,7 @@ void WifiManager::pollSerial() {
 
 void WifiManager::WiFiEvent(WiFiEvent_t event) {
     Serial.printf("[WiFi-event %d] ", event);
-    String eventname="";
+    String eventname = "";
 
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
@@ -648,8 +647,8 @@ void WifiManager::WiFiEvent(WiFiEvent_t event) {
 
         case ARDUINO_EVENT_ETH_START:
             eventname = "ETH Started";
-            //set eth hostname here
-            ETH.setHostname(buildHostname(ESP_MAC_ETH).c_str());
+            // set eth hostname here
+            ETH.setHostname(buildHostname(WIFI_IF_STA).c_str());
             eth_timeout = 0;
             break;
         case ARDUINO_EVENT_ETH_CONNECTED:

@@ -31,8 +31,20 @@ typedef struct {
 
 typedef struct {
     uint8_t src[8];
-    uint8_t tag_id;
-    uint8_t reserved;
+    struct {
+        uint8_t opcode;
+        uint8_t tagid;
+        uint16_t offset;
+        uint16_t length;
+        // Additional fields for ESP version
+        int8_t lastPacketRSSI;
+        uint8_t currentChannel;
+        uint8_t hwType;
+        uint8_t wakeupReason;
+        uint8_t capabilities;
+        uint16_t tagSoftwareVersion;
+        uint8_t customMode;
+    } adr;
 } espAvailDataReq;
 
 typedef struct {

@@ -149,6 +149,3 @@ void TagData::parse(const uint8_t src[8], const size_t id, const uint8_t* data, 
 }
 
 #endif
-
-
-

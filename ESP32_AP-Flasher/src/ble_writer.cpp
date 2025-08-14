@@ -35,8 +35,8 @@ int BLE_upload_state = BLE_UPLOAD_STATE_INIT;
 #define BLE_CMD_ACK_IS_SHOWN 200
 #define BLE_CMD_ACK_FW_UPDATED 201
 
-AvailDataInfo BLEavaildatainfo = {0};
-blockRequest BLEblkRequst = {0};
+struct AvailDataInfo BLEavaildatainfo = {0};
+struct blockRequest BLEblkRequst = {0};
 
 bool BLE_connected = false;
 bool BLE_new_notify = false;
@@ -265,7 +265,7 @@ void BLETask(void* parameter) {
                                     BLEavaildatainfo.dataTypeArgument = dataTypeArgument;
                                     BLEavaildatainfo.nextCheckIn = nextCheckin;
                                     BLEavaildatainfo.checksum = 0;
-                                    for (uint16_t c = 1; c < sizeof(AvailDataInfo); c++) {
+                                    for (uint16_t c = 1; c < sizeof(struct AvailDataInfo); c++) {
                                         BLEavaildatainfo.checksum += (uint8_t)((uint8_t*)&BLEavaildatainfo)[c];
                                     }
                                     BLE_upload_state = BLE_UPLOAD_STATE_INIT;
@@ -274,7 +274,7 @@ void BLETask(void* parameter) {
                                 } else {
                                     free(BLE_image_buffer);
                                     if (BLE_err_counter++ >= 5) {  // 5 Retries for a BLE Connection
-                                        espXferComplete reportStruct;
+                                        struct espXferComplete reportStruct;
                                         memcpy((uint8_t*)&reportStruct.src, BLE_curr_address, 8);
                                         processXferComplete(&reportStruct, true);
                                     }
@@ -300,7 +300,7 @@ void BLETask(void* parameter) {
                                 } else {
                                     free(BLE_image_buffer);
                                     if (BLE_err_counter++ >= 5) {  // 5 Retries for a BLE Connection
-                                        espXferComplete reportStruct;
+                                        struct espXferComplete reportStruct;
                                         memcpy((uint8_t*)&reportStruct.src, BLE_curr_address, 8);
                                         processXferComplete(&reportStruct, true);
                                     }
@@ -343,7 +343,7 @@ void BLETask(void* parameter) {
                                 ble_main_state = BLE_MAIN_STATE_IDLE;
                                 BLE_last_pending_check = millis();
                                 // Done and the image is refreshing now
-                                espXferComplete reportStruct;
+                                struct espXferComplete reportStruct;
                                 memcpy((uint8_t*)&reportStruct.src, BLE_curr_address, 8);
                                 processXferComplete(&reportStruct, true);
                                 BLE_err_counter = 0;
@@ -392,8 +392,8 @@ void BLETask(void* parameter) {
                         case BLE_UPLOAD_STATE_INIT:
                             BLE_mini_buff[0] = 0x00;
                             BLE_mini_buff[1] = 0x64;
-                            memcpy((uint8_t*)&BLE_mini_buff[2], &BLEavaildatainfo, sizeof(AvailDataInfo));
-                            ctrlChar->writeValue(BLE_mini_buff, sizeof(AvailDataInfo) + 2);
+                            memcpy((uint8_t*)&BLE_mini_buff[2], &BLEavaildatainfo, sizeof(struct AvailDataInfo));
+                            ctrlChar->writeValue(BLE_mini_buff, sizeof(struct AvailDataInfo) + 2);
                             BLE_upload_state = BLE_UPLOAD_STATE_UPLOAD;
                             break;
                         case BLE_UPLOAD_STATE_UPLOAD: {
@@ -402,12 +402,12 @@ void BLETask(void* parameter) {
                             Serial.println("BLE CMD " + String(notifyCMD));
                             switch (notifyCMD) {
                                 case BLE_CMD_REQ:
-                                    if (notifyLen == (sizeof(blockRequest) + 2)) {
+                                    if (notifyLen == (sizeof(struct blockRequest) + 2)) {
                                         Serial.println("We got a request for a BLK");
-                                        memcpy(&BLEblkRequst, &BLE_notify_buffer[3], sizeof(blockRequest));
+                                        memcpy(&BLEblkRequst, &BLE_notify_buffer[3], sizeof(struct blockRequest));
                                         BLE_curr_part = 0;
-                                        ATC_BLE_OEPL_PrepareBlk(BLEblkRequst.block);
-                                        ATC_BLE_OEPL_SendPart(BLEblkRequst.block, BLE_curr_part);
+                                        ATC_BLE_OEPL_PrepareBlk(BLEblkRequst.blockId);
+                                        ATC_BLE_OEPL_SendPart(BLEblkRequst.blockId, BLE_curr_part);
                                     }
                                     break;
                                 case BLE_CMD_ACK_BLKPRT:
@@ -415,7 +415,7 @@ void BLETask(void* parameter) {
                                     BLE_err_counter = 0;
                                 case BLE_CMD_ERR_BLKPRT:
                                     if (BLE_curr_part <= BLE_max_block_parts && BLE_err_counter++ < 15) {
-                                        ATC_BLE_OEPL_SendPart(BLEblkRequst.block, BLE_curr_part);
+                                        ATC_BLE_OEPL_SendPart(BLEblkRequst.blockId, BLE_curr_part);
                                         break;
                                     }  // FALLTROUGH!!! We cancel the upload if we land here since we dont have so many parts of a block!
                                 case BLE_CMD_ACK:
@@ -427,7 +427,7 @@ void BLETask(void* parameter) {
                                     ble_main_state = BLE_MAIN_STATE_IDLE;
                                     BLE_last_pending_check = millis();
                                     // Done and the image is refreshing now
-                                    espXferComplete reportStruct;
+                                    struct espXferComplete reportStruct;
                                     memcpy((uint8_t*)&reportStruct.src, BLE_curr_address, 8);
                                     processXferComplete(&reportStruct, true);
                                     BLE_err_counter = 0;

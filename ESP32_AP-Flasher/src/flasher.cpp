@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <MD5Builder.h>
+#include <WiFi.h>
 
 #include "LittleFS.h"
 #include "leds.h"
@@ -10,7 +11,6 @@
 #include "storage.h"
 #include "time.h"
 #include "zbs_interface.h"
-#include <WiFi.h>
 
 #ifdef HAS_EXT_FLASHER
 #include "webflasher.h"
@@ -686,5 +686,3 @@ bool doTagFlash() {
     return false;
 }
 #endif
-
-
