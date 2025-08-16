@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>ESP32-C6 Management — OpenEPaperLink</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        /* Minimal container adjustments for the C6 page */
+        .container { max-width: 1100px; margin: 20px auto; padding: 16px; }
+        .c6-panel { background: var(--card-bg, #fff); padding: 16px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.06); }
+        .form-group { margin-bottom: 12px; }
+        .form-input { width: 100%; padding: 8px; border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; }
+        .button-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+            <i class="fas fa-wifi" style="font-size:28px;color:#4f46e5"></i>
+            <h1>ESP32-C6 Management</h1>
+            <nav style="margin-left:auto">
+                <a href="index.html">Dashboard</a> |
+                <a href="development.html">Development</a>
+            </nav>
+        </header>
+
+        <section class="c6-panel">
+            <div class="form-group">
+                <label for="c6-host">C6 Device Host / IP</label>
+                <input type="text" id="c6-host" placeholder="192.168.4.2 or device hostname" value="192.168.26.117" class="form-input">
+                <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                    <button id="c6-host-test" class="btn btn-small">Test Host</button>
+                    <span id="c6-host-status" style="color:#9ca3af;font-size:0.9em">Not tested</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="serial-port-select">Local Serial Port</label>
+                <select id="serial-port-select" class="form-input">
+                    <option value="COM10">COM10</option>
+                </select>
+                <div style="margin-top:8px" class="button-grid">
+                    <button id="serial-refresh" class="btn btn-small">Refresh</button>
+                    <button id="serial-open" class="btn btn-small">Open</button>
+                    <button id="serial-close" class="btn btn-small">Close</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="serial-send">Send to Serial</label>
+                <input type="text" id="serial-send" class="form-input" placeholder="text to send...">
+                <button id="serial-send-btn" class="btn btn-small" style="margin-top:8px">Send</button>
+            </div>
+
+            <div class="button-grid" style="margin-bottom:12px">
+                <button class="btn btn-outline" id="c6-test-connection"><i class="fas fa-plug"></i> Test C6 Connection</button>
+                <button class="btn btn-outline" id="c6-test-radio"><i class="fas fa-broadcast-tower"></i> Test C6 Radio</button>
+                <button class="btn btn-outline" id="c6-restart"><i class="fas fa-redo"></i> Restart C6</button>
+            </div>
+
+            <div class="form-group">
+                <label for="c6-firmware-file">Upload C6 Firmware (.bin)</label>
+                <input type="file" id="c6-firmware-file" accept=".bin" class="form-input">
+                <div style="margin-top:8px">
+                    <button class="btn btn-primary" id="c6-upload" disabled>Upload to Device</button>
+                    <button class="btn btn-success" id="c6-flash" disabled>Trigger Flash OTA</button>
+                </div>
+                <div id="c6-upload-status" class="console-line info" style="margin-top:8px">No upload yet.</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="main.js"></script>
+    <script>
+        // Attach host test button when main app is available
+        (function(){
+            const btn = document.getElementById('c6-host-test');
+            const status = document.getElementById('c6-host-status');
+            const input = document.getElementById('c6-host');
+            if (!btn || !status || !input) return;
+
+            const setStatus = (ok) => {
+                status.textContent = ok ? 'Reachable' : 'Unreachable';
+                status.style.color = ok ? '#16a34a' : '#ef4444';
+            };
+
+            btn.addEventListener('click', async () => {
+                const host = input.value.trim();
+                status.textContent = 'Testing...';
+                status.style.color = '#9ca3af';
+                try {
+                    // wait for global app (main.js) to be ready
+                    if (window.app && typeof window.app.testRemoteHost === 'function') {
+                        const ok = await window.app.testRemoteHost(host);
+                        setStatus(ok);
+                        if (ok) localStorage.setItem('oepl_last_good_host', host);
+                    } else {
+                        // fallback: simple fetch
+                        try {
+                            const controller = new AbortController();
+                            const t = setTimeout(() => controller.abort(), 3000);
+                            const url = host.match(/^https?:\/\//) ? host : `http://${host}`;
+                            const r = await fetch(url, { method: 'HEAD', signal: controller.signal });
+                            clearTimeout(t);
+                            const ok = r && (r.ok || r.status < 400);
+                            setStatus(ok);
+                            if (ok) localStorage.setItem('oepl_last_good_host', host);
+                        } catch (e) {
+                            setStatus(false);
+                        }
+                    }
+                } catch (err) {
+                    setStatus(false);
+                }
+            });
+
+            // populate from last known host
+            const last = localStorage.getItem('oepl_last_good_host');
+            if (last && input.value.trim() === '') input.value = last;
+        })();
+    </script>
+</body>
+</html>

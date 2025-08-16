@@ -4,7 +4,6 @@
 
 #include <ArduinoJson.h>
 
-#include "JsonDocumentz.h"
 #include "settings.h"
 #include "storage.h"
 
@@ -539,7 +538,7 @@ void RC522Interface::logOperation(const String& operation, bool success, const S
 }
 
 String RC522Interface::getStatusJSON() {
-    JsonDocumentz doc(1024);
+    JsonDocument doc;
 
     doc["enabled"] = enabled;
     doc["monitoring"] = monitoring;
@@ -552,7 +551,7 @@ String RC522Interface::getStatusJSON() {
     doc["keysCount"] = keys.size();
 
     if (currentCard.isPresent) {
-        JsonObject cardObj = doc.createNestedObject("currentCard");
+        JsonObject cardObj = doc["currentCard"].to<ArduinoJson::JsonObject>();
         cardObj["uid"] = currentCard.uid;
         cardObj["type"] = currentCard.typeName;
         cardObj["blockCount"] = currentCard.blockCount;

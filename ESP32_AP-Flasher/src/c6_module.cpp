@@ -1,6 +1,7 @@
 #include "c6_module.h"
 
-#include "JsonDocumentz.h"
+#include <ArduinoJson.h>
+
 #include "commstructs.h"
 #include "module_manager.h"
 #include "ota.h"
@@ -196,7 +197,7 @@ class C6Module : public ModuleInterface {
     }
 
     String getConfig() const override {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
 
         Preferences preferences;
         preferences.begin("c6_module", true);
@@ -215,7 +216,7 @@ class C6Module : public ModuleInterface {
     }
 
     bool setConfig(const String &config) override {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         DeserializationError error = deserializeJson(doc, config);
 
         if (error) {
@@ -227,12 +228,12 @@ class C6Module : public ModuleInterface {
         preferences.begin("c6_module", false);
 
         // reuse parsed document 'doc'
-        if (doc.containsKey("txPower")) preferences.putInt("txPower", doc["txPower"]);
-        if (doc.containsKey("panId")) preferences.putString("panId", doc["panId"].as<String>());
-        if (doc.containsKey("sleepMode")) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-        if (doc.containsKey("wakeInterval")) preferences.putInt("wakeInterval", doc["wakeInterval"]);
-        if (doc.containsKey("autoReconnect")) preferences.putBool("autoReconnect", doc["autoReconnect"]);
-        if (doc.containsKey("healthCheckInterval")) preferences.putInt("healthCheckInterval", doc["healthCheckInterval"]);
+        if (!doc["txPower"].isNull()) preferences.putInt("txPower", doc["txPower"]);
+        if (!doc["panId"].isNull()) preferences.putString("panId", doc["panId"].as<String>());
+        if (!doc["sleepMode"].isNull()) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
+        if (!doc["wakeInterval"].isNull()) preferences.putInt("wakeInterval", doc["wakeInterval"]);
+        if (!doc["autoReconnect"].isNull()) preferences.putBool("autoReconnect", doc["autoReconnect"]);
+        if (!doc["healthCheckInterval"].isNull()) preferences.putInt("healthCheckInterval", doc["healthCheckInterval"]);
 
         preferences.end();
 
@@ -245,7 +246,7 @@ class C6Module : public ModuleInterface {
     }
 
     String getStatus() const override {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
 
         doc["connected"] = (apInfo.state != AP_STATE_OFFLINE);
         doc["state"] = static_cast<int>(apInfo.state);
@@ -322,7 +323,7 @@ extern SemaphoreHandle_t fsMutex;
 // ================================
 
 void handleC6UpdateStatus(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(512);
+    JsonDocument doc;
 
     // Check update status from global variables or task status
     // This is a simplified implementation - in practice you'd track actual update progress
@@ -330,29 +331,25 @@ void handleC6UpdateStatus(AsyncWebServerRequest *request) {
     static int updateProgress = 0;
     static String updateError = "";
 
-    // Check if update task is running
+    // Report update status based on actual apInfo state
     if (apInfo.state == AP_STATE_FLASHING) {
-        updateInProgress = true;
-        updateProgress = min(90, updateProgress + 5);  // Simulate progress
+        doc["in_progress"] = true;
+        // Progress is not tracked precisely here; report indeterminate progress
+        doc["progress"] = 50;
+        doc["completed"] = false;
     } else if (apInfo.state == AP_STATE_ONLINE) {
-        if (updateInProgress) {
-            // Update completed
-            doc["completed"] = true;
-            doc["progress"] = 100;
-            updateInProgress = false;
-            updateProgress = 0;
-        } else {
-            doc["completed"] = false;
-            doc["progress"] = 0;
-        }
+        doc["in_progress"] = false;
+        doc["progress"] = 100;
+        doc["completed"] = true;
     } else if (apInfo.state == AP_STATE_FAILED) {
+        doc["in_progress"] = false;
+        doc["progress"] = 0;
+        doc["completed"] = false;
         doc["error"] = "Firmware update failed";
-        doc["completed"] = false;
-        updateInProgress = false;
-        updateProgress = 0;
     } else {
+        doc["in_progress"] = false;
+        doc["progress"] = 0;
         doc["completed"] = false;
-        doc["progress"] = updateProgress;
     }
 
     doc["timestamp"] = millis();
@@ -395,33 +392,64 @@ void handleBackupC6Firmware(AsyncWebServerRequest *request) {
 void handleAPList(AsyncWebServerRequest *request) {
     AsyncResponseStream *response = request->beginResponseStream("application/json");
 
-    response->print("[");
+    // Only include a C6 entry if we have evidence a C6 module is present.
+    // Use either apInfo.isOnline or a non-zero version/type as indicators.
+    bool haveC6 = false;
+    if (apInfo.isOnline) haveC6 = true;
+    if (apInfo.version != 0) haveC6 = true;
+    if (apInfo.type == ESP32_C6) haveC6 = true;
 
-    // Create C6 module entry if online
-    if (apInfo.state == AP_STATE_ONLINE) {
-        response->print("{");
-        response->printf("\"hwType\": 198,");  // 0xC6 in decimal
-        response->printf("\"version\": %d,", apInfo.version);
-        response->printf("\"channel\": %d,", apInfo.channel);
-        response->printf("\"rssi\": %d,", apInfo.rssi);
-        response->printf("\"uptime\": %lu,", apInfo.uptime);
-        response->print("\"capabilities\": [\"C6\"],");
-        response->print("\"mac\": \"");
-        for (int i = 0; i < 8; i++) {
-            response->printf("%02X", apInfo.mac[i]);
-            if (i < 7) response->print(":");
-        }
-        response->print("\",");
-        response->printf("\"state\": \"online\"");
-        response->print("}");
+    if (!haveC6) {
+        // No C6 module detected - return empty array so UIs don't show a dummy entry
+        wsSerial("No C6 module detected in AP list (no apInfo present)");
+        response->print("[]");
+        request->send(response);
+        return;
     }
+
+    response->print("[");
+    response->print("{");
+    response->printf("\"hwType\": 198,");  // 0xC6 in decimal
+    response->printf("\"version\": %d,", apInfo.version);
+    response->printf("\"channel\": %d,", apInfo.channel);
+    response->printf("\"rssi\": %d,", apInfo.rssi);
+    response->printf("\"uptime\": %lu,", apInfo.uptime);
+    response->print("\"capabilities\": [\"C6\"],");
+    response->print("\"mac\": \"");
+    for (int i = 0; i < 8; i++) {
+        response->printf("%02X", apInfo.mac[i]);
+        if (i < 7) response->print(":");
+    }
+    response->print("\",");
+
+    // Map numeric apInfo.state to a human-readable string
+    const char *stateStr = "offline";
+    switch (apInfo.state) {
+        case AP_STATE_ONLINE:
+            stateStr = "online";
+            break;
+        case AP_STATE_FLASHING:
+            stateStr = "flashing";
+            break;
+        case AP_STATE_FAILED:
+            stateStr = "failed";
+            break;
+        case AP_STATE_NORADIO:
+            stateStr = "noradio";
+            break;
+        default:
+            stateStr = "offline";
+            break;
+    }
+    response->printf("\"state\": \"%s\"", stateStr);
+    response->print("}");
 
     response->print("]");
     request->send(response);
 }
 
 void handleGetC6Settings(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(1024);
+    JsonDocument doc;
 
     // Get current C6 module settings from preferences or defaults
     Preferences preferences;
@@ -452,18 +480,18 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
     }
 
     if (index + len == total) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         DeserializationError error = deserializeJson(doc, jsonString);
 
         if (!error) {
             Preferences preferences;
             preferences.begin("c6_module", false);
 
-            if (doc.containsKey("channel")) preferences.putInt("channel", doc["channel"]);
-            if (doc.containsKey("txPower")) preferences.putInt("txPower", doc["txPower"]);
-            if (doc.containsKey("panId")) preferences.putString("panId", doc["panId"].as<String>());
-            if (doc.containsKey("sleepMode")) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-            if (doc.containsKey("wakeInterval")) preferences.putInt("wakeInterval", doc["wakeInterval"]);
+            if (!doc["channel"].isNull()) preferences.putInt("channel", doc["channel"]);
+            if (!doc["txPower"].isNull()) preferences.putInt("txPower", doc["txPower"]);
+            if (!doc["panId"].isNull()) preferences.putString("panId", doc["panId"].as<String>());
+            if (!doc["sleepMode"].isNull()) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
+            if (!doc["wakeInterval"].isNull()) preferences.putInt("wakeInterval", doc["wakeInterval"]);
 
             preferences.end();
 
@@ -493,7 +521,7 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
     // Test connection to C6 module
     bool connected = testC6ModuleConnection();
 
-    JsonDocumentz doc(512);
+    JsonDocument doc;
     doc["connected"] = connected;
     doc["timestamp"] = millis();
 
@@ -508,7 +536,7 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
 }
 
 void handleTestC6Radio(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(512);
+    JsonDocument doc;
 
     // Perform radio test and get results
     RadioTestResult result = performC6RadioTest();
@@ -538,7 +566,7 @@ void handleRestartC6(AsyncWebServerRequest *request) {
 }
 
 void handleBackupC6Config(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
 
     // Collect all C6 configuration data
     Preferences preferences;
@@ -665,40 +693,10 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
 // ======================================
 
 void handleListDrives(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(4096);
-    JsonArray drives = doc.createNestedArray("drives");
+    JsonDocument doc;
+    JsonArray drives = doc["drives"].to<ArduinoJson::JsonArray>();
 
-// On Windows, check common drive letters
-#ifdef _WIN32
-    for (char drive = 'A'; drive <= 'Z'; drive++) {
-        String drivePath = String(drive) + ":/";
-        // This is a placeholder - actual drive detection would need OS-specific code
-        // For now, we'll simulate some common drives
-        if (drive == 'C' || drive == 'D' || drive == 'E') {
-            JsonObject driveObj = drives.createNestedObject();
-            driveObj["letter"] = String(drive);
-            driveObj["path"] = drivePath;
-            driveObj["label"] = "Local Disk (" + String(drive) + ":)";
-            driveObj["type"] = "fixed";
-            driveObj["available"] = true;
-        }
-    }
-#else
-    // On Linux/Unix systems, list common mount points
-    JsonObject driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/";
-    driveObj["path"] = "/";
-    driveObj["label"] = "Root filesystem";
-    driveObj["type"] = "fixed";
-    driveObj["available"] = true;
-
-    driveObj = drives.createNestedObject();
-    driveObj["letter"] = "/media";
-    driveObj["path"] = "/media/";
-    driveObj["label"] = "Media";
-    driveObj["type"] = "removable";
-    driveObj["available"] = true;
-#endif
+    // Remove simulated drive listing. Return an empty array by default.
 
     String response;
     serializeJson(doc, response);
@@ -706,32 +704,8 @@ void handleListDrives(AsyncWebServerRequest *request) {
 }
 
 void handleListSerialPorts(AsyncWebServerRequest *request) {
-    JsonDocumentz doc(2048);
-    JsonArray ports = doc.createNestedArray("ports");
-
-// Common Windows COM ports
-#ifdef _WIN32
-    for (int i = 1; i <= 20; i++) {
-        JsonObject portObj = ports.createNestedObject();
-        portObj["port"] = "COM" + String(i);
-        portObj["description"] = "Serial Port (COM" + String(i) + ")";
-        portObj["available"] = true;  // Would need actual detection
-    }
-#else
-    // Common Linux/Unix serial devices
-    const char *commonPorts[] = {
-        "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2", "/dev/ttyUSB3",
-        "/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyACM2", "/dev/ttyACM3",
-        "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3"};
-
-    for (const char *port : commonPorts) {
-        JsonObject portObj = ports.createNestedObject();
-        portObj["port"] = String(port);
-        portObj["description"] = "Serial Device " + String(port);
-        portObj["available"] = true;  // Would need actual detection
-    }
-#endif
-
+    JsonDocument doc;
+    JsonArray ports = doc["ports"].to<ArduinoJson::JsonArray>();
     String response;
     serializeJson(doc, response);
     request->send(200, "application/json", response);
@@ -995,7 +969,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
     // Enhanced C6 Module Status and Control Endpoints
     server.on("/api/c6/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["success"] = true;
         doc["c6Connected"] = apInfo.isOnline;
         doc["c6State"] = apInfo.state;
@@ -1035,7 +1009,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
         String action = request->getParam("action", true)->value();
         String moduleId = request->hasParam("moduleId", true) ? request->getParam("moduleId", true)->value() : "primary";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
         doc["moduleId"] = moduleId;
@@ -1071,7 +1045,7 @@ void registerC6WebHandlers(AsyncWebServer &server) {
     server.on("/api/c6/config", HTTP_GET, [](AsyncWebServerRequest *request) {
         auto moduleInfo = moduleManager.getModuleInfo("C6Module");
 
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["success"] = true;
         doc["moduleFound"] = (moduleInfo.name.length() > 0);
 
@@ -1137,7 +1111,6 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
     server.on("/c6_test_radio", HTTP_GET, [](AsyncWebServerRequest *request) {
         handleTestC6Radio(request);
-        handleTestC6Radio(request);
     });
 
     server.on("/c6_restart", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1169,4 +1142,4 @@ void registerC6WebHandlers(AsyncWebServer &server) {
     Serial.println("[C6_MODULE] Enhanced C6 module web handlers registered successfully");
 }
 
-#endif  // C6_OTA_FLASHING
+#endif

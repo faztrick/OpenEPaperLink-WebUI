@@ -3,8 +3,6 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
-#include "JsonDocumentz.h"
-
 // WiFi Module Implementation
 // ==========================
 
@@ -131,7 +129,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
 
     // WiFi status endpoint
     server.on("/api/wifi/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        JsonDocumentz doc;
+        JsonDocument doc;
 
         doc["connected"] = (WiFi.status() == WL_CONNECTED);
         doc["ssid"] = WiFi.SSID();
@@ -155,7 +153,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
     server.on("/api/wifi/scan", HTTP_GET, [this](AsyncWebServerRequest *request) {
         performWiFiScan();
 
-        JsonDocumentz doc;
+        JsonDocument doc;
         doc["success"] = true;
         doc["scanning"] = true;
         doc["message"] = "WiFi scan initiated";
@@ -185,7 +183,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
         // Attempt connection
         WiFi.begin(ssid.c_str(), password.c_str());
 
-        JsonDocumentz doc;
+        JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "WiFi connection initiated";
         doc["ssid"] = ssid;
@@ -199,7 +197,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server) {
     server.on("/api/wifi/disconnect", HTTP_POST, [this](AsyncWebServerRequest *request) {
         WiFi.disconnect();
 
-        JsonDocumentz doc;
+        JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "WiFi disconnected";
 
@@ -235,7 +233,7 @@ void WiFiModule::update() {
 }
 
 String WiFiModule::getConfig() const {
-    JsonDocumentz doc;
+    JsonDocument doc;
 
     Preferences prefs;
     prefs.begin("wifi", true);
@@ -254,7 +252,7 @@ String WiFiModule::getConfig() const {
 }
 
 bool WiFiModule::setConfig(const String &config) {
-    JsonDocumentz doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, config);
 
     if (error) {
@@ -281,7 +279,7 @@ bool WiFiModule::setConfig(const String &config) {
 }
 
 String WiFiModule::getStatus() const {
-    JsonDocumentz doc;
+    JsonDocument doc;
 
     doc["status"] = WiFi.status();
     doc["connected"] = (WiFi.status() == WL_CONNECTED);

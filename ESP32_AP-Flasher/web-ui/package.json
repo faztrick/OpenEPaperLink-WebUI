@@ -12,7 +12,6 @@
         "socket.io": "^4.7.2",
         "cors": "^2.8.5",
         "multer": "^2.0.2",
-        "node-pty": "^1.0.0",
         "openai": "^4.52.7",
         "@anthropic-ai/sdk": "^0.58.0",
         "axios": "^1.7.2",

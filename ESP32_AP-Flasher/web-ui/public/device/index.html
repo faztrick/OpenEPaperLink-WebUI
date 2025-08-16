@@ -1,0 +1,1633 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+
+	<title>OpenEPL ESP32 - Advanced Control Center</title>
+	<!-- Core JavaScript modules -->
+	<script src="constants.js?3.2" defer></script>
+	<script src="utils.js?3.2" defer></script>
+	<script src="app-core.js?3.2" defer></script>
+	<script src="performance.js?3.2" defer></script>
+	<script src="ui-components.js?3.2" defer></script>
+	<script src="tag-manager.js?3.2" defer></script>
+	<script src="canvas-renderer.js?3.2" defer></script>
+	<script src="main.js?3.2" defer></script>
+	<!-- Enhanced Feature & API Management -->
+	<script src="feature-manager.js?3.2" defer></script>
+	<script src="api-manager-enhanced.js?3.2" defer></script>
+	<script src="debug-system.js?3.2" defer></script>
+	<!-- OpenAI Agent Integration -->
+	<script src="openai-agent-enhanced.js?3.2" defer></script>
+	<!-- Feature-specific modules -->
+	<script src="compact-ui.js?3.2" defer></script>
+	<script src="g5decoder.js?3.2" defer></script>
+	<script src="universal-menu.js?3.2" defer></script>
+	<script src="module-manager-ui.js?3.2" defer></script>
+	<script src="module-status-icons.js" defer></script>
+	<link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
+	<!--<link rel="icon" type="image/vnd.icon" href="favicon.ico">-->
+	<link rel="stylesheet"
+		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+	<!-- Enhanced Notification Animations -->
+	<style>
+		/* Module status dots */
+		.module-status-dot {
+			display: inline-block;
+			width: 12px;
+			height: 12px;
+			border-radius: 50%;
+			background: #777;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+			border: 1px solid rgba(0,0,0,0.15);
+		}
+		.module-status-dot.module-active { background: #34c759; }
+		.module-status-dot.module-available { background: #ffcc00; }
+		.module-status-dot.module-missing { background: #d9534f; opacity: 0.8; }
+
+		@keyframes slideInRight {
+			from {
+				transform: translateX(100%);
+				opacity: 0;
+			}
+			to {
+				transform: translateX(0);
+				opacity: 1;
+			}
+		}
+
+		@keyframes slideOutRight {
+			from {
+				transform: translateX(0);
+				opacity: 1;
+			}
+			to {
+				transform: translateX(100%);
+				opacity: 0;
+			}
+		}
+
+		@keyframes spin {
+			from {
+				transform: rotate(0deg);
+			}
+		to {
+			transform: rotate(360deg);
+		}
+		}
+
+		/* Modal and compact layout helpers (added to fix double-scroll issues) */
+		#detailsModal { display: flex; }
+		#detailsModal .modal-inner { box-shadow: 0 12px 40px rgba(0,0,0,0.6); border-radius: 12px; }
+		.modal-inner > div { box-sizing: border-box; }
+		.compact-feature-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; }
+		.compact-feature-item .feature-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.compact-feature-item .feature-status { font-size: 12px; opacity: 0.95; }
+
+		/* Notification stacking */
+		.notification {
+			margin-bottom: 10px;
+		}
+
+		/* Pulse animation for urgent notifications */
+		@keyframes pulse {
+			0% { box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+			50% { box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+			100% { box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+		}
+
+		.notification.urgent {
+			animation: pulse 2s infinite;
+		}
+
+		/* Success notification style */
+		.notification.success {
+			background: linear-gradient(135deg, #4CAF50, #45a049) !important;
+		}
+
+		/* Error notification style */
+		.notification.error {
+			background: linear-gradient(135deg, #f44336, #da190b) !important;
+		}
+
+		/* Warning notification style */
+		.notification.warning {
+			background: linear-gradient(135deg, #ff9800, #f57c00) !important;
+		}
+
+		/* Info notification style */
+		.notification.info {
+			background: linear-gradient(135deg, #4facfe, #00f2fe) !important;
+		}
+
+		/* Features card styles */
+		.features-card .feature-list {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+			max-height: 220px;
+			overflow-y: auto;
+			padding-right: 6px;
+		}
+
+		.features-card .feature-item {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 8px;
+			border-radius: 8px;
+			background: rgba(255,255,255,0.02);
+			border: 1px solid rgba(255,255,255,0.03);
+			font-size: 13px;
+		}
+
+		/* Compact variant for denser feature lists */
+		.compact-feature-item {
+			padding: 6px 8px;
+			gap: 8px;
+			font-size: 12px;
+		}
+
+		.compact-feature-item .feature-name { font-size: 12px; }
+		.compact-feature-item .feature-status { font-size: 11px; opacity: 0.95; }
+
+		.features-card .feature-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			flex: 0 0 10px;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+		}
+
+		.features-card .feature-name { flex: 1 1 auto; color: inherit; }
+
+		.features-card .feature-status { font-size: 12px; opacity: 0.9; }
+	</style>
+</head>
+
+<body>
+	<!-- Compact Single-Line Header: Logo + Navigation + Status -->
+	<header class="advanced-header compact-header">
+		<div class="compact-header-content">
+			<!-- Single Line: Logo + Menu + Status -->
+			<div class="header-single-line">
+				<!-- Left: Logo -->
+				<div class="header-left">
+					<div class="logo-section">
+						<div class="logo-icon">📱</div>
+						<div class="logo-text">
+							<h1>OpenEPL ESP32</h1>
+							<span class="version">v3.1</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- Center: Navigation Menu -->
+				<div class="header-center">
+					<div id="menu-container" class="menu-container"></div>
+				</div>
+
+				<!-- Right: Compact Status -->
+				<div class="header-right">
+					<div class="compact-status">
+						<div class="status-group">
+							<div class="status-dot" id="systemDot"></div>
+							<span id="systemStatus">Ready</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">devices</span>
+							<span id="tagCount">0</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">wifi</span>
+							<span id="wifiStatus">WiFi</span>
+						</div>
+						<div class="status-separator">|</div>
+						<div class="status-group">
+							<span class="material-symbols-outlined">schedule</span>
+							<span id="uptimeDisplay">--:--</span>
+						</div>
+					</div>
+
+					<!-- Quick Actions -->
+					<div class="quick-actions">
+						<button class="action-btn" onclick="refreshData()" title="Refresh Data">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+						<button class="action-btn" onclick="findAllTags()" title="Find All Tags">
+							<span class="material-symbols-outlined">search</span>
+						</button>
+						<button class="action-btn" onclick="window.open('settings.html')" title="Settings">
+							<span class="material-symbols-outlined">settings</span>
+						</button>
+						<button class="action-btn" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()" title="AI Assistant">
+							<span class="material-symbols-outlined">smart_toy</span>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</header>
+
+	<div class="container">
+		<!-- Enhanced Dashboard -->
+		<div class="dashboard-grid">
+			<!-- System Overview Card -->
+			<div class="dashboard-card overview-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">dashboard</span>
+					<h3>System Overview</h3>
+					<div class="card-actions">
+						<button onclick="refreshData()" class="icon-btn" title="Refresh">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+					</div>
+				</div>
+					<div class="card-content">
+						<div class="overview-grid">
+							<div class="overview-item">
+								<div class="overview-icon">📱</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-total-tags">0</span>
+									<span class="overview-label">Total Tags</span>
+								</div>
+							</div>
+							<div class="overview-item" onclick="showOnlineTagsDetails()" style="cursor: pointer;" title="Click for detailed information">
+								<div class="overview-icon online">✅</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-online-tags">0</span>
+									<span class="overview-label">Online</span>
+									<span class="overview-sublabel" id="dash-online-details" style="font-size: 0.8em; color: rgba(255,255,255,0.7);">Click for details</span>
+								</div>
+							</div>
+							<div class="overview-item">
+								<div class="overview-icon offline">❌</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-offline-tags">0</span>
+									<span class="overview-label">Offline</span>
+								</div>
+							</div>
+							<div class="overview-item">
+								<div class="overview-icon">🔋</div>
+								<div class="overview-data">
+									<span class="overview-value" id="dash-avg-battery">0%</span>
+									<span class="overview-label">Avg Battery</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+			<!-- Real-time Analytics Card -->
+			<div class="dashboard-card analytics-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">analytics</span>
+					<h3>Real-time Analytics</h3>
+				</div>
+				<div class="card-content">
+					<canvas id="batteryChart" width="300" height="200"></canvas>
+				</div>
+			</div>
+
+			<!-- Quick Actions Card -->
+			<div class="dashboard-card actions-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">flash_on</span>
+					<h3>Quick Actions</h3>
+				</div>
+				<div class="card-content">
+					<div class="actions-grid">
+						<button class="action-card" onclick="findAllTags()">
+							<span class="material-symbols-outlined">search</span>
+							<span>Find All Tags</span>
+						</button>
+						<button class="action-card" id="scan-wi-btn">
+							<span class="material-symbols-outlined">wifi_tethering</span>
+							<span>Scan Wi</span>
+						</button>
+						<button class="action-card" onclick="blinkAllTags()">
+							<span class="material-symbols-outlined">visibility</span>
+							<span>Blink All</span>
+						</button>
+						<button class="action-card" id="led-off-btn">
+							<span class="material-symbols-outlined">lightbulb</span>
+							<span>LED Off</span>
+						</button>
+						<button class="action-card" onclick="refreshAllTags()">
+							<span class="material-symbols-outlined">refresh</span>
+							<span>Refresh All</span>
+						</button>
+						<button class="action-card" onclick="openAdvancedControl()">
+							<span class="material-symbols-outlined">tune</span>
+							<span>Advanced Control</span>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- System Control Card -->
+			<div class="dashboard-card system-control-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">settings</span>
+					<h3>System Control</h3>
+				</div>
+				<div class="card-content">
+					<div class="control-section">
+						<div class="status-display">
+							<div class="status-item">
+								<span class="status-label">AP Status:</span>
+								<span id="ap-status" class="status-value">Loading...</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Recent Activity Card -->
+
+			<!-- Available Features & Status Card -->
+			<div class="dashboard-card features-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">tune</span>
+					<h3>Available Features & Status</h3>
+					<div class="card-actions">
+						<button onclick="refreshFeatureStatus()" class="icon-btn" title="Refresh Features">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+					</div>
+				</div>
+				<div class="card-content">
+					<div class="feature-list" id="featureList">
+						<div class="feature-item">Detecting features…</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="dashboard-card activity-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">history</span>
+					<h3>Recent Activity</h3>
+				</div>
+				<div class="card-content">
+					<div id="activity-feed" class="activity-feed">
+						<div class="activity-item">
+							<span class="activity-icon">📡</span>
+							<span class="activity-text">System started</span>
+							<span class="activity-time">Ready</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Network Status Card -->
+			<div class="dashboard-card network-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">wifi</span>
+					<h3>Network Status</h3>
+				</div>
+				<div class="card-content">
+					<div class="network-stats">
+						<div class="network-item">
+							<span class="network-label">AP Status:</span>
+							<span id="network-ap-status" class="network-value">Active</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Clients:</span>
+							<span id="network-clients" class="network-value">0</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Signal:</span>
+							<span id="network-signal" class="network-value">Strong</span>
+						</div>
+						<div class="network-item">
+							<span class="network-label">Uptime:</span>
+							<span id="network-uptime" class="network-value">0h 0m</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- System Performance Card -->
+			<div class="dashboard-card performance-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">memory</span>
+					<h3>System Performance</h3>
+					<div class="card-actions">
+						<button onclick="refreshPerformanceData()" class="icon-btn" title="Refresh">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+						<button onclick="togglePerformanceDetails()" class="icon-btn" title="Details">
+							<span class="material-symbols-outlined">info</span>
+						</button>
+					</div>
+				</div>
+				<div class="card-content">
+					<div class="performance-metrics">
+						<div class="metric-item">
+							<div class="metric-label">Memory</div>
+							<div class="metric-bar">
+								<div id="memory-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="memory-text">0%</div>
+							<div class="metric-details hide-mobile" id="memory-details">
+								<span id="memory-used">0</span> / <span id="memory-total">0</span> KB
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">CPU Load</div>
+							<div class="metric-bar">
+								<div id="cpu-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="cpu-text">0%</div>
+							<div class="metric-details hide-mobile" id="cpu-details">
+								<span id="cpu-freq">0</span> MHz
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">Storage</div>
+							<div class="metric-bar">
+								<div id="storage-usage" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="storage-text">0%</div>
+							<div class="metric-details hide-mobile" id="storage-details">
+								<span id="storage-used">0</span> / <span id="storage-total">0</span> KB
+							</div>
+						</div>
+						<div class="metric-item">
+							<div class="metric-label">WiFi Signal</div>
+							<div class="metric-bar">
+								<div id="wifi-signal" class="metric-fill" style="width: 0%"></div>
+							</div>
+							<div class="metric-value" id="wifi-text">0 dBm</div>
+							<div class="metric-details hide-mobile" id="wifi-details">
+								<span id="wifi-ssid">Not connected</span>
+							</div>
+						</div>
+					</div>
+					<!-- <div style="gap:12px; align-items:center; margin-top:12px;">
+						<div style="flex:1; min-width:120px;">
+							<canvas id="cpuSpark" width="200" height="50"></canvas>
+							<div style="font-size:11px; color:var(--text-secondary);">CPU (MHz): <span id="cpu-text-small">-</span></div>
+						</div>
+						<div style="flex:1; min-width:120px;">
+							<canvas id="heapSpark" width="200" height="50"></canvas>
+							<div style="font-size:11px; color:var(--text-secondary);">Free Heap: <span id="freeheap-small">-</span></div>
+						</div>
+						<div style="flex:1; min-width:120px;">
+							<canvas id="wifiSpark" width="200" height="50"></canvas>
+							<div style="font-size:11px; color:var(--text-secondary);">WiFi RSSI: <span id="rssi-small">-</span></div>
+						</div>
+					</div> -->
+
+					<div id="performance-details" class="performance-details collapsed">
+						<div class="detail-row">
+							<span>Uptime:</span>
+							<span id="system-uptime">0h 0m</span>
+						</div>
+						<div class="detail-row">
+							<span>Free Heap:</span>
+							<span id="free-heap">0 KB</span>
+						</div>
+						<div class="detail-row">
+							<span>Largest Block:</span>
+							<span id="largest-block">0 KB</span>
+						</div>
+						<div class="detail-row">
+							<span>Flash Size:</span>
+							<span id="flash-size">0 MB</span>
+						</div>
+						<div class="detail-row">
+							<span>Chip Model:</span>
+							<span id="chip-model">ESP32</span>
+						</div>
+						<div class="detail-row">
+							<span>SDK Version:</span>
+							<span id="sdk-version">Unknown</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- All Modules Quick Access Card -->
+			<div class="dashboard-card modules-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">apps</span>
+					<h3>All Modules</h3>
+				</div>
+				<div class="card-content">
+					<div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+						<input id="moduleSearch" placeholder="Search modules..." style="flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); color:inherit;" oninput="filterModules()" />
+						<button onclick="clearModuleSearch()" class="icon-btn" title="Clear search" style="height:34px;">✕</button>
+					</div>
+					<div class="modules-grid" id="modulesGrid">
+						<a href="tag_control_panel.html" class="module-card">
+							<span class="material-symbols-outlined">settings_remote</span>
+							<span>Tag Control</span>
+						</a>
+						<a href="dashboard.html" class="module-card">
+							<span class="material-symbols-outlined">analytics</span>
+							<span>Analytics</span>
+						</a>
+						<a href="tags.html" class="module-card">
+							<span class="material-symbols-outlined">sell</span>
+							<span>Tags</span>
+						</a>
+						<a href="flasher.html" class="module-card">
+							<span class="material-symbols-outlined">flash_on</span>
+							<span>Flasher</span>
+						</a>
+						<a href="nrf52_swd.html" class="module-card">
+							<span class="material-symbols-outlined">memory</span>
+							<span>nRF52 SWD</span>
+						</a>
+						<a href="c6_module.html" class="module-card">
+							<span class="material-symbols-outlined">developer_board</span>
+							<span>C6 Module</span>
+						</a>
+						<a href="ai-agent.html" class="module-card">
+							<span class="material-symbols-outlined">smart_toy</span>
+							<span>AI Assistant</span>
+						</a>
+						<a href="updates.html" class="module-card">
+							<span class="material-symbols-outlined">system_update</span>
+							<span>Updates</span>
+						</a>
+						<a href="settings.html" class="module-card">
+							<span class="material-symbols-outlined">settings</span>
+							<span>Settings</span>
+						</a>
+						<a href="logs.html" class="module-card">
+							<span class="material-symbols-outlined">text_snippet</span>
+							<span>Logs</span>
+						</a>
+						<a href="edit.html" class="module-card">
+							<span class="material-symbols-outlined">edit</span>
+							<span>File Editor</span>
+						</a>
+						<a href="jsontemplate-demo-v2.html" class="module-card">
+							<span class="material-symbols-outlined">design_services</span>
+							<span>Templates</span>
+						</a>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Footer Status Line -->
+	<div class="footer-status">
+		<div class="footer-left">
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
+				<span id="footerSystemInfo">System Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
+				<span id="footerMemoryInfo">Memory OK</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
+				<span id="footerWifiInfo">WiFi Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
+				<span id="footerTagInfo">Tags Ready</span>
+			</div>
+			<div class="footer-item">
+				<span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
+				<span id="footerPerformance">Performance OK</span>
+			</div>
+		</div>
+		<div class="footer-right">
+			<span id="footerTimestamp">Ready</span>
+		</div>
+	</div>
+
+	<script>
+		// Application initialization with proper script loading wait
+		document.addEventListener('DOMContentLoaded', function() {
+			console.log('Index page: DOM loaded, initializing...');
+
+			// Wait for all essential classes to be loaded
+			const waitForClasses = () => {
+				const requiredClasses = ['OptimizedApp'];
+				const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
+
+				if (allLoaded) {
+					// Initialize the optimized application
+					try {
+						console.log('Index page: Initializing OptimizedApp...');
+						window.app = new OptimizedApp();
+						console.log('Index page: OptimizedApp initialized successfully');
+					} catch (error) {
+						console.error('Failed to initialize OptimizedApp:', error);
+						// Fallback to legacy initialization
+						if (typeof loadTags === 'function') {
+							console.log('Index page: Using fallback loadTags initialization');
+							loadTags(0);
+						}
+					}
+				} else {
+					// Check again in 100ms
+					setTimeout(waitForClasses, 100);
+				}
+			};
+
+			// Also wait for menu to load
+			const waitForMenu = () => {
+				if (window.universalMenu && (window.universalMenu.menuLoaded || document.getElementById('universal-menu'))) {
+					console.log('Index page: Menu is ready');
+					return true;
+				}
+				return false;
+			};
+
+			// Start both checks
+			waitForClasses();
+
+			// Menu check with timeout
+			let menuCheckCount = 0;
+			const checkMenu = () => {
+				menuCheckCount++;
+				if (waitForMenu() || menuCheckCount > 50) { // 5 second timeout
+					if (menuCheckCount > 50) {
+						console.warn('Index page: Menu loading timed out');
+					}
+					return;
+				}
+				setTimeout(checkMenu, 100);
+			};
+			checkMenu();
+		});
+
+		// Enhanced Dashboard Functionality
+		function initializeEnhancements() {
+			// Initialize dashboard with real data
+			updateCompactHeaderStatus();
+			updateFooterStatus();
+			updateSystemControlStatus();
+			updateDashboardStats();
+
+			// Set up periodic updates
+			setInterval(updateCompactHeaderStatus, 5000);
+			setInterval(updateFooterStatus, 10000);
+			setInterval(updateHeaderUptime, 60000);
+			setInterval(updateSystemControlStatus, 15000);
+			setInterval(updateDashboardStats, 30000);
+
+			// Enhanced status updates with animations
+			const originalUpdateStatus = window.updateStatus;
+			if (originalUpdateStatus) {
+				window.updateStatus = function() {
+					// Add loading state
+					const cards = document.querySelectorAll('.glass-card, .dashboard-card');
+					cards.forEach(card => card.classList.add('loading'));
+
+					// Call original function
+					const result = originalUpdateStatus.apply(this, arguments);
+
+					// Remove loading state after delay
+					setTimeout(() => {
+						cards.forEach(card => card.classList.remove('loading'));
+						// Update our enhanced dashboard after original update
+						updateDashboardStats();
+						updateCompactHeaderStatus();
+					}, 500);
+
+					return result;
+				};
+			}
+
+			// Hook into the existing processTags function if available
+			const originalProcessTags = window.processTags;
+			if (originalProcessTags) {
+				window.processTags = function(tagArray) {
+					// Call original function first
+					const result = originalProcessTags.apply(this, arguments);
+
+					// Update our dashboard stats after processing tags
+					setTimeout(() => {
+						updateDashboardStats();
+						updateCompactHeaderStatus();
+					}, 100);
+
+					return result;
+				};
+			}
+
+			// Signal strength visualization
+			updateSignalBars();
+
+			// Memory usage animation
+			animateProgressBars();
+
+			// Add interactive tooltips
+			addTooltips();
+
+			// Render the feature status card
+			renderFeatureStatus();
+			// Refresh features periodically (every 30s)
+			setInterval(renderFeatureStatus, 30000);
+		}
+
+		// Update compact header status
+		function updateCompactHeaderStatus() {
+			// Fetch current system status
+			fetch('get_ap_config')
+				.then(response => response.json())
+				.then(data => {
+					const systemDot = document.getElementById('systemDot');
+					const systemStatus = document.getElementById('systemStatus');
+					const tagCount = document.getElementById('tagCount');
+					const wifiStatus = document.getElementById('wifiStatus');
+
+					if (systemDot && systemStatus && data.apstate !== undefined) {
+						// Update system status based on AP state
+						if (data.apstate === 1) { // online
+							systemDot.className = 'status-dot online';
+							systemStatus.textContent = 'Online';
+						} else if (data.apstate === 2) { // flashing
+							systemDot.className = 'status-dot warning';
+							systemStatus.textContent = 'Flashing';
+						} else if (data.apstate === 5) { // failed
+							systemDot.className = 'status-dot offline';
+							systemStatus.textContent = 'Failed';
+						} else {
+							systemDot.className = 'status-dot warning';
+							systemStatus.textContent = 'Starting';
+						}
+					}
+
+					// Update tag count
+					if (tagCount) {
+						const totalTags = Object.keys(window.tagDB || {}).length;
+						tagCount.textContent = `${totalTags} Tags`;
+					}
+
+					// Update WiFi status
+					if (wifiStatus) {
+						wifiStatus.textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
+					}
+				})
+				.catch(error => {
+					console.error('Status update error:', error);
+					const systemDot = document.getElementById('systemDot');
+					const systemStatus = document.getElementById('systemStatus');
+					if (systemDot && systemStatus) {
+						systemDot.className = 'status-dot offline';
+						systemStatus.textContent = 'Error';
+					}
+				});
+		}
+
+		// Update footer status
+		function updateFooterStatus() {
+			const timestamp = new Date().toLocaleTimeString();
+			const footerTimestamp = document.getElementById('footerTimestamp');
+
+			if (footerTimestamp) footerTimestamp.textContent = `Last updated: ${timestamp}`;
+
+			// Fetch system information
+			fetch('get_ap_config')
+				.then(response => response.json())
+				.then(data => {
+					const footerSystemInfo = document.getElementById('footerSystemInfo');
+					const footerMemoryInfo = document.getElementById('footerMemoryInfo');
+					const footerWifiInfo = document.getElementById('footerWifiInfo');
+					const footerTagInfo = document.getElementById('footerTagInfo');
+					const footerPerformance = document.getElementById('footerPerformance');
+
+					if (footerSystemInfo) {
+						footerSystemInfo.textContent = data.version ? `ESP32 v${data.version}` : 'ESP32 Ready';
+					}
+
+					if (footerMemoryInfo) {
+						const freeHeap = data.freeHeap ? Math.round(data.freeHeap / 1024) : 0;
+						footerMemoryInfo.textContent = freeHeap > 0 ? `${freeHeap} KB Free` : 'Memory OK';
+					}
+
+					if (footerWifiInfo) {
+						footerWifiInfo.textContent = data.wifiConnected ? 'WiFi Connected' : 'WiFi Ready';
+					}
+
+					if (footerTagInfo) {
+						const tagCount = Object.keys(window.tagDB || {}).length;
+						const activeCount = Object.values(window.tagDB || {}).filter(tag =>
+							tag.lastseen && (Date.now() - tag.lastseen * 1000) < 300000 // 5 minutes
+						).length;
+						footerTagInfo.textContent = `${activeCount}/${tagCount} Tags Active`;
+					}
+
+					if (footerPerformance) {
+						const cpuLoad = data.cpuLoad || 0;
+						if (cpuLoad > 80) footerPerformance.textContent = 'High Load';
+						else if (cpuLoad > 50) footerPerformance.textContent = 'Medium Load';
+						else footerPerformance.textContent = 'Performance OK';
+					}
+				})
+				.catch(error => {
+					console.error('Footer status error:', error);
+				});
+		}
+
+		// Update header uptime
+		function updateHeaderUptime() {
+			const now = new Date();
+			const uptime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+			const uptimeDisplay = document.getElementById('uptimeDisplay');
+			if (uptimeDisplay) {
+				uptimeDisplay.textContent = uptime;
+			}
+		}
+
+		// Update system control panel status
+		function updateSystemControlStatus() {
+			fetch('get_ap_config')
+				.then(response => response.json())
+				.then(data => {
+					const apStatus = document.getElementById('ap-status');
+
+					if (apStatus) {
+						// Map apstate to AP status
+						const apStates = ['Offline', 'Online', 'Flashing', 'Wait for Reset', 'Requires Reboot', 'Failed', 'Coming Online', 'No Radio'];
+						const currentApState = data.apstate !== undefined ? apStates[data.apstate] || 'Unknown' : 'Ready';
+						apStatus.textContent = currentApState;
+					}
+				})
+				.catch(error => {
+					console.error('System control status error:', error);
+					});
+		}
+
+		// Render features list into the features card
+		function renderFeatureStatus() {
+			const container = document.getElementById('featureList');
+			if (!container) return;
+			container.innerHTML = '';
+			// Prefer featureManager if available
+			const fm = window.featureManager;
+			if (fm && typeof fm.getFeatures === 'function') {
+				const features = fm.getFeatures();
+				const keys = Object.keys(features).sort();
+				if (keys.length === 0) {
+					container.innerHTML = '<div class="feature-item">No feature information available</div>';
+					return;
+				}
+				keys.forEach(k => {
+					const enabled = !!features[k];
+					const item = document.createElement('div');
+					item.className = 'feature-item compact-feature-item';
+					// Try to get friendly mapping and pins
+					const pinInfo = window.getFeaturePinInfo ? window.getFeaturePinInfo(k) : null;
+					let nameHtml = k.replace(/_/g, ' ');
+					let extraHtml = '';
+					if (pinInfo) {
+						nameHtml = pinInfo.label || nameHtml;
+						if (pinInfo.pin !== undefined && pinInfo.pin !== null) {
+							extraHtml = ` &nbsp;<small style="opacity:0.9">GPIO ${pinInfo.pin}</small>`;
+						} else if (pinInfo.pins) {
+							const pinList = Object.entries(pinInfo.pins).map(([n,v]) => `${n}:${v}`).join(', ');
+							extraHtml = ` &nbsp;<small style="opacity:0.9">${pinList}</small>`;
+						} else if (pinInfo.note) {
+							extraHtml = ` &nbsp;<small style="opacity:0.8">${pinInfo.note}</small>`;
+						}
+						// add a small source badge to indicate origin of pin info
+						if (pinInfo.source) {
+							extraHtml += ` &nbsp;<small style="opacity:0.7; margin-left:6px; border:1px solid rgba(255,255,255,0.06); padding:2px 6px; border-radius:8px; font-size:11px;">${pinInfo.source}</small>`;
+						}
+					}
+					item.innerHTML = `
+						<div class="feature-dot" style="background:${enabled ? '#4ade80' : '#ff6b6b'}"></div>
+						<div class="feature-name">${nameHtml}${extraHtml}</div>
+						<div class="feature-status">${enabled ? 'Available' : 'Unavailable'}</div>
+					`;
+					// set tooltip explaining source if available
+					if (pinInfo && pinInfo.source) {
+						item.title = `Pin info source: ${pinInfo.source} — values are best-effort (build-time or driver). For authoritative runtime values, consider adding /api/pins on the device.`;
+					}
+					container.appendChild(item);
+				});
+			} else {
+				// No feature manager; attempt a simple probe for a few endpoints
+				const probes = [
+					{ name: 'HAS_TFT', url: '/tft_status' },
+					{ name: 'HAS_RGB_LED', url: '/led_control' },
+					{ name: 'HAS_EXT_FLASHER', url: '/flasher_status' },
+					{ name: 'C6_OTA_FLASHING', url: '/c6_status' }
+				];
+				probes.forEach(p => {
+					const item = document.createElement('div');
+					item.className = 'feature-item';
+					item.innerHTML = `
+						<div class="feature-dot" style="background:#999"></div>
+						<div class="feature-name">${p.name.replace(/_/g,' ')}</div>
+						<div class="feature-status">Checking…</div>
+					`;
+					container.appendChild(item);
+					fetch(p.url, { method: 'HEAD' }).then(r => {
+						item.querySelector('.feature-dot').style.background = r.ok ? '#4ade80' : '#ff6b6b';
+						item.querySelector('.feature-status').textContent = r.ok ? 'Available' : 'Unavailable';
+					}).catch(() => {
+						item.querySelector('.feature-dot').style.background = '#ff6b6b';
+						item.querySelector('.feature-status').textContent = 'Unavailable';
+					});
+				});
+			}
+		}
+
+		// Manual refresh helper bound to UI button
+		function refreshFeatureStatus() {
+			if (window.featureManager && typeof window.featureManager.refreshFeatures === 'function') {
+				window.featureManager.refreshFeatures().then(renderFeatureStatus).catch(err => {
+					console.warn('Feature refresh failed:', err);
+					renderFeatureStatus();
+				});
+			} else {
+				renderFeatureStatus();
+			}
+		}
+
+		// Update dashboard statistics
+		function updateDashboardStats() {
+			const tags = Object.values(window.tagDB || {});
+			const currentTime = Date.now();
+
+			// Calculate statistics
+			const totalTags = tags.length;
+			const onlineTags = tags.filter(tag =>
+				tag.lastseen && (currentTime - tag.lastseen * 1000) < 300000 // 5 minutes
+			);
+			const onlineTagsCount = onlineTags.length;
+			const offlineTags = totalTags - onlineTagsCount;
+
+			// Calculate more detailed online tag stats
+			const recentlySeenTags = tags.filter(tag =>
+				tag.lastseen && (currentTime - tag.lastseen * 1000) < 60000 // 1 minute
+			).length;
+
+			const onlineTagTypes = [...new Set(onlineTags.map(tag => tag.tagType || 'Unknown'))];
+
+			// Calculate average battery level
+			const tagsWithBattery = tags.filter(tag => tag.batteryMv && tag.batteryMv > 0);
+			const avgBattery = tagsWithBattery.length > 0
+				? Math.round(tagsWithBattery.reduce((sum, tag) => sum + (tag.batteryMv || 0), 0) / tagsWithBattery.length / 30) // Rough battery percentage
+				: 0;
+
+			// Update dashboard elements
+			const dashTotalTags = document.getElementById('dash-total-tags');
+			const dashOnlineTags = document.getElementById('dash-online-tags');
+			const dashOfflineTags = document.getElementById('dash-offline-tags');
+			const dashAvgBattery = document.getElementById('dash-avg-battery');
+			const dashOnlineDetails = document.getElementById('dash-online-details');
+
+			if (dashTotalTags) dashTotalTags.textContent = totalTags;
+			if (dashOnlineTags) dashOnlineTags.textContent = onlineTagsCount;
+			if (dashOfflineTags) dashOfflineTags.textContent = offlineTags;
+			if (dashAvgBattery) dashAvgBattery.textContent = `${avgBattery}%`;
+			if (dashOnlineDetails) {
+				if (recentlySeenTags > 0) {
+					dashOnlineDetails.textContent = `${recentlySeenTags} active, ${onlineTagTypes.length} types`;
+				} else {
+					dashOnlineDetails.textContent = 'Click for details';
+				}
+			}
+
+			// Store detailed info for the modal
+			window.onlineTagsInfo = {
+				total: onlineTagsCount,
+				recent: recentlySeenTags,
+				types: onlineTagTypes,
+				tags: onlineTags
+			};
+
+			console.log(`Index page: Dashboard stats updated - ${totalTags} total, ${onlineTagsCount} online`);
+		}
+
+		// Enhanced refresh function with visual feedback and real data
+		function refreshData() {
+			console.log('Index page: Refreshing data...');
+			const refreshBtn = document.querySelector('[onclick="refreshData()"]');
+			if (refreshBtn) {
+				const icon = refreshBtn.querySelector('.material-symbols-outlined');
+				if (icon) {
+					icon.style.animation = 'spin 1s linear infinite';
+				}
+			}
+
+			// Refresh all data sources
+			Promise.all([
+				// Refresh AP config
+				fetch('get_ap_config').then(response => {
+					if (!response.ok) throw new Error(`AP config fetch failed: ${response.status}`);
+					return response.json();
+				}).catch(error => {
+					console.warn('AP config fetch failed:', error);
+					return null;
+				}),
+				// Refresh tag database
+				fetch('get_db?pos=0').then(response => {
+					if (!response.ok) throw new Error(`Tag DB fetch failed: ${response.status}`);
+					return response.json();
+				}).catch(error => {
+					console.warn('Tag DB fetch failed:', error);
+					return null;
+				})
+			])
+			.then(([apData, tagData]) => {
+				console.log('Index page: Data fetched, updating...');
+				// Update AP configuration
+				if (apData) {
+					window.apConfig = apData;
+					console.log('Index page: AP config updated');
+				}
+
+				// Update tag database
+				if (tagData && tagData.tags) {
+					if (!window.tagDB) window.tagDB = {};
+					tagData.tags.forEach(tag => {
+						window.tagDB[tag.mac] = tag;
+					});
+					console.log(`Index page: Updated ${tagData.tags.length} tags`);
+
+					// Continue loading if there are more tags
+					if (tagData.continu) {
+						return fetch(`get_db?pos=${tagData.continu}`)
+							.then(response => response.json())
+							.then(moreData => {
+								if (moreData && moreData.tags) {
+									moreData.tags.forEach(tag => {
+										window.tagDB[tag.mac] = tag;
+									});
+									console.log(`Index page: Loaded ${moreData.tags.length} additional tags`);
+								}
+							})
+							.catch(error => {
+								console.warn('Additional tags fetch failed:', error);
+							});
+					}
+				}
+			})
+			.then(() => {
+				// Update all dashboard components
+				updateCompactHeaderStatus();
+				updateFooterStatus();
+				updateSystemControlStatus();
+				updateDashboardStats();
+
+				console.log('Index page: Data refresh completed successfully');
+			})
+			.catch(error => {
+				console.error('Index page: Refresh error:', error);
+			})
+			.finally(() => {
+				// Stop loading animation
+				if (refreshBtn) {
+					const icon = refreshBtn.querySelector('.material-symbols-outlined');
+					if (icon) {
+						setTimeout(() => {
+							icon.style.animation = '';
+						}, 2000);
+					}
+				}
+			});
+		}
+
+		// Quick action functions for dashboard
+		function findAllTags() {
+			console.log('Index page: Finding all tags...');
+			// Send LED flash command to all active tags to help locate them
+			Object.keys(window.tagDB || {}).forEach(mac => {
+				const formData = new FormData();
+				formData.append('mac', mac);
+				formData.append('cmd', 'ledflash');
+
+				fetch('tag_cmd', {
+					method: 'POST',
+					body: formData
+				})
+				.then(response => response.text())
+				.then(data => {
+					console.log(`Find tag LED flash sent to ${mac}:`, data);
+				})
+				.catch(error => {
+					console.error(`Find tag error for ${mac}:`, error);
+				});
+			});
+
+			// Update dashboard components
+			updateCompactHeaderStatus();
+			updateDashboardStats();
+		}
+
+		function blinkAllTags() {
+			console.log('Index page: Blinking all tags...');
+			// Send LED flash command to all active tags
+			Object.keys(window.tagDB || {}).forEach(mac => {
+				const formData = new FormData();
+				formData.append('mac', mac);
+				formData.append('cmd', 'ledflash');
+
+				fetch('tag_cmd', {
+					method: 'POST',
+					body: formData
+				})
+				.then(response => response.text())
+				.then(data => {
+					console.log(`LED flash command sent to ${mac}:`, data);
+				})
+				.catch(error => {
+					console.error(`LED flash error for ${mac}:`, error);
+				});
+			});
+		}
+
+		// Scan Wi button handler: call existing wifi_scan endpoint and show results
+		async function scanWifiNetworksFromDashboard() {
+			const btn = document.getElementById('scan-wi-btn');
+			if (btn) btn.classList.add('loading');
+			try {
+				const resp = await fetch('wifi_scan');
+				if (!resp.ok) throw new Error(`wifi_scan failed: ${resp.status}`);
+				const data = await resp.json();
+				// Build a simple results HTML
+				let html = `<div style="max-width:560px; padding:12px; color:inherit;"><h3 style=\"margin-top:0;\">WiFi Scan Results</h3>`;
+				if (!Array.isArray(data) || data.length === 0) {
+					html += '<div>No networks found</div>';
+				} else {
+					html += '<div style="max-height:60vh; overflow:auto;">';
+					data.forEach(n => {
+						const ss = n.ssid || n.ssid_utf8 || n.name || 'Unknown';
+						html += `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);"><strong>${escapeHtml(ss)}</strong> <span style="opacity:0.8; font-size:12px;">(RSSI: ${n.rssi ?? n.level ?? 'n/a'})</span></div>`;
+					});
+					html += '</div>';
+				}
+				html += '<div style="text-align:right; margin-top:10px;"><button onclick="closeModal()" style="background:#4facfe;border:none;color:white;padding:8px 14px;border-radius:6px;">Close</button></div></div>';
+				showModal(html);
+			} catch (err) {
+				console.error('Scan Wi error:', err);
+				showToast('WiFi scan failed');
+			} finally {
+				if (btn) btn.classList.remove('loading');
+			}
+		}
+
+		// LED Off button handler: send command to led_control endpoint
+		async function sendLedOff() {
+			const btn = document.getElementById('led-off-btn');
+			if (btn) btn.classList.add('loading');
+			try {
+				const resp = await fetch('/led_control', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ cmd: 'off' })
+				});
+				if (!resp.ok) throw new Error(`led_control failed: ${resp.status}`);
+				const text = await resp.text();
+				console.log('LED Off response:', text);
+				showToast('LEDs turned off');
+			} catch (err) {
+				console.error('LED Off error:', err);
+				showToast('Failed to turn LEDs off');
+			} finally {
+				if (btn) btn.classList.remove('loading');
+			}
+		}
+
+		// Simple toast helper
+		function showToast(msg, timeout = 2500) {
+			const t = document.createElement('div');
+			t.className = 'notification info';
+			t.style.cssText = 'position:fixed; right:16px; bottom:16px; z-index:20000; padding:10px 14px; border-radius:8px; background:rgba(0,0,0,0.8); color:white;';
+			t.textContent = msg;
+			document.body.appendChild(t);
+			setTimeout(() => { t.style.transition = 'opacity 0.3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, timeout);
+		}
+
+		// small HTML escape to avoid injection if the endpoints return strings
++
+		function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+		function refreshAllTags() {
+			console.log('Index page: Refreshing all tags...');
+			// Refresh all tag data from the server
+			if (typeof loadTags === 'function') {
+				loadTags(0);
+			} else {
+				// Fallback: reload the page data
+				fetch('get_db?pos=0')
+					.then(response => response.json())
+					.then(data => {
+						if (data.tags) {
+							// Initialize tagDB if it doesn't exist
+							if (!window.tagDB) window.tagDB = {};
+							// Update tagDB with fresh data
+							data.tags.forEach(tag => {
+								window.tagDB[tag.mac] = tag;
+							});
+							updateDashboardStats();
+							updateCompactHeaderStatus();
+							console.log('Index page: Tag refresh completed');
+						}
+					})
+					.catch(error => {
+						console.error('Refresh error:', error);
+					});
+			}
+		}
+
+		function openAdvancedControl() {
+			// Open advanced control interface
+			window.location.href = 'tag_control_panel.html';
+		}
+
+		// Content generation control functions removed as UI no longer exposes them.
+
+		// Show detailed online tags information
+		function showOnlineTagsDetails() {
+			const info = window.onlineTagsInfo;
+			if (!info) {
+				alert('No online tags information available');
+				return;
+			}
+
+			let modalContent = `
+				<div style="max-width: 500px; background: rgba(20, 20, 30, 0.95); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
+					<h3 style="color: #4facfe; margin-bottom: 15px;">📡 Online Tags Details</h3>
+					<div style="margin-bottom: 15px;">
+						<strong>Total Online:</strong> ${info.total} tags<br>
+						<strong>Recently Active:</strong> ${info.recent} tags (last minute)<br>
+						<strong>Tag Types:</strong> ${info.types.join(', ') || 'Unknown'}
+					</div>
+					<div style="max-height: calc(60vh); overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 15px;">
+						<h4 style="color: #6bcf7f; font-size: 14px;">Online Tags List:</h4>
+						${info.tags.map(tag => {
+							const lastSeen = new Date(tag.lastseen * 1000).toLocaleTimeString();
+							const batteryMv = tag.batteryMv || 0;
+							const batteryPercent = Math.round(batteryMv / 30);
+							return `<div style="padding: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px;">
+								<strong>${tag.mac || 'Unknown MAC'}</strong> - ${tag.tagType || 'Unknown Type'}<br>
+								Last seen: ${lastSeen} | Battery: ${batteryPercent}% (${batteryMv}mV)
+							</div>`;
+						}).join('')}
+					</div>
+					<div style="text-align: center;">
+						<button onclick="closeModal()" style="background: #4facfe; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Close</button>
+						<button onclick="refreshAllTags(); closeModal();" style="background: #6bcf7f; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-left: 10px;">Refresh Tags</button>
+					</div>
+				</div>
+			`;
+
+			showModal(modalContent);
+		}
+
+		// Simple modal display function
+		function showModal(content) {
+			// close any existing modal first to avoid duplicates
+			closeModal();
+
+			// Create overlay
+			const modal = document.createElement('div');
+			modal.id = 'detailsModal';
+			modal.style.cssText = `
+				position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+				background: rgba(0,0,0,0.8); display: flex; align-items: center;
+				justify-content: center; z-index: 10000; padding: 20px; box-sizing: border-box;
+			`;
+
+			// Prevent body from scrolling while modal is open
+			document.body.style.overflow = 'hidden';
+
+			// Inner container that will actually hold the content and scroll internally if needed
+			const inner = document.createElement('div');
+			inner.className = 'modal-inner';
+			inner.style.cssText = `
+				max-width: 720px; width: 100%; max-height: calc(100vh - 80px);
+				overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0;
+				display: flex; align-items: flex-start; justify-content: center;
+			`;
+
+			// Put the provided content inside the inner container
+			inner.innerHTML = content;
+
+			// Helper to adjust vertical centering vs scroll behavior
+			function adjustModalSizing() {
+				try {
+					const viewportH = window.innerHeight || document.documentElement.clientHeight;
+					const maxInnerH = Math.max(120, viewportH - 80); // ensure some minimal height
+					inner.style.maxHeight = maxInnerH + 'px';
+					// content element is the first child inside the inner container
+					const contentEl = inner.firstElementChild;
+					if (!contentEl) return;
+					// reset any content-specific scroll styling
+					contentEl.style.maxHeight = '';
+					contentEl.style.overflowY = '';
+					// measure required height
+					const needed = contentEl.scrollHeight;
+					if (needed + 40 < maxInnerH) {
+						// content fits comfortably — center it vertically
+						inner.style.alignItems = 'center';
+						contentEl.style.margin = '0 auto';
+					} else {
+						// content too tall — align to top and let inner scroll
+						inner.style.alignItems = 'flex-start';
+						contentEl.style.margin = '';
+						// ensure the content element doesn't force additional overflow
+						contentEl.style.maxHeight = (maxInnerH - 20) + 'px';
+						contentEl.style.overflowY = 'auto';
+					}
+				} catch (e) {
+					console.warn('adjustModalSizing failed', e);
+				}
+			}
+
+			// Clicking the overlay (modal) closes, but clicks inside inner should not
+			modal.addEventListener('click', function(e) {
+				if (e.target === modal) closeModal();
+			});
+			inner.addEventListener('click', function(e) { e.stopPropagation(); });
+
+			modal.appendChild(inner);
+			document.body.appendChild(modal);
+
+			// Run adjustment and attach resize handler so layout updates on viewport changes
+			adjustModalSizing();
+			modal._adjustHandler = adjustModalSizing;
+			window.addEventListener('resize', adjustModalSizing);
+		}
+
+		function closeModal() {
+			const modal = document.getElementById('detailsModal');
+			if (modal) {
+				// remove resize handler if set
+				if (modal._adjustHandler) {
+					window.removeEventListener('resize', modal._adjustHandler);
+					modal._adjustHandler = null;
+				}
+				modal.remove();
+				// Restore body scrolling
+				document.body.style.overflow = '';
+			}
+		}
+
+	// ------------------- ESP32 Telemetry & Pins Visualization -------------------
+	// Lightweight sparklines using Chart.js
+	let cpuChart, heapChart, wifiChart;
+	const telemetryHistory = { cpu: [], heap: [], rssi: [], maxLen: 30 };
+
+	function initTelemetryCharts() {
+		const cpuCtx = document.getElementById('cpuSpark').getContext('2d');
+		const heapCtx = document.getElementById('heapSpark').getContext('2d');
+		const wifiCtx = document.getElementById('wifiSpark').getContext('2d');
+
+		const baseOpts = { responsive: true, maintainAspectRatio: false, animation: false, scales: { x: { display: false }, y: { display: false } }, elements: { line: { tension: 0.3, borderWidth: 2 }, point: { radius: 0 } }, plugins: { legend: { display: false } } };
+
+		cpuChart = new Chart(cpuCtx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#4facfe', backgroundColor: 'rgba(79,172,254,0.06)' }] }, options: baseOpts });
+		heapChart = new Chart(heapCtx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#6bcf7f', backgroundColor: 'rgba(107,207,127,0.06)' }] }, options: baseOpts });
+		wifiChart = new Chart(wifiCtx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.06)' }] }, options: baseOpts });
+	}
+
+	function pushTelemetrySample(cpu, heap, rssi) {
+		const h = telemetryHistory;
+		h.cpu.push(cpu); if (h.cpu.length > h.maxLen) h.cpu.shift();
+		h.heap.push(heap); if (h.heap.length > h.maxLen) h.heap.shift();
+		h.rssi.push(rssi); if (h.rssi.length > h.maxLen) h.rssi.shift();
+
+		const labels = h.cpu.map((_, i) => i);
+		cpuChart.data.labels = labels; cpuChart.data.datasets[0].data = h.cpu; cpuChart.update('none');
+		heapChart.data.labels = labels; heapChart.data.datasets[0].data = h.heap; heapChart.update('none');
+		wifiChart.data.labels = labels; wifiChart.data.datasets[0].data = h.rssi; wifiChart.update('none');
+
+		document.getElementById('cpu-text-small').textContent = cpu;
+		document.getElementById('freeheap-small').textContent = `${Math.round(heap/1024)} KB`;
+		document.getElementById('rssi-small').textContent = rssi;
+	}
+
+	async function fetchTelemetry() {
+		try {
+			const resp = await fetch('/api/telemetry');
+			if (!resp.ok) throw new Error('telemetry fetch failed');
+			const data = await resp.json();
+			const cpu = data.cpuFreqMHz || data.cpuFreq || 0;
+			const heap = data.freeHeap || 0;
+			const rssi = data.rssi || 0;
+			pushTelemetrySample(cpu, heap, rssi);
+		} catch (err) {
+			console.warn('Telemetry poll failed:', err);
+		}
+	}
+
+	function renderPinsTable(pinsObj) {
+		const container = document.getElementById('featureList');
+		if (!container) return;
+		// Append a small pins table below existing feature items
+		let table = document.getElementById('pinsTable');
+		if (!table) {
+			table = document.createElement('div');
+			table.id = 'pinsTable';
+			table.style.marginTop = '10px';
+			table.style.fontSize = '13px';
+			container.appendChild(table);
+		}
+		// Build HTML rows
+		let html = '<div style="font-weight:600; margin-bottom:6px;">Pin Summary</div>';
+		html += '<div style="display:flex; flex-wrap:wrap; gap:8px;">';
+		Object.entries(pinsObj).forEach(([k, v]) => {
+			let badge = '';
+			if (v.source) badge = `<div style=\"font-size:11px; opacity:0.8; margin-left:6px; padding:2px 6px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);\">${v.source}</div>`;
+			let val = '';
+			if (typeof v === 'object' && !Array.isArray(v)) {
+				const entries = Object.entries(v).filter(e => e[0] !== 'source').map(e => `${e[0]}:${e[1]}`).join(', ');
+				val = entries || (v.note ? v.note : '');
+			} else {
+				val = v;
+			}
+			html += `<div style=\"padding:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); border-radius:8px; min-width:120px;\"><div style=\"font-weight:600;\">${k}</div><div style=\"font-size:12px; opacity:0.95;\">${val}</div>${badge}</div>`;
+		});
+		html += '</div>';
+		table.innerHTML = html;
+	}
+
+	async function fetchPins() {
+		try {
+			const resp = await fetch('/api/pins');
+			if (!resp.ok) throw new Error('pins fetch failed');
+			const data = await resp.json();
+			renderPinsTable(data);
+		} catch (err) {
+			console.warn('Pins endpoint unavailable, falling back to build-time map');
+			// Fallback to window.featurePinMap
+			if (window.featurePinMap) {
+				renderPinsTable(window.featurePinMap);
+			}
+		}
+	}
+
+	// Start telemetry polling and charts once DOM is ready and Chart.js loaded
+	document.addEventListener('DOMContentLoaded', () => {
+		try {
+			if (typeof Chart !== 'undefined') {
+				initTelemetryCharts();
+				fetchTelemetry();
+				fetchPins();
+				setInterval(fetchTelemetry, 5000);
+				setInterval(fetchPins, 60000);
+			} else {
+				console.warn('Chart.js not available for telemetry charts');
+			}
+		} catch (e) {
+			console.error('Error initializing telemetry:', e);
+		}
+	});
+
+
+	// Module search helpers
+	function filterModules() {
+		const q = (document.getElementById('moduleSearch') || {}).value || '';
+		const grid = document.getElementById('modulesGrid');
+		if (!grid) return;
+		const items = Array.from(grid.querySelectorAll('.module-card'));
+		const sq = q.trim().toLowerCase();
+		items.forEach(a => {
+			const text = (a.textContent || '').toLowerCase();
+			a.style.display = sq === '' || text.indexOf(sq) !== -1 ? 'flex' : 'none';
+		});
+	}
+
+	function clearModuleSearch() {
+		const input = document.getElementById('moduleSearch');
+		if (input) {
+			input.value = '';
+			filterModules();
+			input.focus();
+		}
+	}
+
+		// Helper functions
+		function updateSignalBars() {
+			// Signal strength visualization would go here
+		}
+
+		function animateProgressBars() {
+			// Progress bar animations would go here
+		}
+
+		function addTooltips() {
+			// Tooltip enhancements would go here
+		}
+
+		// Enhanced Overview Card Interactions
+		document.addEventListener('DOMContentLoaded', function() {
+			// Add hover effects for overview items
+			const style = document.createElement('style');
+			style.textContent = `
+				.overview-item {
+					transition: all 0.3s ease;
+					border-radius: 8px;
+					padding: 5px;
+				}
+				.overview-item:hover {
+					background: rgba(79, 172, 254, 0.1);
+					transform: translateY(-2px);
+					box-shadow: 0 4px 15px rgba(79, 172, 254, 0.2);
+				}
+				.overview-item.clickable {
+					cursor: pointer;
+				}
+				.overview-sublabel {
+					display: block;
+					font-size: 0.8em;
+					color: rgba(255,255,255,0.7);
+					margin-top: 2px;
+					transition: color 0.3s ease;
+				}
+				.overview-item:hover .overview-sublabel {
+					color: rgba(255,255,255,0.9);
+				}
+				@keyframes pulse {
+					0% { opacity: 1; }
+					50% { opacity: 0.7; }
+					100% { opacity: 1; }
+				}
+				.overview-value.updating {
+					animation: pulse 1s infinite;
+				}
+			`;
+			document.head.appendChild(style);
+		});
+
+		// Initialize all enhancements when DOM is ready
+		document.addEventListener('DOMContentLoaded', function() {
+			console.log('Index page: Setting up initialization...');
+
+			// Initialize global variables if they don't exist
+			if (typeof window.tagDB === 'undefined') {
+				window.tagDB = {};
+				console.log('Index page: Initialized empty tagDB');
+			}
+			if (typeof window.apConfig === 'undefined') {
+				window.apConfig = {};
+				console.log('Index page: Initialized empty apConfig');
+			}
+
+			// Wait for main.js to load and initialize
+			const initializeWhenReady = () => {
+				const hasTagDB = typeof window.tagDB !== 'undefined';
+				const hasLoadTags = typeof loadTags === 'function';
+				const hasClasses = typeof window.OptimizedApp !== 'undefined';
+
+				console.log(`Index page: Readiness check - tagDB: ${hasTagDB}, loadTags: ${hasLoadTags}, classes: ${hasClasses}`);
+
+				if (hasTagDB && (hasLoadTags || hasClasses)) {
+					console.log('Index page: Core functionality ready, initializing enhancements');
+					initializeEnhancements();
+					updateHeaderUptime();
+
+					// Connect to existing WebSocket if available
+					if (typeof socket !== 'undefined' && socket) {
+						const originalOnMessage = socket.onmessage;
+						socket.onmessage = function(event) {
+							// Call original handler first
+							if (originalOnMessage) {
+								originalOnMessage.call(this, event);
+							}
+
+							// Update our enhanced components
+							setTimeout(() => {
+								updateDashboardStats();
+								updateCompactHeaderStatus();
+							}, 100);
+						};
+						console.log('Index page: WebSocket event handler attached');
+					}
+				} else {
+					// Retry in 200ms if main.js isn't ready yet
+					setTimeout(initializeWhenReady, 200);
+				}
+			};
+
+			initializeWhenReady();
+		});
+
+		// Wire up new quick-action buttons
++
+		document.addEventListener('DOMContentLoaded', function() {
+			const scanBtn = document.getElementById('scan-wi-btn');
+			if (scanBtn) scanBtn.addEventListener('click', scanWifiNetworksFromDashboard);
+			const ledOffBtn = document.getElementById('led-off-btn');
+			if (ledOffBtn) ledOffBtn.addEventListener('click', sendLedOff);
+		});
+	</script>
+
+</body>
+
+</html>

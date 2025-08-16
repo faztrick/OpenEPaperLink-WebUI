@@ -7,7 +7,7 @@ src = root / 'src'
 
 pattern = re.compile(r"\bJsonDocument\s+([A-Za-z_]\w*)\s*\(\s*([A-Za-z0-9_]+)\s*\)")
 include_arn = re.compile(r"#include\s*<ArduinoJson.h>")
-include_z = '#include "JsonDocumentz.h"'
+include_z = ''
 
 updated_files = []
 for path in src.rglob('*.cpp'):

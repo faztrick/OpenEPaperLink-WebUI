@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <AsyncJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
@@ -15,8 +16,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "AsyncJson.h"
-#include "JsonDocumentz.h"
 #include "SPIFFSEditor.h"
 #include "c6_module.h"
 #include "commstructs.h"
@@ -76,7 +75,7 @@ static bool sendWSMessage(const JsonDocument &doc, uint32_t timeout_ms = WEBSOCK
 void wsLog(const String &text) {
     if (text.isEmpty() || ws.count() == 0) return;
 
-    JsonDocumentz doc;
+    JsonDocument doc;
     doc["logMsg"] = text;
     sendWSMessage(doc);
 }
@@ -84,7 +83,7 @@ void wsLog(const String &text) {
 void wsErr(const String &text) {
     if (text.isEmpty() || ws.count() == 0) return;
 
-    JsonDocumentz doc;
+    JsonDocument doc;
     doc["errMsg"] = text;
     sendWSMessage(doc);
 }
@@ -114,7 +113,7 @@ size_t dbSize() {
 void wsSendSysteminfo() {
     if (ws.count() == 0) return;  // No clients connected
 
-    JsonDocumentz doc;
+    JsonDocument doc;
     JsonObject sys = doc["sys"].to<JsonObject>();
     time_t now;
     time(&now);
@@ -273,7 +272,7 @@ void wsSendTaginfo(const uint8_t *mac, uint8_t syncMode) {
 void wsSendAPitem(struct APlist *apitem) {
     if (!apitem || ws.count() == 0) return;
 
-    JsonDocumentz doc;
+    JsonDocument doc;
     JsonObject ap = doc["apitem"].to<JsonObject>();
 
     char version_str[6];
@@ -294,7 +293,7 @@ void wsSerial(const String &text) {
 
 void wsSerial(const String &text, const String &color) {
     if (text.isEmpty()) return;
-    JsonDocumentz doc;
+    JsonDocument doc;
     doc["console"] = text;
     if (!color.isEmpty()) doc["color"] = color;
 
@@ -361,6 +360,84 @@ void init_web() {
             json = tagDBtoJson(nullptr, startPos);
         }
         request->send(200, "application/json", json);
+    });
+
+    // Compatibility endpoints used by legacy/various frontends
+    server.on("/gettags", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // Return the same data as /get_db default (all tags)
+        String json = tagDBtoJson(nullptr);
+        request->send(200, "application/json", json);
+    });
+
+    server.on("/gettaginfo", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("mac")) {
+            String dst = request->getParam("mac")->value();
+            uint8_t mac[8];
+            if (hex2mac(dst, mac)) {
+                String json = tagDBtoJson(mac);
+                request->send(200, "application/json", json);
+                return;
+            }
+        }
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid mac parameter\"}");
+    });
+
+    // Legacy alias for tag commands (JS sometimes calls /cmd)
+    server.on("/cmd", HTTP_POST, [](AsyncWebServerRequest *request) {
+        // Mirror behavior of /tag_cmd
+        if (request->hasParam("mac", true) && request->hasParam("cmd", true)) {
+            uint8_t mac[8];
+            if (hex2mac(request->getParam("mac", true)->value(), mac)) {
+                tagRecord *taginfo = tagRecord::findByMAC(mac);
+                if (taginfo != nullptr) {
+                    const char *cmdValue = request->getParam("cmd", true)->value().c_str();
+                    if (strcmp(cmdValue, "del") == 0) {
+                        wsSendTaginfo(mac, SYNC_DELETE);
+                        deleteRecord(mac);
+                    }
+                    if (strcmp(cmdValue, "purge") == 0) {
+                        time_t now;
+                        time(&now);
+                        for (int c = tagDB.size() - 1; c >= 0; --c) {
+                            tagRecord *tag = tagDB.at(c);
+                            if (tag->expectedNextCheckin == 3216153600 || tag->lastseen < now - 24 * 3600 || now > tag->expectedNextCheckin + 600) {
+                                wsSendTaginfo(tag->mac, SYNC_DELETE);
+                                deleteRecord(tag->mac);
+                            }
+                        }
+                    }
+                    if (strcmp(cmdValue, "clear") == 0) {
+                        clearPending(taginfo);
+                        while (dequeueItem(mac)) {
+                        };
+                        taginfo->pendingCount = countQueueItem(mac);
+                        wsSendTaginfo(mac, SYNC_TAGSTATUS);
+                    }
+                    if (strcmp(cmdValue, "refresh") == 0) {
+                        updateContent(mac);
+                    }
+                    if (strcmp(cmdValue, "reboot") == 0) {
+                        sendTagCommand(mac, CMD_DO_REBOOT, !taginfo->isExternal);
+                    }
+                    if (strcmp(cmdValue, "scan") == 0) {
+                        sendTagCommand(mac, CMD_DO_SCAN, !taginfo->isExternal);
+                    }
+                    if (strcmp(cmdValue, "reset") == 0) {
+                        sendTagCommand(mac, CMD_DO_RESET_SETTINGS, !taginfo->isExternal);
+                    }
+                    if (strcmp(cmdValue, "deepsleep") == 0) {
+                        sendTagCommand(mac, CMD_DO_DEEPSLEEP, !taginfo->isExternal);
+                        taginfo->pendingIdle = 9999;
+                        wsSendTaginfo(mac, SYNC_TAGSTATUS);
+                    }
+                    request->send(200, "text/plain", "Ok, done");
+                    return;
+                }
+            }
+            request->send(400, "text/plain", "Error: mac not found or invalid");
+            return;
+        }
+        request->send(500, "text/plain", "param error");
     });
 
     server.on("/getdata", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -751,7 +828,7 @@ void init_web() {
     });
     server.on("/set_vars", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (request->hasParam("json", true)) {
-            JsonDocumentz jsonDocument;
+            JsonDocument jsonDocument;
             DeserializationError error = deserializeJson(jsonDocument, request->getParam("json", true)->value());
             if (error) {
                 request->send(400, "text/plain", "Failed to parse JSON");
@@ -778,7 +855,7 @@ void init_web() {
     server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
         Preferences preferences;
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        JsonDocumentz doc;
+        JsonDocument doc;
         preferences.begin("wifi", false);
         const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
         const size_t numKeys = sizeof(keys) / sizeof(keys[0]);
@@ -795,7 +872,7 @@ void init_web() {
         response->addHeader("Cache-Control", "max-age=30");  // Cache for 30 seconds
 
         // Increased buffer size for better compatibility
-        JsonDocumentz doc;
+        JsonDocument doc;
 
         // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
@@ -834,7 +911,7 @@ void init_web() {
             int networkLimit = min((int)networkPairs.size(), 40);
             for (int idx = 0; idx < networkLimit; idx++) {
                 int i = networkPairs[idx].first;
-                JsonObject network = networks.createNestedObject();
+                JsonObject network = networks.add<ArduinoJson::JsonObject>();
                 network["ssid"] = WiFi.SSID(i);
                 network["ch"] = WiFi.channel(i);
                 network["rssi"] = WiFi.RSSI(i);
@@ -888,7 +965,7 @@ void init_web() {
 
         for (size_t i = 0; i < numKeys; i++) {
             String key = keys[i];
-            if (jsonObj.containsKey(key)) {
+            if (!jsonObj[key].isNull()) {
                 String value = jsonObj[key].as<String>();
                 Serial.printf("Saving %s: %s\n", key.c_str(), value.c_str());
 
@@ -954,7 +1031,7 @@ void init_web() {
 
     // Add WiFi config retrieval endpoint for debugging
     server.on("/get_wifi_config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         Preferences preferences;
 
         if (preferences.begin("wifi", true)) {  // Read-only mode
@@ -1009,7 +1086,7 @@ void init_web() {
     });
 
     server.on("/api/features", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["HAS_RGB_LED"] = false;
         doc["HAS_TFT"] = false;
         doc["HAS_BLE_WRITER"] = false;
@@ -1047,6 +1124,95 @@ void init_web() {
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
+    });
+
+    // Expose best-effort pin mapping (build-time / driver hints)
+    server.on("/api/pins", HTTP_GET, [](AsyncWebServerRequest *request) {
+        JsonDocument doc;
+        // Populate from compile-time macros where available
+#ifdef HAS_TFT
+        JsonObject tft = doc.createNestedObject("TFT");
+#ifdef TFT_MOSI
+        tft["MOSI"] = TFT_MOSI;
+#endif
+#ifdef TFT_SCLK
+        tft["SCLK"] = TFT_SCLK;
+#endif
+#ifdef TFT_CS
+        tft["CS"] = TFT_CS;
+#endif
+#ifdef TFT_DC
+        tft["DC"] = TFT_DC;
+#endif
+#ifdef TFT_RST
+        tft["RST"] = TFT_RST;
+#endif
+        tft["source"] = "build-time";
+#endif
+
+#ifdef HAS_RGB_LED
+        JsonObject rgb = doc.createNestedObject("FLASHER_RGB_LED");
+#ifdef FLASHER_RGB_LED
+        rgb["pin"] = FLASHER_RGB_LED;
+#endif
+        rgb["source"] = "build-time";
+#endif
+
+#ifdef HAS_EXT_FLASHER
+        JsonObject flasher = doc.createNestedObject("FLASHER_LED");
+#ifdef FLASHER_LED
+        flasher["pin"] = FLASHER_LED;
+#endif
+        flasher["source"] = "build-time";
+#endif
+
+#ifdef HAS_RC522_RFID
+        JsonObject rc = doc.createNestedObject("RC522");
+#ifdef RC522_SS_PIN
+        rc["SS"] = RC522_SS_PIN;
+#endif
+#ifdef RC522_RST_PIN
+        rc["RST"] = RC522_RST_PIN;
+#endif
+        rc["source"] = "driver/build-time (example)";
+#endif
+
+        // CC1101 / Sub-GHz - driver may not expose pins at compile-time
+#ifdef HAS_SUBGHZ
+        JsonObject sub = doc.createNestedObject("SUBGHZ");
+        sub["note"] = "pins vary by board/driver";
+        sub["source"] = "driver";
+#endif
+
+        // Send response
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Lightweight telemetry endpoint intended for frontend visualizations
+    server.on("/api/telemetry", HTTP_GET, [](AsyncWebServerRequest *request) {
+        JsonDocument doc;
+        doc["uptime_ms"] = (uint64_t)millis();
+        doc["freeHeap"] = ESP.getFreeHeap();
+#if BOARD_HAS_PSRAM
+        doc["freePsram"] = ESP.getFreePsram();
+#endif
+        doc["heapSize"] = ESP.getHeapSize();
+        doc["minFreeHeap"] = ESP.getMinFreeHeap();
+        doc["cpuFreqMHz"] = ESP.getCpuFreqMHz();
+        doc["rssi"] = WiFi.RSSI();
+        doc["wifiStatus"] = WiFi.status();
+        doc["localIP"] = WiFi.localIP().toString();
+        doc["macAddress"] = WiFi.macAddress();
+        doc["apState"] = apInfo.state;
+
+        // Offer a small list of recent tag counts for quick charting
+        doc["tagCount"] = (uint32_t)tagDB.size();
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
     });
 
     // Enhanced Module Management API Endpoints
@@ -1163,7 +1329,7 @@ void init_web() {
         irInterface.stopLearning();
 
         if (learned.code != 0) {
-            JsonDocumentz doc(512);
+            JsonDocument doc;
             doc["success"] = true;
             doc["protocol"] = irProtocolTypeToString(learned.protocol);
             doc["code"] = "0x" + String(learned.code, HEX);
@@ -1180,8 +1346,8 @@ void init_web() {
 
     server.on("/ir/profiles", HTTP_GET, [](AsyncWebServerRequest *request) {
         std::vector<String> profiles = irInterface.getProfileList();
-        JsonDocumentz doc(1024);
-        JsonArray profileArray = doc.createNestedArray("profiles");
+        JsonDocument doc;
+        JsonArray profileArray = doc["profiles"].to<ArduinoJson::JsonArray>();
 
         for (const String &profile : profiles) {
             profileArray.add(profile);
@@ -1199,7 +1365,7 @@ void init_web() {
         if (irInterface.hasReceivedCommand()) {
             IRCommand cmd = irInterface.getLastCommand();
 
-            JsonDocumentz doc(512);
+            JsonDocument doc;
             doc["hasCommand"] = true;
             doc["protocol"] = irProtocolTypeToString(cmd.protocol);
             doc["code"] = "0x" + String(cmd.code, HEX);
@@ -1231,7 +1397,7 @@ void init_web() {
         if (cardFound) {
             RFIDCardInfo card = rc522Interface.getCardInfo();
 
-            JsonDocumentz doc(1024);
+            JsonDocument doc;
             doc["success"] = true;
             doc["cardPresent"] = true;
             doc["uid"] = card.uid;
@@ -1261,7 +1427,7 @@ void init_web() {
             String text;
             RFIDResult result = rc522Interface.readText(text);
 
-            JsonDocumentz doc(1024);
+            JsonDocument doc;
             doc["success"] = result.success;
             doc["message"] = result.message;
             if (result.success) {
@@ -1285,7 +1451,7 @@ void init_web() {
 
             RFIDResult result = rc522Interface.readBlock(blockNumber, buffer, bufferSize);
 
-            JsonDocumentz doc(512);
+            JsonDocument doc;
             doc["success"] = result.success;
             doc["message"] = result.message;
             doc["block"] = blockNumber;
@@ -1324,7 +1490,7 @@ void init_web() {
 
             RFIDResult result = rc522Interface.writeText(text, sector);
 
-            JsonDocumentz doc(512);
+            JsonDocument doc;
             doc["success"] = result.success;
             doc["message"] = result.message;
             doc["text"] = text;
@@ -1345,11 +1511,11 @@ void init_web() {
     server.on("/rfid/cards", HTTP_GET, [](AsyncWebServerRequest *request) {
         std::vector<RFIDCardInfo> cards = rc522Interface.getDetectedCards();
 
-        JsonDocumentz doc(2048);
-        JsonArray cardArray = doc.createNestedArray("cards");
+        JsonDocument doc;
+        JsonArray cardArray = doc["cards"].to<ArduinoJson::JsonArray>();
 
         for (const RFIDCardInfo &card : cards) {
-            JsonObject cardObj = cardArray.createNestedObject();
+            JsonObject cardObj = cardArray.add<ArduinoJson::JsonObject>();
             cardObj["uid"] = card.uid;
             cardObj["type"] = card.typeName;
             cardObj["blockCount"] = card.blockCount;
@@ -1491,14 +1657,14 @@ void init_web() {
             dir = "/" + dir;
         }
 
-        JsonDocumentz doc(4096);
-        JsonArray files = doc.createNestedArray("files");
+        JsonDocument doc;
+        JsonArray files = doc["files"].to<ArduinoJson::JsonArray>();
 
         File root = contentFS->open(dir);
         if (root && root.isDirectory()) {
             File file = root.openNextFile();
             while (file) {
-                JsonObject fileObj = files.createNestedObject();
+                JsonObject fileObj = files.add<ArduinoJson::JsonObject>();
                 fileObj["name"] = String(file.name());
                 fileObj["size"] = file.size();
                 fileObj["isDirectory"] = file.isDirectory();
@@ -1544,7 +1710,7 @@ void init_web() {
     });
 
     server.on("/get_function_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
         doc["runStatus"] = config.runStatus;
         doc["runStatusText"] = (config.runStatus == RUNSTATUS_RUN) ? "Running" : (config.runStatus == RUNSTATUS_STOP) ? "Stopped"
                                                                              : (config.runStatus == RUNSTATUS_PAUSE)  ? "Paused"
@@ -1564,7 +1730,7 @@ void init_web() {
 
     // System Control Endpoints
     server.on("/system_info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
         doc["success"] = true;
         doc["chipModel"] = ESP.getChipModel();
         doc["chipRevision"] = ESP.getChipRevision();
@@ -1593,7 +1759,7 @@ void init_web() {
             delay = request->getParam("delay", true)->value().toInt();
         }
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "System will restart in " + String(delay) + " seconds";
 
@@ -1616,7 +1782,7 @@ void init_web() {
             level = request->getParam("level", true)->value();
         }
 
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
         doc["success"] = true;
         doc["level"] = level;
         doc["heap"]["free"] = ESP.getFreeHeap();
@@ -1640,7 +1806,7 @@ void init_web() {
 
     // Tag Control Endpoints
     server.on("/tag_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["success"] = true;
         doc["tagCount"] = tagDB.size();
         doc["pendingCount"] = pendingQueue.size();
@@ -1667,7 +1833,7 @@ void init_web() {
         String action = request->getParam("action", true)->value();
         String data = request->hasParam("data", true) ? request->getParam("data", true)->value() : "";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["tagId"] = tagId;
         doc["action"] = action;
@@ -1698,7 +1864,7 @@ void init_web() {
         String imageData = request->getParam("imageData", true)->value();
         String imageType = request->hasParam("imageType", true) ? request->getParam("imageType", true)->value() : "bmp";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["tagId"] = tagId;
         doc["imageType"] = imageType;
@@ -1718,7 +1884,7 @@ void init_web() {
         }
 
         String action = request->getParam("action", true)->value();
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
 
@@ -1759,7 +1925,7 @@ void init_web() {
 
     // Network Endpoints
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["success"] = true;
         doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
         doc["wifi"]["ssid"] = WiFi.SSID();
@@ -1779,7 +1945,7 @@ void init_web() {
 
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request) {
         // Increased buffer size for better memory handling
-        JsonDocumentz doc(4096);
+        JsonDocument doc;
 
         // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
@@ -1849,7 +2015,7 @@ void init_web() {
             doc["wifiMode"] = WiFi.getMode();
             doc["timestamp"] = millis();
 
-            JsonArray networks = doc.createNestedArray("networks");
+            JsonArray networks = doc["networks"].to<ArduinoJson::JsonArray>();
 
             // Limit networks to prevent memory issues and sort by signal strength
             int maxNetworks = min(n, 50);
@@ -1880,7 +2046,7 @@ void init_web() {
                 if (addedCount >= maxNetworks) break;
 
                 int i = netInfo.index;
-                JsonObject network = networks.createNestedObject();
+                JsonObject network = networks.add<ArduinoJson::JsonObject>();
                 network["ssid"] = WiFi.SSID(i);
                 network["rssi"] = WiFi.RSSI(i);
                 network["encryption"] = WiFi.encryptionType(i);
@@ -1911,7 +2077,7 @@ void init_web() {
         String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value() : "";
         String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
 
@@ -1943,7 +2109,7 @@ void init_web() {
     server.on("/ota_check", HTTP_GET, [](AsyncWebServerRequest *request) {
         String target = request->hasParam("target") ? request->getParam("target")->value() : "all";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["target"] = target;
         doc["currentVersion"] = "3.0.0";
@@ -1965,7 +2131,7 @@ void init_web() {
         String target = request->getParam("target", true)->value();
         String version = request->hasParam("version", true) ? request->getParam("version", true)->value() : "latest";
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["target"] = target;
         doc["version"] = version;
@@ -1978,7 +2144,7 @@ void init_web() {
 
     // Additional Enhanced Endpoints
     server.on("/ble_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["bleEnabled"] = false;  // BLE not implemented yet
         doc["connectedDevices"] = 0;
@@ -1992,7 +2158,7 @@ void init_web() {
 
     server.on("/ble_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "BLE action queued (not implemented)";
@@ -2003,7 +2169,7 @@ void init_web() {
     });
 
     server.on("/serial_ap_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["state"] = apInfo.state;
         doc["online"] = apInfo.isOnline;
@@ -2020,7 +2186,7 @@ void init_web() {
 
     server.on("/serial_ap_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
 
@@ -2044,7 +2210,7 @@ void init_web() {
 
     server.on("/zbs_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "ZBS interface action queued (hardware dependent)";
@@ -2056,7 +2222,7 @@ void init_web() {
 
     server.on("/swd_control", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
         doc["result"] = "SWD programming action queued (hardware dependent)";
@@ -2068,7 +2234,7 @@ void init_web() {
 
     server.on("/spiffs_manage", HTTP_POST, [](AsyncWebServerRequest *request) {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         doc["success"] = true;
         doc["action"] = action;
 
@@ -2090,6 +2256,42 @@ void init_web() {
         serializeJson(doc, *response);
         request->send(response);
     });
+
+    // Convenience API to read/update apconfig.json under /current
+    server.on("/api/config/apconfig", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const char *path = "/current/apconfig.json";
+        if (contentFS->exists(path)) {
+            request->send(*contentFS, path, "application/json");
+        } else {
+            request->send(404, "application/json", "{\"error\":\"apconfig.json not found\"}");
+        }
+    });
+
+    server.on("/api/config/apconfig", HTTP_POST, [](AsyncWebServerRequest *request) {
+        // Body handler will handle the content
+        request->send(200, "application/json", "{\"status\":\"ok\"}"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        static String body = "";
+        if (index == 0) body = "";
+        for (size_t i = 0; i < len; i++) body += (char)data[i];
+        if (index + len == total) {
+            // Write atomically under semaphore
+            const char *path = "/current/apconfig.json";
+            if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                File f = contentFS->open(path, "w");
+                if (f) {
+                    f.print(body);
+                    f.close();
+                    xSemaphoreGive(fsMutex);
+                    wsSerial("apconfig.json updated via API");
+                    request->send(200, "application/json", "{\"success\":true}");
+                } else {
+                    xSemaphoreGive(fsMutex);
+                    request->send(500, "application/json", "{\"error\":\"Failed to open file for writing\"}");
+                }
+            } else {
+                request->send(503, "application/json", "{\"error\":\"File system busy\"}");
+            }
+        } });
     server.on(
         "/littlefs_put", HTTP_POST, [](AsyncWebServerRequest *request) {
             request->send(200);
@@ -2138,7 +2340,7 @@ void init_web() {
             // When we have the complete body
             if (index + len == total) {
                 // Parse the request
-                JsonDocumentz requestDoc(8192);
+                JsonDocument requestDoc;
                 DeserializationError error = deserializeJson(requestDoc, requestBody);
 
                 if (error) {
@@ -2148,7 +2350,7 @@ void init_web() {
 
                 // Load OpenAI configuration
                 String configPath = "/openai_config.json";
-                JsonDocumentz configDoc(4096);
+                JsonDocument configDoc;
 
                 if (contentFS->exists(configPath)) {
                     File configFile = contentFS->open(configPath, "r");
@@ -2205,6 +2407,18 @@ void init_web() {
 
     // Initialize C6 module (this will register it with the module manager)
     initC6Module();
+
+    // Load persisted module config (autoStart flags) if available
+    if (!moduleManager.loadConfig()) {
+        Serial.println("[WEB] No persisted module config found or failed to load");
+        // No persisted config - enforce sensible defaults so basic modules auto-start
+        // This will not override user choices if they exist in NVS
+        Serial.println("[WEB] Applying default autoStart for core modules: WiFiModule, C6Module");
+        // Ensure WiFi module autoStart is enabled by default
+        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"C6Module\",\"autoStart\":true}]");
+    } else {
+        Serial.println("[WEB] Module configuration loaded from NVS");
+    }
 
     // Start all auto-start modules
     if (!moduleManager.startAll()) {
@@ -2480,7 +2694,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
 
     // Module list endpoint - GET /api/modules
     server.on("/api/modules", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
 
         // Get module manager instance
         ModuleManager &manager = ModuleManager::getInstance();
@@ -2497,7 +2711,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
 
         for (const auto &module : moduleList) {
             if (module.instance != nullptr) {
-                JsonObject moduleObj = modules.createNestedObject();
+                JsonObject moduleObj = modules.add<ArduinoJson::JsonObject>();
                 ModuleInfo info = module.instance->getInfo();
 
                 moduleObj["name"] = info.name;
@@ -2531,7 +2745,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
 
     // Module status endpoint - GET /api/modules/status
     server.on("/api/modules/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JsonDocumentz doc(1024);
+        JsonDocument doc;
         ModuleManager &manager = ModuleManager::getInstance();
 
         doc["systemHealthy"] = manager.isSystemHealthy();
@@ -2565,7 +2779,7 @@ void setupModuleManagementAPI(AsyncWebServer &server) {
         String moduleName = request->getParam("module", true)->value();
         String action = request->getParam("action", true)->value();
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["module"] = moduleName;
         doc["action"] = action;
 

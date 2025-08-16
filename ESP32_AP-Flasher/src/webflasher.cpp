@@ -5,7 +5,6 @@
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 
-#include "JsonDocumentz.h"
 // #include <freertos/FreeRTOS.h>
 // #include <freertos/task.h>
 
@@ -468,9 +467,9 @@ void webFlasherTask(void* parameter) {
 }
 
 void handleWSdata(uint8_t* data, size_t len, AsyncWebSocketClient* client) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, (const char*)data);
-    JsonDocumentz response(2048);
+    JsonDocument response;
     response["flashstatus"] = 1;
 
     if (error) {

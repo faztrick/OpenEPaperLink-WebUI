@@ -1,5 +1,6 @@
 #include "storage.h"
 
+#include <ArduinoJson.h>
 #ifdef HAS_SDCARD
 #include "FS.h"
 #ifdef SD_CARD_SDMMC
@@ -22,7 +23,13 @@ SemaphoreHandle_t fsMutex = NULL;
 
 #ifndef SD_CARD_ONLY
 static void initLittleFS() {
-    LittleFS.begin();
+    // Attempt to mount LittleFS and fall back gracefully
+    if (!LittleFS.begin()) {
+        Serial.println("Warning: LittleFS.begin() failed — filesystem may be unavailable");
+        // Still set contentFS to LittleFS to allow API calls; callers should check exists/open results
+        contentFS = &LittleFS;
+        return;
+    }
     contentFS = &LittleFS;
 }
 #endif
@@ -31,23 +38,23 @@ static void initLittleFS() {
 static bool sd_init_done = false;
 #ifdef SD_CARD_SDMMC
 static void initSDCard() {
-    if(!SD_MMC.begin("/sdcard", true, true, BOARD_MAX_SDMMC_FREQ, 5)){
+    if (!SD_MMC.begin("/sdcard", true, true, BOARD_MAX_SDMMC_FREQ, 5)) {
         Serial.println("Card Mount Failed");
         return;
     }
     uint8_t cardType = SD_MMC.cardType();
 
-    if(cardType == CARD_NONE){
+    if (cardType == CARD_NONE) {
         Serial.println("No SD_MMC card attached");
         return;
     }
 
     Serial.print("SD_MMC Card Type: ");
-    if(cardType == CARD_MMC){
+    if (cardType == CARD_MMC) {
         Serial.println("MMC");
-    } else if(cardType == CARD_SD){
+    } else if (cardType == CARD_SD) {
         Serial.println("SDSC");
-    } else if(cardType == CARD_SDHC){
+    } else if (cardType == CARD_SDHC) {
         Serial.println("SDHC");
     } else {
         Serial.println("UNKNOWN");
@@ -65,7 +72,7 @@ static void initSDCard() {
     uint8_t spi_bus = VSPI;
 
     // SD.begin and spi.begin are allocating memory so we dont want to do that
-    if(!spi) { 
+    if (!spi) {
         spi = new SPIClass(spi_bus);
         spi->begin(SD_CARD_CLK, SD_CARD_MISO, SD_CARD_MOSI, SD_CARD_SS);
 
@@ -88,7 +95,7 @@ static void initSDCard() {
 #endif
 #endif
 
-uint64_t DynStorage::freeSpace(){
+uint64_t DynStorage::freeSpace() {
     this->begin();
 #ifdef HAS_SDCARD
     return SDCARD.totalBytes() - SDCARD.usedBytes();
@@ -176,7 +183,7 @@ void copyIfNeeded(const char* path) {
 #endif
 
 void DynStorage::begin() {
-    if(fsMutex == NULL) {
+    if (fsMutex == NULL) {
         fsMutex = xSemaphoreCreateMutex();
     }
 
@@ -185,7 +192,7 @@ void DynStorage::begin() {
 #endif
 
 #ifdef HAS_SDCARD
-    if(!sd_init_done) {
+    if (!sd_init_done) {
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         initSDCard();
         xSemaphoreGive(fsMutex);
@@ -208,6 +215,23 @@ void DynStorage::begin() {
     }
     if (!contentFS->exists("/temp")) {
         contentFS->mkdir("/temp");
+    }
+
+    // Ensure a minimal apconfig.json exists to avoid open() errors elsewhere.
+    const char* apconfigPath = "/current/apconfig.json";
+    if (!contentFS->exists(apconfigPath)) {
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File cfg = contentFS->open(apconfigPath, "w");
+        if (cfg) {
+            // Write a minimal JSON configuration
+            const char* defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
+            cfg.print(defaultCfg);
+            cfg.close();
+            Serial.println("Created default /current/apconfig.json");
+        } else {
+            Serial.println("Warning: Failed to create /current/apconfig.json — storage may be read-only");
+        }
+        xSemaphoreGive(fsMutex);
     }
 }
 

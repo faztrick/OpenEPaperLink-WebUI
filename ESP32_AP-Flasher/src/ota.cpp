@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "JsonDocumentz.h"
 #include <FS.h>
 #include <HTTPClient.h>
 #include <MD5Builder.h>
@@ -37,7 +36,7 @@
 #define LOG(format, ...) Serial.printf(format, ##__VA_ARGS__)
 
 void handleSysinfoRequest(AsyncWebServerRequest* request) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     doc["alias"] = config.alias;
     doc["env"] = STR(BUILD_ENV_NAME);
     doc["buildtime"] = STR(BUILD_TIME);
@@ -80,7 +79,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
     const String filePath = request->getParam("path")->value();
     File file = contentFS->open(filePath, "r");
     if (!file) {
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
         doc["filesize"] = 0;
         doc["md5"] = "";
         String jsonResponse;
@@ -99,7 +98,7 @@ void handleCheckFile(AsyncWebServerRequest* request) {
 
     file.close();
 
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     doc["filesize"] = fileSize;
     doc["md5"] = md5Hash;
     String jsonResponse;
@@ -624,7 +623,7 @@ void handleUpdateActions(AsyncWebServerRequest* request) {
         request->send(200, "No update actions needed");
         return;
     }
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     const JsonArray deleteFiles = doc["deletefile"].as<JsonArray>();
     for (const auto& filePath : deleteFiles) {

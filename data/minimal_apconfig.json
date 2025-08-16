@@ -1,0 +1,12 @@
+{
+  "alias": "OutdoorAP",
+  "channel": 1,
+  "subghzchannel": 0,
+  "led": 255,
+  "tft": 255,
+  "language": 0,
+  "maxsleep": 10,
+  "stopsleep": 1,
+  "state": "ap",
+  "env": "production"
+}

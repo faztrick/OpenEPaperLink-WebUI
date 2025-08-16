@@ -6,12 +6,13 @@
 #endif
 
 #include "leds.h"
+#include "serialap.h"
 #include "settings.h"
 #include "tag_db.h"
-#include "serialap.h"
 
 QueueHandle_t ledQueue;
-int maxledbrightness = 255;
+// Start with LEDs off by default to avoid bright startup flashes
+int maxledbrightness = 0;
 
 #ifdef HAS_RGB_LED
 QueueHandle_t rgbLedQueue;
@@ -98,7 +99,8 @@ void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree) {
     const int patternLengths[] = {600, 120, 200, 120, 200, 120};
     const CRGB patternColors[] = {CRGB::Black, colorone, CRGB::Black, colortwo, CRGB::Black, colorthree};
 
-    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS) { }
+    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS) {
+    }
 
     for (int i = 0; i < sizeof(patternLengths) / sizeof(patternLengths[0]); i++) {
         rgb = new struct ledInstructionRGB;
@@ -205,7 +207,8 @@ volatile uint16_t monoIdlePeriod = 900;
 void ledTask(void* parameter) {
 #ifdef HAS_RGB_LED
     FastLED.addLeds<WS2812B, FLASHER_RGB_LED, GRB>(leds, 1);  // GRB ordering is typical
-    leds[0] = CRGB::Blue;
+    // start with LED off
+    leds[0] = CRGB::Black;
     showRGB();
     rgbLedQueue = xQueueCreate(30, sizeof(struct ledInstructionRGB*));
 

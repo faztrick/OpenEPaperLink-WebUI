@@ -1,0 +1,98 @@
+/* AI Agent Widget - lightweight styles for floating assistant */
+:root {
+    --ai-accent: #667eea;
+    --ai-bg: rgba(255,255,255,0.04);
+    --ai-panel-bg: rgba(8,10,15,0.92);
+    --ai-text: #e6eefc;
+}
+
+.ai-widget-btn {
+    position: fixed;
+    right: 20px;
+    bottom: 22px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--ai-accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    cursor: pointer;
+    z-index: 2000;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ai-widget-btn:hover { transform: translateY(-3px); }
+
+.ai-widget-panel {
+    position: fixed;
+    right: 20px;
+    bottom: 96px;
+    width: 360px;
+    max-width: calc(100vw - 40px);
+    background: var(--ai-panel-bg);
+    color: var(--ai-text);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    z-index: 1999;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+    backdrop-filter: blur(6px);
+}
+
+.ai-panel-header {
+    padding: 10px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.ai-panel-body {
+    padding: 12px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.ai-panel-footer {
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.03);
+}
+
+.ai-input {
+    flex: 1 1 auto;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--ai-bg);
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--ai-text);
+}
+
+.ai-send-btn {
+    padding: 8px 12px;
+    background: var(--ai-accent);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.ai-msg {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.ai-msg.user { background: rgba(255,255,255,0.06); align-self: flex-end; }
+.ai-msg.bot  { background: rgba(255,255,255,0.03); align-self: flex-start; }
+
+@media (max-width: 520px) {
+    .ai-widget-panel { right: 12px; left: 12px; width: auto; bottom: 76px; }
+    .ai-widget-btn { right: 12px; bottom: 14px; }
+}

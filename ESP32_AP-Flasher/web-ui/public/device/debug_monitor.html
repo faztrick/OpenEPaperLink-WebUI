@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEPaperLink Debug Monitor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .status-card.warning { border-left-color: #ffc107; }
+        .status-card.error { border-left-color: #dc3545; }
+        .status-card.success { border-left-color: #28a745; }
+        .device-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #dc3545;
+        }
+        .status-indicator.online { background: #28a745; }
+        .status-indicator.warning { background: #ffc107; }
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+        .log-entry.error { color: #f48771; }
+        .log-entry.warning { color: #dcdcaa; }
+        .log-entry.success { color: #4ec9b0; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .btn-success { background: #28a745; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .api-tests {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .api-test {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        .api-test.success { border-color: #28a745; background: #d4edda; }
+        .api-test.error { border-color: #dc3545; background: #f8d7da; }
+        .timestamp {
+            color: #6c757d;
+            font-size: 12px;
+        }
+        .refresh-indicator {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            border-bottom-color: #007bff;
+            color: #007bff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Debug Monitor</h1>
+            <div>
+                <button class="btn btn-primary" onclick="startMonitoring()">
+                    <span id="monitor-status">Start Monitoring</span>
+                </button>
+                <button class="btn btn-warning" onclick="clearLogs()">Clear Logs</button>
+            </div>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card" id="com10-status">
+                <div class="device-status">
+                    <div class="status-indicator" id="com10-indicator"></div>
+                    <h3>COM10 (ESP32-S3 Primary)</h3>
+                </div>
+                <div id="com10-info">Checking connection...</div>
+            </div>
+            <div class="status-card" id="com6-status">
+                <div class="device-status">
+                    <div class="status-indicator" id="com6-indicator"></div>
+                    <h3>COM6 (ESP32-C6 Secondary)</h3>
+                </div>
+                <div id="com6-info">Checking connection...</div>
+            </div>
+            <div class="status-card" id="com13-status">
+                <div class="device-status">
+                    <div class="status-indicator" id="com13-indicator"></div>
+                    <h3>COM13 (ESP32-S3 Third)</h3>
+                </div>
+                <div id="com13-info">Checking connection...</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('logs')">System Logs</button>
+            <button class="tab" onclick="switchTab('api')">API Tests</button>
+            <button class="tab" onclick="switchTab('c6')">C6 Debug</button>
+            <button class="tab" onclick="switchTab('network')">Network</button>
+        </div>
+
+        <div id="logs-tab" class="tab-content active">
+            <div class="controls">
+                <button class="btn btn-success" onclick="testAllAPIs()">Test All APIs</button>
+                <button class="btn btn-warning" onclick="restartC6()">Restart C6</button>
+                <button class="btn btn-primary" onclick="refreshStatus()">Refresh Status</button>
+            </div>
+
+            <div class="log-container" id="log-output">
+                <div class="log-entry">[DEBUG] Debug Monitor initialized. Waiting for data...</div>
+            </div>
+        </div>
+
+        <div id="api-tab" class="tab-content">
+            <h3>API Endpoint Tests</h3>
+            <div class="api-tests" id="api-tests"></div>
+        </div>
+
+        <div id="c6-tab" class="tab-content">
+            <h3>C6 Module Diagnostics</h3>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="testC6Connection()">Test C6 Connection</button>
+                <button class="btn btn-primary" onclick="testC6Radio()">Test C6 Radio</button>
+                <button class="btn btn-warning" onclick="getC6Settings()">Get C6 Settings</button>
+                <button class="btn btn-danger" onclick="restartC6()">Restart C6</button>
+            </div>
+            <div class="log-container" id="c6-output">
+                <div class="log-entry">[C6] C6 diagnostics ready...</div>
+            </div>
+        </div>
+
+        <div id="network-tab" class="tab-content">
+            <h3>Network Diagnostics</h3>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="testWiFiStatus()">WiFi Status</button>
+                <button class="btn btn-primary" onclick="scanNetworks()">Scan Networks</button>
+                <button class="btn btn-primary" onclick="getNetworkInfo()">Network Info</button>
+            </div>
+            <div class="log-container" id="network-output">
+                <div class="log-entry">[NETWORK] Network diagnostics ready...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let monitoringActive = false;
+        let monitoringInterval = null;
+        const API_BASE = window.location.origin;
+
+        // Device configuration from debug analysis
+        const DEVICES = {
+            primary: {
+                ip: '192.168.26.177',
+                name: 'COM10 (ESP32-S3)',
+                com: 'COM10'
+            }
+        };
+
+        // API endpoints to test
+        const API_ENDPOINTS = {
+            system: [
+                '/sysinfo.json',
+                '/api/telemetry',
+                '/system_info',
+                '/api/features'
+            ],
+            wifi: [
+                '/api/wifi/status',
+                '/network_info',
+                '/get_wifi_config'
+            ],
+            c6: [
+                '/test_c6_connection',
+                '/test_c6_radio',
+                '/get_c6_settings',
+                '/c6_update_status'
+            ],
+            tags: [
+                '/gettags',
+                '/get_db',
+                '/tag_status'
+            ]
+        };
+
+        function log(message, type = 'info', target = 'log-output') {
+            const logContainer = document.getElementById(target);
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('log-output').innerHTML = '';
+            document.getElementById('c6-output').innerHTML = '';
+            document.getElementById('network-output').innerHTML = '';
+            log('[DEBUG] Logs cleared', 'info');
+        }
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const data = await response.json();
+                return { success: true, data: data, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function testAllAPIs() {
+            log('[API] Testing all API endpoints...', 'info');
+            const apiContainer = document.getElementById('api-tests');
+            apiContainer.innerHTML = '';
+
+            for (const [category, endpoints] of Object.entries(API_ENDPOINTS)) {
+                log(`[API] Testing ${category} endpoints...`, 'info');
+
+                for (const endpoint of endpoints) {
+                    const result = await apiCall(endpoint);
+
+                    const testDiv = document.createElement('div');
+                    testDiv.className = `api-test ${result.success ? 'success' : 'error'}`;
+                    testDiv.innerHTML = `
+                        <strong>${endpoint}</strong><br>
+                        <small>Category: ${category}</small><br>
+                        Status: ${result.success ? '✅ Success' : '❌ Failed'}<br>
+                        ${result.success ?
+                            `Response: ${JSON.stringify(result.data).substring(0, 100)}...` :
+                            `Error: ${result.error}`
+                        }
+                    `;
+                    apiContainer.appendChild(testDiv);
+
+                    log(`[API] ${endpoint}: ${result.success ? 'SUCCESS' : 'FAILED'}`,
+                        result.success ? 'success' : 'error');
+                }
+            }
+        }
+
+        async function testC6Connection() {
+            log('[C6] Testing C6 connection...', 'info', 'c6-output');
+            const result = await apiCall('/test_c6_connection');
+
+            if (result.success) {
+                const connected = result.data.connected;
+                log(`[C6] Connection test result: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`,
+                    connected ? 'success' : 'error', 'c6-output');
+                log(`[C6] Timestamp: ${result.data.timestamp}`, 'info', 'c6-output');
+
+                updateDeviceStatus('com6', connected);
+            } else {
+                log(`[C6] Connection test failed: ${result.error}`, 'error', 'c6-output');
+            }
+        }
+
+        async function testC6Radio() {
+            log('[C6] Testing C6 radio...', 'info', 'c6-output');
+            const result = await apiCall('/test_c6_radio');
+
+            if (result.success) {
+                log(`[C6] Radio test result: ${JSON.stringify(result.data)}`, 'success', 'c6-output');
+            } else {
+                log(`[C6] Radio test failed: ${result.error}`, 'error', 'c6-output');
+            }
+        }
+
+        async function getC6Settings() {
+            log('[C6] Getting C6 settings...', 'info', 'c6-output');
+            const result = await apiCall('/get_c6_settings');
+
+            if (result.success) {
+                log(`[C6] Settings: ${JSON.stringify(result.data, null, 2)}`, 'info', 'c6-output');
+            } else {
+                log(`[C6] Failed to get settings: ${result.error}`, 'error', 'c6-output');
+            }
+        }
+
+        async function restartC6() {
+            log('[C6] Restarting C6 module...', 'warning', 'c6-output');
+            const result = await apiCall('/restart_c6', 'POST');
+
+            if (result.success) {
+                log('[C6] Restart command sent successfully', 'success', 'c6-output');
+                // Wait a moment then test connection
+                setTimeout(testC6Connection, 3000);
+            } else {
+                log(`[C6] Restart failed: ${result.error}`, 'error', 'c6-output');
+            }
+        }
+
+        async function testWiFiStatus() {
+            log('[NETWORK] Testing WiFi status...', 'info', 'network-output');
+            const result = await apiCall('/api/wifi/status');
+
+            if (result.success) {
+                log(`[NETWORK] WiFi status: ${JSON.stringify(result.data)}`, 'success', 'network-output');
+            } else {
+                log(`[NETWORK] WiFi test failed: ${result.error}`, 'error', 'network-output');
+            }
+        }
+
+        async function scanNetworks() {
+            log('[NETWORK] Scanning networks...', 'info', 'network-output');
+            const result = await apiCall('/api/wifi/scan');
+
+            if (result.success) {
+                log(`[NETWORK] Networks found: ${result.data.length || 0}`, 'success', 'network-output');
+                if (result.data.length) {
+                    result.data.forEach(network => {
+                        log(`[NETWORK] SSID: ${network.ssid}, RSSI: ${network.rssi}`, 'info', 'network-output');
+                    });
+                }
+            } else {
+                log(`[NETWORK] Network scan failed: ${result.error}`, 'error', 'network-output');
+            }
+        }
+
+        async function getNetworkInfo() {
+            log('[NETWORK] Getting network info...', 'info', 'network-output');
+            const result = await apiCall('/network_info');
+
+            if (result.success) {
+                log(`[NETWORK] Network info: ${JSON.stringify(result.data, null, 2)}`, 'info', 'network-output');
+            } else {
+                log(`[NETWORK] Failed to get network info: ${result.error}`, 'error', 'network-output');
+            }
+        }
+
+        function updateDeviceStatus(device, online, info = '') {
+            const indicator = document.getElementById(`${device}-indicator`);
+            const infoDiv = document.getElementById(`${device}-info`);
+            const card = document.getElementById(`${device}-status`);
+
+            if (online) {
+                indicator.className = 'status-indicator online';
+                card.className = 'status-card success';
+                infoDiv.textContent = info || 'Connected and responsive';
+            } else {
+                indicator.className = 'status-indicator';
+                card.className = 'status-card error';
+                infoDiv.textContent = info || 'Connection failed or not responding';
+            }
+        }
+
+        async function refreshStatus() {
+            log('[STATUS] Refreshing device status...', 'info');
+
+            // Test primary device API
+            const sysInfo = await apiCall('/sysinfo.json');
+            if (sysInfo.success) {
+                updateDeviceStatus('com10', true, `IP: 192.168.26.177, Heap: ${sysInfo.data.heap?.free || 'unknown'}`);
+                log('[STATUS] COM10 (Primary): Online', 'success');
+            } else {
+                updateDeviceStatus('com10', false);
+                log('[STATUS] COM10 (Primary): Offline', 'error');
+            }
+
+            // Test C6 connection
+            await testC6Connection();
+
+            log('[STATUS] Status refresh complete', 'info');
+        }
+
+        function startMonitoring() {
+            if (monitoringActive) {
+                // Stop monitoring
+                clearInterval(monitoringInterval);
+                monitoringActive = false;
+                document.getElementById('monitor-status').textContent = 'Start Monitoring';
+                log('[MONITOR] Monitoring stopped', 'warning');
+            } else {
+                // Start monitoring
+                monitoringActive = true;
+                document.getElementById('monitor-status').textContent = '⏸️ Stop Monitoring';
+                log('[MONITOR] Monitoring started - refreshing every 10 seconds', 'success');
+
+                // Initial refresh
+                refreshStatus();
+
+                // Set up periodic refresh
+                monitoringInterval = setInterval(() => {
+                    refreshStatus();
+                }, 10000);
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            log('[DEBUG] Debug Monitor loaded successfully', 'success');
+            log('[DEBUG] Click "Start Monitoring" to begin continuous status checks', 'info');
+
+            // Initial status check
+            refreshStatus();
+        });
+    </script>
+</body>
+</html>

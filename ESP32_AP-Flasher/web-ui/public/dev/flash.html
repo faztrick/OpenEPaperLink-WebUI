@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Simple Flasher — OpenEPaperLink</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:16px;background:#f7f9fc}
+    .controls{display:flex;gap:8px;margin-bottom:8px}
+    select,input{padding:8px;font-size:14px}
+    button{padding:8px 12px}
+    #console{white-space:pre-wrap;background:#0b1220;color:#e6f1ff;padding:12px;height:50vh;overflow:auto;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h2>Simple Flasher</h2>
+  <nav style="margin-bottom:12px">
+    <a href="index.html">Dashboard</a> | <a href="flash.html">Simple Flasher</a> | <a href="files.html">File Manager</a> | <a href="development.html">Development</a> | <a href="settings.html">Settings</a> | <a href="ai.html">AI</a>
+  </nav>
+  <div class="controls">
+    <select id="env">
+      <option value="OutdoorAP">OutdoorAP</option>
+      <option value="IndoorAP">IndoorAP</option>
+      <option value="Debug">Debug</option>
+    </select>
+    <input id="host" placeholder="Device host (optional)" style="padding:8px;font-size:14px;width:180px" />
+    <select id="port">
+      <option>COM10</option>
+    </select>
+    <select id="baud">
+      <option value="115200">115200</option>
+      <option value="921600" selected>921600</option>
+    </select>
+    <button id="buildUpload">Build + Upload</button>
+    <button id="monitor">Serial Monitor</button>
+    <button id="clear">Clear</button>
+  </div>
+
+  <div style="margin-bottom:8px">
+    <input type="file" id="firmware-file" accept=".bin">
+    <button id="upload-firmware">Upload Firmware</button>
+    <button id="trigger-ota">Trigger OTA</button>
+    <button id="preset-realtek">Realtek Preset</button>
+    <label style="margin-left:12px"><input type="checkbox" id="smoke-test"> Smoke-test mode</label>
+  </div>
+
+  <div id="console"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="flash.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build — OpenEPaperLink</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        .settings-container { max-width:980px; margin:1.25rem auto; padding:1.25rem; background:#1a1a1a; border:1px solid #2d2d2d; border-radius:8px; color:#e5e7eb }
+        .settings-container h2, .settings-container h3 { color:#60a5fa }
+        .button-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.5rem }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo"><i class="fas fa-microchip"></i><h1>Build Tools</h1></div>
+        </div>
+    </header>
+
+    <nav class="top-nav">
+        <div class="container">
+            <a href="index.html" class="nav-link">Dashboard</a>
+            <a href="flash.html" class="nav-link">Simple Flasher</a>
+            <a href="files.html" class="nav-link">File Manager</a>
+            <a href="development.html" class="nav-link">Development</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <a href="build.html" class="nav-link active">Build</a>
+            <a href="ai.html" class="nav-link">AI</a>
+        </div>
+    </nav>
+
+    <main class="settings-container container">
+        <h2>Advanced Build Tools</h2>
+        <div class="button-grid">
+            <button class="btn btn-primary" id="run-build"><i class="fas fa-hammer"></i> Run Build</button>
+            <button class="btn btn-success" id="run-upload"><i class="fas fa-upload"></i> Upload</button>
+            <button class="btn btn-outline" id="open-build"><i class="fas fa-folder-open"></i> Open Build Folder</button>
+            <button class="btn btn-info" id="open-webui"><i class="fas fa-globe"></i> Open Web UI</button>
+            <button class="btn btn-warning" id="fast-build"><i class="fas fa-bolt"></i> Turbo Build</button>
+            <button class="btn btn-danger" id="clean-build-btn"><i class="fas fa-broom"></i> Clean Build</button>
+        </div>
+
+        <div style="margin-top:1rem">
+            <p style="color:#9ca3af">These tools run the same actions previously available on the Settings page. They keep the same element IDs so existing scripts continue to work.</p>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

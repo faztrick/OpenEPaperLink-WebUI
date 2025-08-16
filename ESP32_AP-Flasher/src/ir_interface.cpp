@@ -4,7 +4,6 @@
 
 #include <ArduinoJson.h>
 
-#include "JsonDocumentz.h"
 #include "settings.h"
 #include "storage.h"
 
@@ -467,7 +466,7 @@ void IRInterface::logCommand(const IRCommand& command) {
 }
 
 String IRInterface::getStatusJSON() {
-    JsonDocumentz doc(1024);
+    JsonDocument doc;
 
     doc["enabled"] = enabled;
     doc["receiverEnabled"] = receiverEnabled;

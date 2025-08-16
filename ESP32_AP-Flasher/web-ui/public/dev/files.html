@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Manager — ESP32 Development</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        .file-manager { display: flex; height: calc(100vh - 80px); }
+        .file-sidebar { width: 300px; border-right: 1px solid #ddd; background: #f8f9fa; }
+        .file-content { flex: 1; display: flex; flex-direction: column; }
+        .file-toolbar { padding: 10px; background: #fff; border-bottom: 1px solid #ddd; display: flex; gap: 10px; align-items: center; }
+        .file-tree { padding: 10px; overflow-y: auto; height: 100%; }
+        .file-item { padding: 5px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 5px; }
+        .file-item:hover { background: #e9ecef; }
+        .file-item.selected { background: #007bff; color: white; }
+        .file-icon { width: 16px; }
+        .file-editor { flex: 1; display: flex; flex-direction: column; }
+        .editor-header { padding: 10px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+        .editor-content { flex: 1; position: relative; }
+        .code-editor { width: 100%; height: 100%; border: none; font-family: 'Courier New', monospace; font-size: 14px; padding: 15px; resize: none; }
+        .file-info { display: flex; gap: 20px; color: #666; font-size: 12px; }
+        .device-selector { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+        .status-connected { background: #28a745; }
+        .status-disconnected { background: #dc3545; }
+        .file-tabs { display: flex; background: #f1f3f4; border-bottom: 1px solid #ddd; overflow-x: auto; }
+        .file-tab { padding: 8px 15px; border-right: 1px solid #ddd; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .file-tab.active { background: #fff; }
+        .file-tab .close-btn { margin-left: 8px; opacity: 0.6; }
+        .file-tab .close-btn:hover { opacity: 1; color: #dc3545; }
+        .breadcrumb { padding: 5px 10px; background: #e9ecef; font-size: 12px; }
+        .btn-group { display: flex; gap: 5px; }
+        .search-box { flex: 1; margin: 0 10px; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <i class="fas fa-folder-open"></i>
+                <h1>ESP32 File Manager</h1>
+            </div>
+            <div class="device-selector">
+                <span class="status-indicator" id="deviceStatus"></span>
+                <label>Device:</label>
+                <input type="text" id="deviceHost" value="192.168.26.117" placeholder="Device IP">
+                <button class="btn btn-small" id="connectDevice">Connect</button>
+            </div>
+        </div>
+    </header>
+
+    <nav class="top-nav">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="flash.html" class="nav-link">Simple Flasher</a>
+        <a href="files.html" class="nav-link active">File Manager</a>
+        <a href="development.html" class="nav-link">Development</a>
+        <a href="settings.html" class="nav-link">Settings</a>
+        <a href="ai.html" class="nav-link">AI</a>
+    </nav>
+
+    <div class="file-manager">
+        <div class="file-sidebar">
+            <div class="file-toolbar">
+                <button class="btn btn-small" id="refreshFiles" title="Refresh">
+                    <i class="fas fa-sync"></i>
+                </button>
+                <button class="btn btn-small" id="newFile" title="New File">
+                    <i class="fas fa-file-plus"></i>
+                </button>
+                <button class="btn btn-small" id="newFolder" title="New Folder">
+                    <i class="fas fa-folder-plus"></i>
+                </button>
+                <div class="search-box">
+                    <input type="text" id="searchFiles" placeholder="Search files..." class="form-input">
+                </div>
+            </div>
+            <div class="breadcrumb" id="currentPath">/</div>
+            <div class="file-tree" id="fileTree">
+                <div class="loading">Loading files...</div>
+            </div>
+        </div>
+
+        <div class="file-content">
+            <div class="file-tabs" id="fileTabs"></div>
+
+            <div class="file-editor" id="fileEditor" style="display: none;">
+                <div class="editor-header">
+                    <div class="file-info">
+                        <span id="fileName">No file selected</span>
+                        <span id="fileSize"></span>
+                        <span id="fileModified"></span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-small" id="saveFile" disabled>
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button class="btn btn-small" id="downloadFile" disabled>
+                            <i class="fas fa-download"></i> Download
+                        </button>
+                        <button class="btn btn-small btn-danger" id="deleteFile" disabled>
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="editor-content">
+                    <textarea class="code-editor" id="codeEditor" placeholder="Select a file to edit..."></textarea>
+                </div>
+            </div>
+
+            <div class="welcome-message" id="welcomeMessage">
+                <h3><i class="fas fa-folder-open"></i> ESP32 Device File Manager</h3>
+                <p>Browse and edit files directly on your ESP32 device.</p>
+                <ul>
+                    <li>View and edit configuration files</li>
+                    <li>Manage web assets and templates</li>
+                    <li>Access logs and data files</li>
+                    <li>Upload new files to the device</li>
+                </ul>
+                <p><strong>Note:</strong> Make sure your ESP32 device is connected and accessible at the specified IP address.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="newFileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New File</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>File Name:</label>
+                    <input type="text" id="newFileName" class="form-input" placeholder="filename.txt">
+                </div>
+                <div class="form-group">
+                    <label>Template:</label>
+                    <select id="fileTemplate" class="form-input">
+                        <option value="">Empty file</option>
+                        <option value="html">HTML page</option>
+                        <option value="css">CSS stylesheet</option>
+                        <option value="js">JavaScript</option>
+                        <option value="json">JSON config</option>
+                        <option value="txt">Text file</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="createFileBtn">Create</button>
+                <button class="btn btn-secondary" onclick="closeModal('newFileModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="file-manager.js"></script>
+</body>
+</html>

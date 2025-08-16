@@ -5,7 +5,7 @@ param(
     [Parameter(Position = 0)]
     [ValidateSet("setup", "build", "wokwi", "qemu", "debug", "clean", "help")]
     [string]$Action = "help",
-    
+
     [Parameter()]
     [switch]$Verbose
 )
@@ -33,9 +33,9 @@ function Write-Error($message) {
 # Check prerequisites
 function Test-Prerequisites {
     Write-Status "Checking prerequisites..."
-    
+
     $missingTools = @()
-    
+
     # Check PlatformIO
     try {
         $pioVersion = & pio --version 2>$null
@@ -44,7 +44,7 @@ function Test-Prerequisites {
     catch {
         $missingTools += "PlatformIO CLI"
     }
-    
+
     # Check for Wokwi CLI (optional)
     try {
         $wokwiVersion = & wokwi-cli --version 2>$null
@@ -53,7 +53,7 @@ function Test-Prerequisites {
     catch {
         Write-Warning "Wokwi CLI not found - install for advanced simulation features"
     }
-    
+
     # Check for QEMU (optional)
     try {
         $qemuVersion = & qemu-system-xtensa --version 2>$null | Select-Object -First 1
@@ -62,7 +62,7 @@ function Test-Prerequisites {
     catch {
         Write-Warning "QEMU not found - install for advanced emulation features"
     }
-    
+
     # Check for GDB
     $gdbPath = "C:\Users\$env:USERNAME\.platformio\packages\toolchain-xtensa-esp32s3\bin\xtensa-esp32s3-elf-gdb.exe"
     if (Test-Path $gdbPath) {
@@ -71,35 +71,35 @@ function Test-Prerequisites {
     else {
         $missingTools += "ESP32 GDB toolchain"
     }
-    
+
     if ($missingTools.Count -gt 0) {
         Write-Error "Missing required tools: $($missingTools -join ', ')"
         return $false
     }
-    
+
     return $true
 }
 
 # Setup emulation environment
 function Initialize-EmulationSetup {
     Write-Status "Setting up ESP32 emulation environment..."
-    
+
     if (-not (Test-Prerequisites)) {
         return
     }
-    
+
     # Create wokwi directory if it doesn't exist
     if (-not (Test-Path $WokwiDir)) {
         New-Item -ItemType Directory -Path $WokwiDir -Force
         Write-Status "Created Wokwi directory: $WokwiDir"
     }
-    
+
     # Verify diagram.json exists
     if (-not (Test-Path $WokwiDiagram)) {
         Write-Error "Wokwi diagram.json not found. Please ensure wokwi/diagram.json exists."
         return
     }
-    
+
     Write-Status "ESP32 emulation environment setup complete!"
     Write-Status "Available debug configurations in VS Code:"
     Write-Status "  - PIO Debug (Hardware) - Debug on real hardware"
@@ -110,7 +110,7 @@ function Initialize-EmulationSetup {
 # Build firmware for emulation
 function Build-Firmware {
     Write-Status "Building firmware for ESP32 emulation..."
-    
+
     Push-Location $ProjectRoot
     try {
         & pio run -e OutdoorAP
@@ -130,21 +130,21 @@ function Build-Firmware {
 # Start Wokwi simulation
 function Start-WokwiSimulation {
     Write-Status "Starting Wokwi ESP32 simulation..."
-    
+
     if (-not (Test-Path $FirmwareElf)) {
         Write-Warning "Firmware not found. Building first..."
         Build-Firmware
     }
-    
+
     if (-not (Test-Path $WokwiDiagram)) {
         Write-Error "Wokwi diagram not found: $WokwiDiagram"
         return
     }
-    
+
     try {
         Write-Status "Opening Wokwi simulation in browser..."
         Write-Status "Use VS Code 'Wokwi ESP32 Simulator' debug configuration to debug"
-        
+
         # Check if wokwi-cli is available
         try {
             & wokwi-cli --help > $null 2>&1
@@ -164,27 +164,27 @@ function Start-WokwiSimulation {
 # Start QEMU emulation
 function Start-QemuEmulation {
     Write-Status "Starting QEMU ESP32 emulation..."
-    
+
     if (-not (Test-Path $FirmwareElf)) {
         Write-Warning "Firmware not found. Building first..."
         Build-Firmware
     }
-    
+
     try {
         Write-Status "Starting QEMU ESP32 emulation..."
         Write-Status "GDB will be available on localhost:3333"
         Write-Status "Use VS Code 'ESP32 QEMU Emulation' debug configuration to debug"
-        
+
         $qemuCmd = @(
             "qemu-system-xtensa",
             "-M", "esp32",
-            "-m", "4M", 
+            "-m", "4M",
             "-kernel", $FirmwareElf,
             "-serial", "stdio",
             "-gdb", "tcp::3333",
             "-S"
         )
-        
+
         & $qemuCmd[0] $qemuCmd[1..($qemuCmd.Length - 1)]
     }
     catch {
@@ -202,7 +202,7 @@ function Start-DebugSession {
     Write-Status "3. Wokwi simulation - Web-based simulation"
     Write-Status ""
     Write-Status "Open VS Code and use F5 to start debugging with desired configuration"
-    
+
     # Open VS Code with the project
     try {
         & code $ProjectRoot
@@ -215,7 +215,7 @@ function Start-DebugSession {
 # Clean build artifacts
 function Clear-BuildArtifacts {
     Write-Status "Cleaning build artifacts..."
-    
+
     Push-Location $ProjectRoot
     try {
         & pio run --target clean
@@ -240,7 +240,7 @@ Actions:
   setup   - Set up emulation environment and check prerequisites
   build   - Build firmware for emulation
   wokwi   - Start Wokwi ESP32 simulation
-  qemu    - Start QEMU ESP32 emulation  
+  qemu    - Start QEMU ESP32 emulation
   debug   - Open VS Code for debugging
   clean   - Clean build artifacts
   help    - Show this help message
@@ -254,7 +254,7 @@ Examples:
 
 For debugging:
 1. Run: .\emulation_setup.ps1 setup
-2. Run: .\emulation_setup.ps1 build  
+2. Run: .\emulation_setup.ps1 build
 3. Run: .\emulation_setup.ps1 debug
 4. In VS Code, press F5 and select desired debug configuration
 
@@ -278,3 +278,7 @@ switch ($Action.ToLower()) {
     "help" { Show-Help }
     default { Show-Help }
 }
+
+# REMOVED: replaced by emulation_setup.py
+# Original PowerShell removed in favor of a cross-platform Python script.
+# See ESP32_AP-Flasher/emulation_setup.py

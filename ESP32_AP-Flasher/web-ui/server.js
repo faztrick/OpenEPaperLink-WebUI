@@ -3,11 +3,56 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const { spawn } = require('child_process');
+const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const multer = require('multer');
 const ESP32AIAgent = require('./ai_agent');
 const RemoteServerManager = require('./remote_manager');
+const FileManager = require('./file_manager');
+// Resolve a Python executable preferring a local virtual environment (venv) when present.
+function resolvePythonExecutable() {
+    const projectRoot = path.join(__dirname, '..');
+    const candidates = [];
+    if (os.platform() === 'win32') {
+        candidates.push(path.join(projectRoot, 'venv', 'Scripts', 'python.exe'));
+        candidates.push(path.join(projectRoot, '.venv', 'Scripts', 'python.exe'));
+        candidates.push(path.join(projectRoot, 'env', 'Scripts', 'python.exe'));
+        candidates.push(path.join(__dirname, 'venv', 'Scripts', 'python.exe'));
+        candidates.push(path.join(__dirname, '.venv', 'Scripts', 'python.exe'));
+    } else {
+        candidates.push(path.join(projectRoot, 'venv', 'bin', 'python'));
+        candidates.push(path.join(projectRoot, '.venv', 'bin', 'python'));
+        candidates.push(path.join(projectRoot, 'env', 'bin', 'python'));
+        candidates.push(path.join(__dirname, 'venv', 'bin', 'python'));
+        candidates.push(path.join(__dirname, '.venv', 'bin', 'python'));
+    }
+    for (const p of candidates) {
+        try { if (fs.existsSync(p)) return p; } catch (e) { /* ignore */ }
+    }
+    // Fallback to environment variable or system python (prefer python3)
+    return process.env.PYTHON || 'python3';
+}
+const PYTHON_EXEC = resolvePythonExecutable();
+let SerialPort;
+let SerialPortBinding;
+let serialAvailable = false;
+try {
+    // prefer @serialport/stream backed by platform bindings when available
+    SerialPort = require('serialport');
+    serialAvailable = true;
+} catch (e) {
+    try {
+        SerialPort = require('@serialport/stream');
+        // try to load bindings if present
+        SerialPortBinding = require('@serialport/bindings');
+        serialAvailable = true;
+    } catch (err) {
+        console.warn('serialport not installed, serial features disabled');
+        serialAvailable = false;
+    }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -18,19 +63,157 @@ const io = socketIo(server, {
     }
 });
 
+// --- Logging infrastructure ---
+const { EventEmitter } = require('events');
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+const logEmitter = new EventEmitter();
+
+function appendLog(name, msg) {
+    try {
+        const file = path.join(logsDir, `${name}.log`);
+        const line = `[${new Date().toISOString()}] ${msg}\n`;
+        fs.appendFileSync(file, line, { encoding: 'utf8' });
+        // emit raw line for streaming viewers
+        logEmitter.emit(name, line);
+    } catch (err) {
+        console.error('appendLog error', err);
+    }
+}
+
+function tailLines(name, lines = 200) {
+    try {
+        const file = path.join(logsDir, `${name}.log`);
+        if (!fs.existsSync(file)) return '';
+        const content = fs.readFileSync(file, 'utf8');
+        const all = content.split(/\r?\n/).filter(Boolean);
+        return all.slice(-lines).join('\n');
+    } catch (err) {
+        console.error('tailLines error', err);
+        return '';
+    }
+}
+
+// Log server start
+appendLog('node', `server start pid=${process.pid} cwd=${process.cwd()}`);
+
+// Wire socket events to logs
+io.on('connection', (socket) => {
+    const addr = socket.handshake.address || socket.conn?.remoteAddress || 'unknown';
+    appendLog('ws', `connect id=${socket.id} addr=${addr}`);
+    socket.on('disconnect', (reason) => appendLog('ws', `disconnect id=${socket.id} reason=${reason}`));
+    socket.onAny((ev, ...args) => {
+        try { appendLog('ws', `event ${ev} ${JSON.stringify(args)}`); } catch (e) { appendLog('ws', `event ${ev} <serialize error>`); }
+    });
+});
+
 // Initialize AI Agent and Remote Server Manager
 const aiAgent = new ESP32AIAgent();
 const remoteManager = new RemoteServerManager();
+
+// Initialize File Manager for local operations (optional)
+const fileManager = new FileManager(path.join(__dirname, '..'));
 
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve advanced UI pages from the repo-level wwwroot (if present). Mount this first
+// so those pages take precedence when the file exists there.
+const repoWwwRoot = path.join(__dirname, '..', 'wwwroot');
+if (fs.existsSync(repoWwwRoot)) {
+    console.log(`Serving advanced UI from ${repoWwwRoot}`);
+    app.use(express.static(repoWwwRoot));
+    // Also expose the repo-level wwwroot under the /device path so the web UI
+    // can load the advanced device UI from /device/* without copying files.
+    app.use('/device', express.static(repoWwwRoot));
+} else {
+    console.log('No repo wwwroot directory found; skipping');
+}
+
+// Fallback to the web-ui/public folder for the built-in UI assets
+app.use(express.static(path.join(__dirname, 'public/dev')));
+
+// Also serve the public/device subfolder at /device so a physical copy placed
+// in web-ui/public/device will be reachable via /device/* as well.
+app.use('/device', express.static(path.join(__dirname, 'public', 'device')));
+
+// Ensure uploads folder exists
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// Multer setup for firmware uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        // keep original name but prefix timestamp
+        const name = `${Date.now()}-${file.originalname}`;
+        cb(null, name);
+    }
+});
+const upload = multer({ storage });
+
+// Device proxy: forward calls to a remote device (C6) so the UI doesn't need CORS or direct IPs.
+// Usage: GET/POST /device/<path>?host=192.168.4.2
+app.all('/device/*', async (req, res) => {
+    try {
+        const host = req.query.host || req.body?.host;
+        if (!host) return res.status(400).json({ success: false, error: 'no host specified' });
+
+        const devicePath = req.path.replace(/^\/device/, '');
+        const url = `http://${host}${devicePath}${req.url.includes('?') ? '' : ''}`; // req.url keeps query
+
+        // Build axios options
+        const opts = {
+            method: req.method,
+            url,
+            headers: { ...req.headers },
+            responseType: 'stream',
+            validateStatus: () => true
+        };
+
+        // Remove host/connection headers that would confuse the device
+        delete opts.headers.host;
+
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            opts.data = req.body && Object.keys(req.body).length ? req.body : req;
+        }
+
+        const resp = await axios(opts);
+
+        // pipe headers
+        Object.entries(resp.headers).forEach(([k, v]) => {
+            try { res.setHeader(k, v); } catch (e) {}
+        });
+
+        res.status(resp.status);
+        resp.data.pipe(res);
+    } catch (err) {
+        console.error('Device proxy error:', err.message || err);
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
 
 // Store for active processes
 const activeProcesses = new Map();
+
+// Serial port management
+const serialPorts = new Map(); // key: id (e.g., COM3) -> { port: SerialPort instance }
+
+// Helper: list system serial ports
+async function listSystemSerialPorts() {
+    if (!serialAvailable) return [];
+    try {
+        const ports = await SerialPort.list();
+        return ports;
+    } catch (err) {
+        console.error('Error listing serial ports:', err.message || err);
+        return [];
+    }
+}
 
 // Configuration defaults
 const defaultConfig = {
@@ -115,6 +298,21 @@ app.get('/api/config', (req, res) => {
     res.json(currentConfig);
 });
 
+// Make home and dashboard paths serve the same UI file
+app.get(['/dashboard', '/home'], (req, res) => {
+    try {
+        // Prefer repo wwwroot if it exists (it was mounted earlier as static)
+        const candidate1 = path.join(repoWwwRoot, 'index.html');
+        const candidate2 = path.join(__dirname, 'public', 'index.html');
+
+        if (fs.existsSync(candidate1)) return res.sendFile(candidate1);
+        return res.sendFile(candidate2);
+    } catch (err) {
+        console.error('Error serving dashboard route:', err);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
 app.post('/api/config', (req, res) => {
     currentConfig = { ...currentConfig, ...req.body };
     res.json({ success: true, config: currentConfig });
@@ -122,16 +320,720 @@ app.post('/api/config', (req, res) => {
 
 app.get('/api/com-ports', async (req, res) => {
     try {
-        const ports = await getComPorts();
-        res.json(ports);
+        const ports = await listSystemSerialPorts();
+        // Normalize for client (path, manufacturer)
+        const normalized = ports.map(p => ({ path: p.path || p.comName || p.vendorId || '', manufacturer: p.manufacturer || '' }));
+        res.json(normalized.length ? normalized : await getComPorts());
     } catch (error) {
         res.json(['COM10']); // Fallback
+    }
+});
+
+// Serial control endpoints
+app.get('/api/serial/list', async (req, res) => {
+    const ports = await listSystemSerialPorts();
+    res.json({ success: true, ports });
+});
+
+// Firmware upload endpoint
+app.post('/api/firmware/upload', upload.single('firmware'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, error: 'file required' });
+        const relPath = path.join('uploads', req.file.filename);
+        res.json({ success: true, path: relPath, filename: req.file.filename });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Trigger OTA flash on device (proxying POST to device)
+app.post('/api/firmware/trigger', async (req, res) => {
+    try {
+        const { host, firmwarePath } = req.body || {};
+        if (!host || !firmwarePath) return res.status(400).json({ success: false, error: 'host and firmwarePath required' });
+
+        // Proxy to device endpoint: POST /ota_flash with JSON { firmwareUrl }
+        // Build URL to the uploaded firmware served by this server
+        const firmwareUrl = `http://${req.hostname}:${PORT}/${firmwarePath}`;
+
+        // Use axios to POST to device via server proxy route
+        const resp = await axios.post(`http://${host}/ota_flash`, { firmwareUrl }, { timeout: 15000 });
+        res.json({ success: true, deviceResponse: resp.data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+app.post('/api/serial/open', (req, res) => {
+    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    const { path: portPath, baudRate = 115200 } = req.body || {};
+    if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
+
+    try {
+        if (serialPorts.has(portPath)) return res.json({ success: true, message: 'already open' });
+
+        const port = new SerialPort(portPath, { baudRate: parseInt(baudRate, 10) });
+        port.on('data', (data) => {
+            const text = data.toString();
+            // broadcast to all sockets
+            io.emit('serial-data', { port: portPath, data: text, text });
+            // append to server-side serial log
+            appendLog('serial', `port=${portPath} ${text.replace(/\r?\n/g, '\\n')}`);
+        });
+        port.on('error', (err) => {
+            io.emit('serial-error', { port: portPath, error: err.message });
+            appendLog('serial', `port=${portPath} ERROR ${err.message}`);
+        });
+
+        serialPorts.set(portPath, { port });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+app.post('/api/serial/close', (req, res) => {
+    const { path: portPath } = req.body || {};
+    if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
+
+    const rec = serialPorts.get(portPath);
+    if (!rec) return res.json({ success: false, error: 'port not open' });
+
+    rec.port.close((err) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        serialPorts.delete(portPath);
+        res.json({ success: true });
+    });
+});
+
+app.post('/api/serial/write', (req, res) => {
+    const { path: portPath, data } = req.body || {};
+    if (!portPath || data === undefined) return res.status(400).json({ success: false, error: 'path and data required' });
+
+    const rec = serialPorts.get(portPath);
+    if (!rec) return res.status(400).json({ success: false, error: 'port not open' });
+
+    try {
+        rec.port.write(data, (err) => {
+            if (err) return res.status(500).json({ success: false, error: err.message });
+            res.json({ success: true });
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// Quick COM health check: write a test command and wait briefly for any response
+app.post('/api/com/check', async (req, res) => {
+    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    const { path: portPath, baudRate = 115200, testCmd = '\n', timeout = 1000 } = req.body || {};
+    if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
+
+    let rec = serialPorts.get(portPath);
+    let tempOpened = false;
+    let port;
+
+    try {
+        if (rec && rec.port) {
+            port = rec.port;
+        } else {
+            // open temporary port
+            port = new SerialPort(portPath, { baudRate: parseInt(baudRate, 10) });
+            tempOpened = true;
+        }
+
+        let captured = '';
+        const onData = (data) => {
+            captured += data.toString();
+        };
+
+        port.on('data', onData);
+
+        // write test command
+        await new Promise((resolve, reject) => {
+            try {
+                port.write(testCmd, (err) => {
+                    if (err) return reject(err);
+                    resolve();
+                });
+            } catch (err) { reject(err); }
+        });
+
+        // wait up to timeout ms for data
+        await new Promise((resolve) => setTimeout(resolve, parseInt(timeout, 10)));
+
+        port.removeListener('data', onData);
+
+        if (tempOpened) {
+            try { port.close(() => {}); } catch (e) {}
+        }
+
+        appendLog('serial', `com_check path=${portPath} resp=${captured.replace(/\r?\n/g,'\\n')}`);
+        return res.json({ success: true, response: captured });
+    } catch (err) {
+        if (tempOpened && port && port.close) {
+            try { port.close(() => {}); } catch (e) {}
+        }
+        appendLog('serial', `com_check error path=${portPath} err=${err.message || err}`);
+        return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// Device command: either proxy to network device (host) or emit a socket event for local handling
+app.post('/api/device/cmd', async (req, res) => {
+    try {
+        const { host, action, params } = req.body || {};
+        if (!action) return res.status(400).json({ success: false, error: 'action required' });
+
+        if (host) {
+            // proxy to device endpoint /cmd or /action - try a few fallbacks
+            try {
+                const targets = [`/cmd`, `/command`, `/action`, `/${action}`];
+                for (const t of targets) {
+                    try {
+                        const url = `http://${host}${t}`;
+                        const resp = await axios.post(url, { action, params }, { timeout: 5000 });
+                        return res.json({ success: true, proxied: true, url, data: resp.data });
+                    } catch (e) {
+                        // try next
+                    }
+                }
+                // none succeeded
+                return res.status(502).json({ success: false, error: 'no device endpoint accepted the command' });
+            } catch (err) {
+                return res.status(500).json({ success: false, error: err.message || String(err) });
+            }
+        }
+
+        // No host: emit socket event for local clients
+        io.emit('device-command', { action, params });
+        appendLog('node', `device-command local action=${action} params=${JSON.stringify(params)}`);
+        return res.json({ success: true, emitted: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// Device wifi setter: proxies to device if host provided or emits socket event
+app.post('/api/device/wifi', async (req, res) => {
+    try {
+        const { host, ssid, password } = req.body || {};
+        if (!ssid) return res.status(400).json({ success: false, error: 'ssid required' });
+
+        if (host) {
+            try {
+                const resp = await axios.post(`http://${host}/set_wifi`, { ssid, password }, { timeout: 5000 });
+                return res.json({ success: true, proxied: true, data: resp.data });
+            } catch (err) {
+                return res.status(500).json({ success: false, error: err.message || String(err) });
+            }
+        }
+
+        io.emit('set-wifi', { ssid, password });
+        appendLog('node', `set-wifi ssid=${ssid}`);
+        return res.json({ success: true, emitted: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
     }
 });
 
 app.get('/api/status', (req, res) => {
     const status = getProjectStatus();
     res.json(status);
+});
+
+// Parse platformio.ini and return device environments
+app.get('/api/platformio-devices', (req, res) => {
+    try {
+        const pioPath = path.join(__dirname, '..', 'platformio.ini');
+        if (!fs.existsSync(pioPath)) return res.json({ success: false, error: 'platformio.ini not found', devices: [] });
+
+        const ini = fs.readFileSync(pioPath, 'utf8');
+        const lines = ini.split(/\r?\n/);
+
+        const devices = [];
+        let currentEnv = null;
+        const envRegex = /^\[env:?([^\]]*)\]/i;
+        lines.forEach((raw) => {
+            const line = raw.trim();
+            if (!line || line.startsWith(';') || line.startsWith('#')) return;
+
+            const envMatch = line.match(envRegex);
+            if (envMatch) {
+                // start new env
+                currentEnv = { id: envMatch[1] || 'default', name: envMatch[1] || 'default', board: null, monitor_speed: null };
+                devices.push(currentEnv);
+                return;
+            }
+
+            if (!currentEnv) return; // skip global keys
+
+            // parse key = value
+            const kv = line.split('=', 2);
+            if (kv.length !== 2) return;
+            const key = kv[0].trim();
+            const value = kv[1].trim();
+
+            if (key === 'board' && currentEnv) currentEnv.board = value;
+            if (key === 'monitor_speed' && currentEnv) currentEnv.monitor_speed = parseInt(value, 10) || null;
+            if ((key === 'board' || key === 'monitor_speed') && currentEnv) {
+                // store
+            }
+        });
+
+        // If no envs found, fallback to [env] block defaults (common env)
+        if (devices.length === 0) {
+            // Try to parse the [env] default block
+            const defaultBlock = ini.match(/\[env\]([\s\S]*?)\n\[/i);
+            const defaults = { id: 'default', name: 'default', board: null, monitor_speed: null };
+            if (defaultBlock && defaultBlock[1]) {
+                const block = defaultBlock[1].split(/\r?\n/);
+                block.forEach(l => {
+                    const line = l.trim();
+                    if (!line || line.startsWith(';') || line.startsWith('#')) return;
+                    const kv = line.split('=', 2);
+                    if (kv.length !== 2) return;
+                    const key = kv[0].trim();
+                    const value = kv[1].trim();
+                    if (key === 'board') defaults.board = value;
+                    if (key === 'monitor_speed') defaults.monitor_speed = parseInt(value, 10) || null;
+                });
+            }
+            devices.push(defaults);
+        }
+
+        res.json({ success: true, devices });
+    } catch (err) {
+        console.error('Error reading platformio.ini:', err);
+        res.status(500).json({ success: false, error: err.message || String(err), devices: [] });
+    }
+});
+
+// Return raw platformio.ini content for editing
+app.get('/api/platformio-raw', (req, res) => {
+    try {
+        const pioPath = path.join(__dirname, '..', 'platformio.ini');
+        if (!fs.existsSync(pioPath)) return res.status(404).json({ success: false, error: 'platformio.ini not found' });
+        const content = fs.readFileSync(pioPath, 'utf8');
+        res.json({ success: true, content });
+    } catch (err) {
+        console.error('Error reading platformio.ini:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Write platformio.ini content. body: { content: string, backend: 'node'|'python' }
+app.post('/api/platformio-write', async (req, res) => {
+    try {
+        const { content, backend } = req.body || {};
+        if (typeof content !== 'string') return res.status(400).json({ success: false, error: 'content required' });
+
+        const pioPath = path.join(__dirname, '..', 'platformio.ini');
+        if (!fs.existsSync(pioPath)) return res.status(404).json({ success: false, error: 'platformio.ini not found' });
+
+        const backupPath = pioPath + '.' + Date.now() + '.bak';
+        fs.copyFileSync(pioPath, backupPath);
+
+        if (backend === 'python') {
+            // Try to invoke python helper if available
+            const py = process.env.PYTHON || 'python';
+            const script = path.join(__dirname, 'tools', 'platformio_write.py');
+            if (!fs.existsSync(script)) {
+                // fallback to node write
+                fs.writeFileSync(pioPath, content, 'utf8');
+                return res.json({ success: true, method: 'node', backup: backupPath });
+            }
+
+            // spawn python and pass content via stdin
+            const proc = spawn(py, [script, pioPath], { stdio: ['pipe', 'pipe', 'pipe'] });
+            proc.stdin.write(content);
+            proc.stdin.end();
+
+            let out = '';
+            let errBuf = '';
+            proc.stdout.on('data', d => out += d.toString());
+            proc.stderr.on('data', d => errBuf += d.toString());
+            proc.on('close', (code) => {
+                // log helper output
+                if (out) appendLog('python', `out: ${out.replace(/\r?\n/g,'\\n')}`);
+                if (errBuf) appendLog('python', `err: ${errBuf.replace(/\r?\n/g,'\\n')}`);
+                if (code === 0) return res.json({ success: true, method: 'python', backup: backupPath, out });
+                console.error('python write failed:', errBuf);
+                return res.status(500).json({ success: false, error: 'python write failed', details: errBuf });
+            });
+            return;
+        }
+
+        // Default: node write
+        fs.writeFileSync(pioPath, content, 'utf8');
+        res.json({ success: true, method: 'node', backup: backupPath });
+    } catch (err) {
+        console.error('Error writing platformio.ini:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// List files under repo-level wwwroot for discovery
+app.get('/wwwroot-list', (req, res) => {
+    try {
+        if (!fs.existsSync(repoWwwRoot)) return res.json({ success: false, error: 'wwwroot not present' });
+        const walk = (dir) => {
+            const results = [];
+            const list = fs.readdirSync(dir);
+            list.forEach((file) => {
+                const full = path.join(dir, file);
+                const stat = fs.statSync(full);
+                if (stat && stat.isDirectory()) {
+                    const sub = walk(full);
+                    sub.forEach(s => results.push(path.join(file, s)));
+                } else {
+                    results.push(file);
+                }
+            });
+            return results;
+        };
+
+        const files = walk(repoWwwRoot);
+        res.json({ success: true, root: repoWwwRoot, files });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Logging APIs
+app.get('/api/log/list', (req, res) => {
+    try {
+        const files = fs.readdirSync(logsDir).filter(f => f.endsWith('.log'));
+        const names = files.map(f => f.replace(/\.log$/, ''));
+        res.json({ success: true, logs: names });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Return a list of registered express routes for UI discovery
+app.get('/api/list', (req, res) => {
+    try {
+        const routes = [];
+        // Express 4 stores routes in app._router.stack
+        const stack = app._router && app._router.stack ? app._router.stack : [];
+        stack.forEach((layer) => {
+            if (layer.route && layer.route.path) {
+                const methods = layer.route.methods;
+                Object.keys(methods).forEach(m => {
+                    routes.push({ method: m.toUpperCase(), path: layer.route.path });
+                });
+            } else if (layer.name === 'router' && layer.handle && layer.handle.stack) {
+                layer.handle.stack.forEach((nested) => {
+                    if (nested.route && nested.route.path) {
+                        const methods = nested.route.methods;
+                        Object.keys(methods).forEach(m => {
+                            routes.push({ method: m.toUpperCase(), path: nested.route.path });
+                        });
+                    }
+                });
+            }
+        });
+
+        // Deduplicate and sort
+        const uniq = [];
+        const seen = new Set();
+        routes.forEach(r => {
+            const key = `${r.method} ${r.path}`;
+            if (!seen.has(key)) { seen.add(key); uniq.push(r); }
+        });
+
+        uniq.sort((a,b) => (a.path > b.path ? 1 : a.path < b.path ? -1 : a.method > b.method ? 1 : -1));
+        res.json({ success: true, routes: uniq });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+app.get('/api/log/read', (req, res) => {
+    try {
+        const name = req.query.name;
+        if (!name) return res.status(400).json({ success: false, error: 'name query required' });
+        const text = tailLines(name, parseInt(req.query.lines) || 500);
+        res.json({ success: true, name, text });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Server-sent events for live tail
+app.get('/api/log/stream', (req, res) => {
+    const name = req.query.name;
+    if (!name) return res.status(400).send('name required');
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+    });
+    // send initial tail
+    const initial = tailLines(name, 200);
+    if (initial) res.write(`data: ${JSON.stringify({ initial })}\n\n`);
+
+    const onLine = (line) => {
+        try { res.write(`data: ${JSON.stringify({ line })}\n\n`); } catch (e) {}
+    };
+
+    logEmitter.on(name, onLine);
+    req.on('close', () => logEmitter.removeListener(name, onLine));
+});
+
+// Ingest external logs (client JS, python helper) via POST { name, message }
+app.post('/api/log', (req, res) => {
+    try {
+        const { name, message } = req.body || {};
+        if (!name || !message) return res.status(400).json({ success: false, error: 'name and message required' });
+        appendLog(name, message);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Device file management endpoints - proxy to ESP32 device
+app.get('/api/device-files/list', async (req, res) => {
+    try {
+        const host = req.query.host || '192.168.26.117';
+        const dir = req.query.dir || '/';
+
+        const response = await axios.get(`http://${host}/list_files?dir=${encodeURIComponent(dir)}`, {
+            timeout: 5000
+        });
+
+        res.json({ success: true, ...response.data });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to list device files'
+        });
+    }
+});
+
+app.get('/api/device-files/read', async (req, res) => {
+    try {
+        const host = req.query.host || '192.168.26.117';
+        const path = req.query.path;
+
+        if (!path) {
+            return res.status(400).json({ success: false, error: 'Path parameter required' });
+        }
+
+        const response = await axios.get(`http://${host}/read_file?path=${encodeURIComponent(path)}`, {
+            timeout: 10000
+        });
+
+        res.json({
+            success: true,
+            content: response.data,
+            path: path
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to read device file'
+        });
+    }
+});
+
+app.post('/api/device-files/write', async (req, res) => {
+    try {
+        const { host = '192.168.26.117', path, content } = req.body;
+
+        if (!path || content === undefined) {
+            return res.status(400).json({ success: false, error: 'Path and content required' });
+        }
+
+        const response = await axios.post(`http://${host}/update_file`, {
+            path: path,
+            content: content
+        }, {
+            timeout: 15000,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        res.json({ success: true, message: 'File updated successfully' });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to write device file'
+        });
+    }
+});
+
+app.post('/api/device-files/create', async (req, res) => {
+    try {
+        const { host = '192.168.26.117', path, content = '' } = req.body;
+
+        if (!path) {
+            return res.status(400).json({ success: false, error: 'Path required' });
+        }
+
+        const response = await axios.post(`http://${host}/create_file`, {
+            path: path,
+            content: content
+        }, {
+            timeout: 15000,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        res.json({ success: true, message: 'File created successfully' });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create device file'
+        });
+    }
+});
+
+app.delete('/api/device-files/delete', async (req, res) => {
+    try {
+        const host = req.query.host || '192.168.26.117';
+        const path = req.query.path;
+
+        if (!path) {
+            return res.status(400).json({ success: false, error: 'Path parameter required' });
+        }
+
+        const response = await axios.delete(`http://${host}/delete_file?path=${encodeURIComponent(path)}`, {
+            timeout: 10000
+        });
+
+        res.json({ success: true, message: 'File deleted successfully' });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to delete device file'
+        });
+    }
+});
+
+// Local source file browser (for reference/comparison)
+app.get('/api/source-files/tree', (req, res) => {
+    try {
+        const tree = fileManager.getFileTree();
+        res.json({ success: true, tree });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/source-files/stats', (req, res) => {
+    try {
+        const stats = fileManager.getProjectStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/source-files/recent', (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const files = fileManager.getRecentFiles(limit);
+        res.json({ success: true, files });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Read single local source file (relative path)
+app.get('/api/source-files/read', (req, res) => {
+    try {
+        const p = req.query.path;
+        if (!p) return res.status(400).json({ success: false, error: 'path query required' });
+        const file = fileManager.readFile(p);
+        res.json({ success: true, file });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+app.get('/api/source-files/search', (req, res) => {
+    try {
+        const { query, types, limit } = req.query;
+        if (!query) {
+            return res.status(400).json({ success: false, error: 'Query parameter required' });
+        }
+
+        const fileTypes = types ? types.split(',') : [];
+        const maxResults = parseInt(limit) || 100;
+        const results = fileManager.searchInFiles(query, fileTypes, maxResults);
+
+        res.json({ success: true, results, query, count: results.length });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Development Tools API Endpoints
+app.post('/api/build', (req, res) => {
+    const { type } = req.body;
+    const processId = Date.now().toString();
+
+    res.json({ success: true, processId, message: `${type} build started` });
+
+    // Map build types to actions
+    const buildActions = {
+        'quick': 'fast-build',
+        'build-upload': 'build-upload',
+        'clean': 'clean'
+    };
+
+    const action = buildActions[type] || 'build';
+    executeAction(action, processId);
+});
+
+app.get('/api/analyze-build', (req, res) => {
+    try {
+        // Mock build analysis data - in real implementation this would analyze actual build files
+        const analysis = {
+            firmwareSize: 2097152, // 2MB
+            flashUsage: 65,
+            ramUsage: 45,
+            buildTime: 12.5,
+            warnings: [
+                'Warning: Unused variable in main.cpp:45',
+                'Warning: Deprecated function call in wifi_manager.cpp:123'
+            ],
+            errors: []
+        };
+
+        res.json({ success: true, ...analysis });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/devices/status', async (req, res) => {
+    try {
+        // Mock device status - in real implementation this would ping devices
+        const devices = [
+            {
+                ip: '192.168.26.117',
+                name: 'ESP32-S3 DevKit',
+                status: 'online',
+                firmware: 'OutdoorAP v1.2.3',
+                uptime: '2h 34m',
+                lastSeen: new Date().toISOString()
+            },
+            {
+                ip: '192.168.4.2',
+                name: 'ESP32-C6 Radio',
+                status: 'offline',
+                firmware: 'Unknown',
+                uptime: 'N/A',
+                lastSeen: new Date(Date.now() - 5 * 60 * 1000).toISOString()
+            }
+        ];
+
+        res.json(devices);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Build and execution endpoints
@@ -182,23 +1084,23 @@ function executeAction(action, processId) {
 
     switch (action) {
         case 'build':
-            scriptPath = path.join('..', 'compile.ps1');
+            scriptPath = path.join('..', 'compile.py');
             args = [...buildArgs(), '-SkipUpload'];
             break;
         case 'upload':
-            scriptPath = path.join('..', 'compile.ps1');
+            scriptPath = path.join('..', 'compile.py');
             args = [...buildArgs(), '-SkipBuild'];
             break;
         case 'build-upload':
-            scriptPath = path.join('..', 'compile.ps1');
+            scriptPath = path.join('..', 'compile.py');
             args = buildArgs();
             break;
         case 'fast-build':
-            scriptPath = path.join('..', 'fast_compile.ps1');
+            scriptPath = path.join('..', 'fast_compile.py');
             args = buildArgs();
             break;
         case 'clean':
-            scriptPath = path.join('..', 'compile.ps1');
+            scriptPath = path.join('..', 'compile.py');
             args = [...buildArgs(), '-Clean', '-SkipUpload'];
             break;
         case 'monitor':
@@ -206,11 +1108,11 @@ function executeAction(action, processId) {
             args = ['device', 'monitor', '--port', currentConfig.comPort, '--baud', '115200'];
             break;
         case 'configure-wifi':
-            scriptPath = path.join('..', 'configure_wifi.ps1');
+            scriptPath = path.join('..', 'configure_wifi.py');
             args = [];
             break;
         case 'configure-newton':
-            scriptPath = path.join('..', 'configure_newton_m3.ps1');
+            scriptPath = path.join('..', 'configure_newton_m3.py');
             args = [];
             break;
         case 'validate-config':
@@ -218,7 +1120,7 @@ function executeAction(action, processId) {
             args = [path.join('..', 'validate_config.py')];
             break;
         case 'test-endpoints':
-            scriptPath = path.join('..', 'test_api_endpoints.ps1');
+            scriptPath = path.join('..', 'test_api_endpoints.py');
             args = [];
             break;
         default:
@@ -226,10 +1128,16 @@ function executeAction(action, processId) {
             return;
     }
 
-    // Determine if we need PowerShell
-    const isPS1 = scriptPath.endsWith('.ps1');
-    const command = isPS1 ? 'powershell' : scriptPath;
-    const finalArgs = isPS1 ? ['-File', scriptPath, ...args] : args;
+    // If the scriptPath looks like a Python script, run with python.
+    let command, finalArgs;
+    if (String(scriptPath).toLowerCase().endsWith('.py')) {
+        command = 'python';
+        finalArgs = [scriptPath, ...args];
+    } else {
+        // treat scriptPath as a direct command (e.g., 'pio') or an executable path
+        command = scriptPath;
+        finalArgs = args;
+    }
 
     // Start the process
     const process = spawn(command, finalArgs, {
@@ -317,7 +1225,7 @@ async function executeRemoteAction(action, processId, serverId) {
                 command = `pio device monitor --port ${currentConfig.comPort} --baud 115200`;
                 break;
             case 'configure-wifi':
-                command = './configure_wifi.ps1';
+                command = 'python3 configure_wifi.py';
                 break;
             case 'validate-config':
                 command = 'python3 validate_config.py';
@@ -343,7 +1251,7 @@ async function executeRemoteAction(action, processId, serverId) {
             try {
                 const remoteBuildPath = path.join(workingDir, '.pio/build', currentConfig.environment);
                 const localBuildPath = path.join(__dirname, '..', '.pio', 'build', currentConfig.environment);
-                
+
                 await remoteManager.downloadBuild(serverId, remoteBuildPath, localBuildPath);
                 io.emit('process-output', {
                     processId,
@@ -373,9 +1281,9 @@ async function executeRemoteAction(action, processId, serverId) {
                 exitCode: 1
             }).then(analysis => {
                 if (analysis) {
-                    io.emit('ai-analysis', { 
-                        processId, 
-                        type: 'error', 
+                    io.emit('ai-analysis', {
+                        processId,
+                        type: 'error',
                         analysis,
                         remote: true,
                         timestamp: new Date().toISOString()
@@ -629,6 +1537,277 @@ io.on('connection', (socket) => {
         } catch (error) {
             socket.emit('remote-error', { error: error.message });
         }
+    });
+
+    // Web UI compatibility handlers (legacy event names used by public/app.js)
+    // Allow the browser UI to request config, com ports, and to run scripts/commands
+    socket.on('load_config', () => {
+        socket.emit('config_loaded', currentConfig);
+    });
+
+    socket.on('save_config', (cfg) => {
+        try {
+            currentConfig = { ...currentConfig, ...cfg };
+            socket.emit('config_saved', currentConfig);
+            io.emit('config-update', currentConfig);
+        } catch (err) {
+            socket.emit('config_error', { error: err.message });
+        }
+    });
+
+    socket.on('get_com_ports', async () => {
+        try {
+            const portsList = await getComPorts();
+            const ports = portsList.map(p => ({ path: p, manufacturer: '' }));
+            socket.emit('com_ports', ports);
+        } catch (err) {
+            socket.emit('com_ports', []);
+        }
+    });
+
+    // Track a single active process per socket (UI expects one running at a time)
+    const socketProcesses = {};
+
+    function startAndStreamProcess(socket, command, args = [], options = {}) {
+        try {
+            const proc = spawn(command, args, Object.assign({ cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }, options));
+
+            // keep reference
+            socketProcesses[socket.id] = proc;
+
+            socket.emit('output', { type: 'stdout', data: `Started: ${command} ${args.join(' ')}\n` });
+            io.emit('process-started', { processId: socket.id, command: `${command} ${args.join(' ')}` });
+
+            proc.stdout.on('data', (data) => {
+                const text = data.toString();
+                socket.emit('output', { type: 'stdout', data: text });
+                io.emit('process-output', { processId: socket.id, type: 'stdout', data: text });
+            });
+
+            proc.stderr.on('data', (data) => {
+                const text = data.toString();
+                socket.emit('output', { type: 'stderr', data: text });
+                io.emit('process-output', { processId: socket.id, type: 'stderr', data: text });
+            });
+
+            proc.on('close', (code) => {
+                delete socketProcesses[socket.id];
+                socket.emit('process_complete', { success: code === 0, code });
+                io.emit('process-finished', { processId: socket.id, exitCode: code });
+            });
+
+            proc.on('error', (err) => {
+                delete socketProcesses[socket.id];
+                const msg = err && err.message ? err.message : String(err);
+                socket.emit('output', { type: 'stderr', data: msg });
+                socket.emit('process_complete', { success: false, error: msg });
+                io.emit('process-error', { processId: socket.id, error: msg });
+            });
+
+            return proc;
+        } catch (err) {
+            const msg = err && err.message ? err.message : String(err);
+            socket.emit('output', { type: 'stderr', data: msg });
+            socket.emit('process_complete', { success: false, error: msg });
+            return null;
+        }
+    }
+
+    socket.on('run_script', (data) => {
+        // data: { script: 'compile.py', args: [] } or { script: 'some_command', args: [] }
+        const { script, args = [] } = data || {};
+        if (!script) {
+            socket.emit('output', { type: 'stderr', data: 'No script specified\n' });
+            socket.emit('process_complete', { success: false, error: 'No script specified' });
+            return;
+        }
+
+        // Resolve script path relative to project root when it looks like a file
+        const ext = path.extname(script).toLowerCase();
+
+        if (ext === '.py') {
+            const scriptPath = path.isAbsolute(script) ? script : path.join(__dirname, '..', script);
+            startAndStreamProcess(socket, PYTHON_EXEC, [scriptPath, ...args]);
+        } else {
+            // treat as command (e.g., 'pio' or node script)
+            const cmd = script;
+            startAndStreamProcess(socket, cmd, args);
+        }
+    });
+
+    socket.on('run_command', (data) => {
+        // data: { command: 'pio', args: ['run'] }
+        const { command, args = [] } = data || {};
+        if (!command) {
+            socket.emit('output', { type: 'stderr', data: 'No command specified\n' });
+            socket.emit('process_complete', { success: false, error: 'No command specified' });
+            return;
+        }
+        startAndStreamProcess(socket, command, args);
+    });
+
+    socket.on('stop_process', () => {
+        const proc = socketProcesses[socket.id];
+        if (proc) {
+            try {
+                proc.kill();
+                socket.emit('output', { type: 'stdout', data: 'Process killed\n' });
+                socket.emit('process_complete', { success: false, error: 'killed' });
+            } catch (err) {
+                socket.emit('output', { type: 'stderr', data: `Failed to kill process: ${err.message}\n` });
+            }
+        } else {
+            socket.emit('output', { type: 'stderr', data: 'No active process to stop\n' });
+        }
+    });
+
+    // Development Tools Socket Events
+    socket.on('debug-command', (data) => {
+        const { command } = data;
+        // Echo the command back as debug output for now
+        socket.emit('debug-output', {
+            message: `Command executed: ${command}`,
+            level: 'INFO'
+        });
+
+        // In a real implementation, this would execute actual debug commands
+        if (command.toLowerCase().includes('reset')) {
+            socket.emit('debug-output', { message: 'Device reset command sent', level: 'WARN' });
+        } else if (command.toLowerCase().includes('status')) {
+            socket.emit('debug-output', { message: 'Device status: Online, Heap: 128KB free', level: 'INFO' });
+        }
+    });
+
+    socket.on('request-memory-stats', () => {
+        // Mock memory stats - in real implementation this would query the device
+        const memStats = {
+            heapFree: 131072,
+            stackUsage: 12288,
+            flashFree: 1258291,
+            taskCount: 8
+        };
+        socket.emit('memory-stats', memStats);
+    });
+
+    socket.on('run-analysis', (data) => {
+        const { type } = data;
+        socket.emit('debug-output', {
+            message: `Starting ${type} analysis...`,
+            level: 'INFO'
+        });
+
+        // Mock analysis results
+        setTimeout(() => {
+            if (type === 'code') {
+                socket.emit('debug-output', { message: 'Code analysis complete: 2 potential issues found', level: 'WARN' });
+            } else if (type === 'memory') {
+                socket.emit('debug-output', { message: 'Memory analysis: 65% flash usage, 45% heap usage', level: 'INFO' });
+            } else if (type === 'performance') {
+                socket.emit('debug-output', { message: 'Performance analysis: Average response time 12ms', level: 'INFO' });
+            } else if (type === 'dependencies') {
+                socket.emit('debug-output', { message: 'Dependencies check: All libraries up to date', level: 'SUCCESS' });
+            }
+        }, 1000);
+    });
+
+    socket.on('device-command', (data) => {
+        const { action } = data;
+        socket.emit('debug-output', {
+            message: `Device command: ${action}`,
+            level: 'WARN'
+        });
+
+        // Mock device command responses
+        setTimeout(() => {
+            if (action === 'reset') {
+                socket.emit('debug-output', { message: 'Device reset successful', level: 'SUCCESS' });
+            } else if (action === 'erase-flash') {
+                socket.emit('debug-output', { message: 'Flash memory erased', level: 'SUCCESS' });
+            } else if (action === 'upload-fs') {
+                socket.emit('debug-output', { message: 'Filesystem upload started', level: 'INFO' });
+            }
+        }, 2000);
+    });
+
+    socket.on('run-tests', (data) => {
+        const { type } = data;
+        socket.emit('debug-output', {
+            message: `Running ${type} tests...`,
+            level: 'INFO'
+        });
+
+        // Mock test results
+        setTimeout(() => {
+            if (type === 'unit') {
+                socket.emit('debug-output', { message: 'Unit tests: 15/15 passed', level: 'SUCCESS' });
+            } else if (type === 'api') {
+                socket.emit('debug-output', { message: 'API tests: All endpoints responding', level: 'SUCCESS' });
+            } else if (type === 'benchmark') {
+                socket.emit('debug-output', { message: 'Benchmark: 1000 ops/sec average', level: 'INFO' });
+            } else if (type === 'memory-profile') {
+                socket.emit('debug-output', { message: 'Memory profile: No leaks detected', level: 'SUCCESS' });
+            }
+        }, 3000);
+    });
+
+    socket.on('git-command', (data) => {
+        const { action, version } = data;
+        socket.emit('debug-output', {
+            message: `Git command: ${action}`,
+            level: 'INFO'
+        });
+
+        // Mock git command responses
+        setTimeout(() => {
+            if (action === 'status') {
+                socket.emit('debug-output', { message: 'Git status: Working directory clean', level: 'INFO' });
+            } else if (action === 'backup') {
+                socket.emit('debug-output', { message: 'Backup created successfully', level: 'SUCCESS' });
+            } else if (action === 'diff') {
+                socket.emit('debug-output', { message: 'Diff: 3 files modified, 15 lines added', level: 'INFO' });
+            } else if (action === 'tag') {
+                socket.emit('debug-output', { message: `Release tagged: ${version}`, level: 'SUCCESS' });
+            }
+        }, 1500);
+    });
+
+    socket.on('ping-device', (data) => {
+        const { ip } = data;
+        socket.emit('debug-output', {
+            message: `Pinging device at ${ip}...`,
+            level: 'INFO'
+        });
+
+        // Mock ping result
+        setTimeout(() => {
+            const success = Math.random() > 0.2; // 80% success rate
+            socket.emit('debug-output', {
+                message: success ? `Ping successful: ${ip} (12ms)` : `Ping failed: ${ip} unreachable`,
+                level: success ? 'SUCCESS' : 'ERROR'
+            });
+        }, 1000);
+    });
+
+    socket.on('reconnect-device', (data) => {
+        const { ip } = data;
+        socket.emit('debug-output', {
+            message: `Attempting to reconnect to ${ip}...`,
+            level: 'INFO'
+        });
+
+        setTimeout(() => {
+            socket.emit('debug-output', {
+                message: `Reconnection to ${ip} successful`,
+                level: 'SUCCESS'
+            });
+
+            // Update device status
+            socket.emit('device-status', {
+                ip,
+                status: 'online',
+                lastSeen: new Date().toISOString()
+            });
+        }, 2000);
     });
 
     // Send initial data

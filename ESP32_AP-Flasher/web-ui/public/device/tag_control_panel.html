@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEPL ESP32 - Tag Control Panel</title>
+    <link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Core JavaScript modules -->
+    <script src="constants.js?3.0" defer></script>
+    <script src="utils.js?3.0" defer></script>
+    <script src="app-core.js?3.0" defer></script>
+    <script src="ui-components.js?3.0" defer></script>
+    <script src="tag-manager.js?3.0" defer></script>
+    <script src="canvas-renderer.js?3.0" defer></script>
+    <!-- Feature-specific modules -->
+    <script src="main.js?3.0" defer></script>
+    <script src="g5decoder.js?2.74"></script>
+    <script src="universal-menu.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(8px);
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 1.3em;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .status-item {
+            background: #3498db;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .panel h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .search-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .search-input, .select-input {
+            flex: 1;
+            min-width: 150px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus, .select-input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .tag-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .tag-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s;
+        }
+
+        .tag-item:hover {
+            background: #e8f4fd;
+        }
+
+        .tag-item:last-child {
+            border-bottom: none;
+        }
+
+        .tag-info {
+            flex: 1;
+        }
+
+        .tag-mac {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .tag-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .tag-status {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+
+        .status-online {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-low-battery {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .tag-controls {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .led-control {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .led-control h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .led-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .led-pattern {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .color-btn {
+            width: 30px;
+            height: 30px;
+            border: 2px solid #ddd;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .color-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .color-btn.active {
+            border-color: #333;
+            transform: scale(1.2);
+        }
+
+        .range-slider {
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        .monitoring-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .metric-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .log-console {
+            background: #2c3e50;
+            color: #ecf0f1;
+            border-radius: 8px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .log-timestamp {
+            color: #95a5a6;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 15px;
+            width: 80%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: black;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 1001;
+            transform: translateX(100%);
+            transition: transform 0.3s;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #27ae60;
+        }
+
+        .notification.error {
+            background: #e74c3c;
+        }
+
+        .notification.warning {
+            background: #f39c12;
+        }
+
+        /* Project badge style */
+        .project-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: #fff;
+            margin-left: 8px;
+        }
+        .project-badge.unassigned { background: #95a5a6; }
+        .project-badge.project-a { background: #3498db; }
+        .project-badge.project-b { background: #9b59b6; }
+        .project-badge.project-c { background: #27ae60; }
+    </style>
+</head>
+<body>
+    <!-- Enhanced Compact Header with Menu and Status -->
+    <header class="advanced-header">
+        <div class="compact-header-content">
+            <div class="header-left">
+                <div class="logo-section">
+                    <div class="logo-icon">🏷️</div>
+                    <div class="logo-text">
+                        <h1>OpenEPL Tag Control Panel</h1>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-status">
+                <div class="status-item">
+                    <div class="status-dot" id="systemDot"></div>
+                    <span id="systemStatus">Ready</span>
+                </div>
+                <div class="status-item">
+                    <span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
+                    <span id="tagCount">Tags</span>
+                </div>
+                <div class="status-item">
+                    <span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
+                    <span id="wifiStatus">WiFi</span>
+                </div>
+                <div class="status-item">
+                    <span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
+                    <span id="uptimeDisplay">--:--</span>
+                </div>
+            </div>
+
+            			<!-- Universal Menu Container -->
+			<div id="menu-container" class="menu-container"></div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Status Bar -->
+        <div class="header">
+            <div class="status-bar">
+                <div class="status-item" id="connection-status">🔄 Connecting...</div>
+                <div class="status-item" id="tag-count">📱 0 Tags</div>
+                <div class="status-item" id="ap-status">📡 OpenEPL ESP32</div>
+                <div class="status-item" id="last-update">🕐 Never</div>
+            </div>
+        </div>
+
+        <!-- Monitoring Dashboard -->
+        <div class="panel">
+            <h2>📊 System Monitoring</h2>
+            <div class="monitoring-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="total-tags">0</div>
+                    <div class="metric-label">Total Tags</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="online-tags">0</div>
+                    <div class="metric-label">Online Tags</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="low-battery-tags">0</div>
+                    <div class="metric-label">Low Battery</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="avg-signal">-</div>
+                    <div class="metric-label">Avg Signal (dBm)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Tag Search and Control -->
+            <div class="panel">
+                <h2>🔍 Tag Search & Control</h2>
+
+                <!-- Search Filters -->
+                <div class="search-section">
+                    <input type="text" class="search-input" id="search-mac" placeholder="Search by MAC address...">
+                    <select class="select-input" id="filter-status">
+                        <option value="all">All Status</option>
+                        <option value="online">Online Only</option>
+                        <option value="offline">Offline Only</option>
+                        <option value="low-battery">Low Battery</option>
+                    </select>
+                    <select class="select-input" id="filter-project">
+                        <option value="all">All Projects</option>
+                        <option value="project-a">Project A</option>
+                        <option value="project-b">Project B</option>
+                        <option value="project-c">Project C</option>
+                        <option value="unassigned">Unassigned</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="searchTags()">🔍 Search</button>
+                    <button class="btn btn-success" onclick="refreshTags()">🔄 Refresh</button>
+                </div>
+
+                <!-- Enhanced Quick Actions -->
+                <div class="search-section">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                        <button class="btn btn-warning" onclick="findAllTags()">💡 Flash All LEDs</button>
+                        <button class="btn btn-primary" onclick="batteryReport()">🔋 Battery Report</button>
+                        <button class="btn btn-success" onclick="signalReport()">📶 Signal Report</button>
+                        <button class="btn btn-danger" onclick="purgeInactiveTags()">🗑️ Purge Inactive</button>
+                        <button class="btn btn-secondary" onclick="exportTagData()">📄 Export Data</button>
+                        <button class="btn btn-info" onclick="showBulkActions()">⚡ Bulk Actions</button>
+                    </div>
+                </div>
+
+                <!-- Enhanced Bulk Actions Modal -->
+                <div id="bulk-actions-modal" class="modal">
+                    <div class="modal-content">
+                        <span class="close" onclick="closeBulkActions()">&times;</span>
+                        <h3>🔧 Bulk Operations</h3>
+
+                        <div style="margin: 20px 0;">
+                            <h4>Selection Criteria:</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+                                <label>
+                                    <input type="checkbox" id="bulk-online" checked> Online Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-low-battery"> Low Battery Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-weak-signal"> Weak Signal Tags Only
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="bulk-specific-type"> Specific Tag Type:
+                                    <select id="bulk-tag-type" style="margin-left: 10px;">
+                                        <option value="">All Types</option>
+                                        <option value="154">1.54" E-Paper</option>
+                                        <option value="213">2.13" E-Paper</option>
+                                        <option value="290">2.90" E-Paper</option>
+                                        <option value="420">4.20" E-Paper</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style="margin: 20px 0;">
+                            <h4>Actions:</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <button class="btn btn-warning" onclick="bulkFlashLeds()">💡 Flash LEDs</button>
+                                <button class="btn btn-primary" onclick="bulkUpdateContent()">📝 Update Content</button>
+                                <button class="btn btn-success" onclick="bulkTestConnection()">🔌 Test Connection</button>
+                                <button class="btn btn-info" onclick="bulkConfigureSettings()">⚙️ Configure Settings</button>
+                            </div>
+                        </div>
+
+                        <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                            <h4>Selected Tags: <span id="bulk-selected-count">0</span></h4>
+                            <div id="bulk-preview" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
+                                Click "Preview Selection" to see which tags will be affected.
+                            </div>
+                            <button class="btn btn-secondary" onclick="previewBulkSelection()" style="margin-top: 10px;">👁️ Preview Selection</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tag List -->
+                <div class="tag-list" id="tag-list">
+                    <div style="padding: 20px; text-align: center; color: #666;">
+                        Loading tags... <div class="loading"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LED Control Panel -->
+            <div class="panel">
+                <h2>💡 LED Control Panel</h2>
+
+                <div class="led-control">
+                    <h3>Selected Tag: <span id="selected-tag">None</span></h3>
+
+                    <!-- Color Selection -->
+                    <div>
+                        <label>LED Color:</label>
+                        <div class="color-picker">
+                            <div class="color-btn" style="background-color: #ff0000;" data-color="red"></div>
+                            <div class="color-btn" style="background-color: #00ff00;" data-color="green"></div>
+                            <div class="color-btn" style="background-color: #0000ff;" data-color="blue"></div>
+                            <div class="color-btn" style="background-color: #ffffff; border-color: #ccc;" data-color="white"></div>
+                        </div>
+                    </div>
+
+                    <!-- LED Pattern -->
+                    <div class="led-pattern">
+                        <label>Pattern:</label>
+                        <select id="led-pattern">
+                            <option value="on">Solid On</option>
+                            <option value="blink">Blink</option>
+                            <option value="pulse">Pulse</option>
+                            <option value="strobe">Strobe</option>
+                            <option value="off">Turn Off</option>
+                        </select>
+                    </div>
+
+                    <!-- Brightness -->
+                    <div>
+                        <label>Brightness: <span id="brightness-value">100</span>%</label>
+                        <input type="range" class="range-slider" id="brightness" min="10" max="100" value="100" oninput="updateBrightness(this.value)">
+                    </div>
+
+                    <!-- Duration -->
+                    <div>
+                        <label>Duration: <span id="duration-value">10</span> seconds</label>
+                        <input type="range" class="range-slider" id="duration" min="1" max="300" value="10" oninput="updateDuration(this.value)">
+                    </div>
+
+                    <!-- Control Buttons -->
+                    <div class="led-options">
+                        <button class="btn btn-success" onclick="applyLedControl()">✨ Apply LED Control</button>
+                        <button class="btn btn-warning" onclick="findTag()">🔍 Find This Tag</button>
+                        <button class="btn btn-danger" onclick="turnOffLed()">⭕ Turn Off LED</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="panel">
+            <h2>📋 Activity Log</h2>
+            <div class="log-console" id="activity-log">
+                <div class="log-entry">
+                    <span class="log-timestamp">[00:00:00]</span> System initialized
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button class="btn btn-primary" onclick="clearLog()">🗑️ Clear Log</button>
+                <button class="btn btn-success" onclick="exportLog()">💾 Export Log</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Advanced Settings -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>⚙️ Advanced Settings</h2>
+            <div style="margin: 20px 0;">
+                <label>Auto-refresh interval (seconds):</label>
+                <input type="number" id="refresh-interval" value="30" min="5" max="300">
+            </div>
+            <div style="margin: 20px 0;">
+                <label>Battery alert threshold (%):</label>
+                <input type="number" id="battery-threshold" value="20" min="5" max="50">
+            </div>
+            <div style="margin: 20px 0;">
+                <label>Signal alert threshold (dBm):</label>
+                <input type="number" id="signal-threshold" value="-80" min="-100" max="-40">
+            </div>
+            <button class="btn btn-success" onclick="saveSettings()">💾 Save Settings</button>
+        </div>
+    </div>
+
+    <script>
+    // Global variables
+    let tags = [];
+    let allTags = [];
+        let selectedTag = null;
+        let selectedColor = 'red';
+        let refreshInterval = null;
+        let settings = {
+            refreshInterval: 30,
+            batteryThreshold: 20,
+            signalThreshold: -80
+        };
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+            setupEventListeners();
+            startAutoRefresh();
+        });
+
+        function initializeApp() {
+            addLog('Initializing OpenEPL ESP32 Control Panel...');
+            refreshTags();
+            updateConnectionStatus('connected');
+        }
+
+        function setupEventListeners() {
+            // Color picker
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    selectedColor = this.dataset.color;
+                });
+            });
+
+            // Set default color
+            document.querySelector('.color-btn[data-color="red"]').classList.add('active');
+
+            // Modal controls
+            document.querySelector('.close').addEventListener('click', function() {
+                document.getElementById('settings-modal').style.display = 'none';
+            });
+
+            window.addEventListener('click', function(event) {
+                if (event.target == document.getElementById('settings-modal')) {
+                    document.getElementById('settings-modal').style.display = 'none';
+                }
+            });
+        }
+
+        function updateBrightness(value) {
+            document.getElementById('brightness-value').textContent = value;
+        }
+
+        function updateDuration(value) {
+            document.getElementById('duration-value').textContent = value;
+        }
+
+        async function refreshTags() {
+            try {
+                addLog('Refreshing tag list...');
+                // Use actual OpenEPL API endpoint
+                const response = await fetch('/get_db?pos=0');
+                if (response.ok) {
+                    const data = await response.json();
+                    tags = data.tags || [];
+
+                    // Convert to expected format
+                    tags = tags.map(tag => ({
+                        mac: tag.mac,
+                        type: tag.hwType ? `HW_TYPE_${tag.hwType}` : 'Unknown',
+                        battery: tag.batteryMv ? Math.round((tag.batteryMv / 4200) * 100) : 0,
+                        signal: tag.RSSI || -100,
+                        status: tag.lastseen && (Date.now()/1000 - tag.lastseen < 300) ? 'online' : 'offline',
+                        lastSeen: new Date(tag.lastseen * 1000).toISOString(),
+                        led: 'off',
+                        alias: tag.alias || '',
+                        contentMode: tag.contentMode || 0,
+                        pending: tag.pending || 0,
+                        isExternal: tag.isexternal || false
+                    }));
+                    // Save master list
+                    allTags = tags.map(t => ({ ...t }));
+                } else {
+                    // Fallback with simulated data
+                    tags = generateSimulatedTags();
+                    allTags = tags.map(t => ({ ...t }));
+                    addLog('API not available, using simulated data', 'warning');
+                }
+
+                updateTagList();
+                updateMetrics();
+                updateLastUpdate();
+                addLog(`Found ${tags.length} tags`);
+            } catch (error) {
+                console.error('Error refreshing tags:', error);
+                // Use simulated data as fallback
+                tags = generateSimulatedTags();
+                allTags = tags.map(t => ({ ...t }));
+                updateTagList();
+                updateMetrics();
+                addLog('Using simulated data (API not available)', 'warning');
+            }
+        }
+
+        function generateSimulatedTags() {
+            const simTags = [];
+            const macPrefixes = ['AA:BB:CC:DD:EE:', 'FF:EE:DD:CC:BB:', '11:22:33:44:55:', 'CC:DD:EE:FF:AA:', '0C:0D:14:37:78:'];
+            const tagTypes = ['SOLUM_M3_2.9_BWR', 'SOLUM_M3_4.2_BWR', 'SOLUM_M3_2.9_BW', 'SOLUM_M3_1.6_BWR', 'NEWTON_M3_7.5_BWRY', 'SES_VUSION_26_BWR', 'NEWTON_M3'];
+
+            for (let i = 0; i < 18; i++) {
+                const macSuffix = (10 + i).toString(16).toUpperCase();
+                // Special case for the specific Newton M3 MAC
+                const mac = i === 4 ? '0C:0D:14:37:78:D2' : macPrefixes[i % 5] + macSuffix;
+                const type = i === 4 ? 'NEWTON_M3_7.5_BWRY' : tagTypes[i % 7];
+
+                // Assign simulated projects in a round-robin fashion
+                const projects = [ 'project-a', 'project-b', 'project-c', null ];
+                const project = projects[i % projects.length];
+
+                simTags.push({
+                    mac: mac,
+                    type: type,
+                    battery: 30 + Math.random() * 70,
+                    signal: -40 - Math.random() * 40,
+                    status: Math.random() > 0.2 ? 'online' : 'offline',
+                    lastSeen: new Date(Date.now() - Math.random() * 3600000).toISOString(),
+                    led: Math.random() > 0.8 ? 'on' : 'off',
+                    project: project
+                });
+            }
+            return simTags;
+        }
+
+        function updateTagList() {
+            const tagListElement = document.getElementById('tag-list');
+
+            if (tags.length === 0) {
+                tagListElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No tags found</div>';
+                return;
+            }
+
+            tagListElement.innerHTML = tags.map(tag => `
+                    <div class="tag-item" data-mac="${tag.mac}">
+                        <div class="tag-info">
+                            <div class="tag-mac">${tag.mac} ${tag.alias ? `(${tag.alias})` : ''}</div>
+                            <div class="tag-details">
+                                Type: ${tag.type} | Battery: ${Math.round(tag.battery)}% | Signal: ${Math.round(tag.signal)}dBm
+                                ${tag.pending > 0 ? ` | Pending: ${tag.pending}` : ''}
+                                ${tag.isExternal ? ' | External AP' : ''}
+                            </div>
+                            ${tag.project ? `<div style="margin-top:6px;"><span class="project-badge ${tag.project}">${(tag.project||'unassigned').replace('project-','Project ').toUpperCase()}</span></div>` : `<div style="margin-top:6px;"><span class="project-badge unassigned">UNASSIGNED</span></div>`}
+                            <div class="tag-status">
+                                <span class="status-badge status-${tag.status}">${tag.status.toUpperCase()}</span>
+                                ${tag.battery < settings.batteryThreshold ? '<span class="status-badge status-low-battery">LOW BATTERY</span>' : ''}
+                                ${tag.signal < settings.signalThreshold ? '<span class="status-badge status-low-battery">WEAK SIGNAL</span>' : ''}
+                                ${tag.pending > 0 ? '<span class="status-badge status-low-battery">PENDING</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="tag-controls">
+                            <button class="btn btn-primary" onclick="selectTag('${tag.mac}')">Select</button>
+                            <button class="btn btn-warning" onclick="findSpecificTag('${tag.mac}')">Find</button>
+                            <button class="btn btn-success" onclick="quickLedControl('${tag.mac}', 'blink')">Blink</button>
+                            ${tag.pending > 0 ? `<button class="btn btn-warning" onclick="clearPendingTag('${tag.mac}')" title="Clear pending">Clear</button>` : ''}
+                            ${!tag.isExternal ? `<button class="btn btn-primary" onclick="rebootTag('${tag.mac}')" title="Reboot tag">Reboot</button>` : ''}
+                            <button class="btn btn-success" onclick="refreshTag('${tag.mac}')" title="Refresh tag">Refresh</button>
+                            <button class="btn btn-danger" onclick="deleteTag('${tag.mac}')" title="Delete tag">Del</button>
+                        </div>
+                    </div>
+            `).join('');
+        }
+
+        function updateMetrics() {
+            const totalTags = tags.length;
+            const onlineTags = tags.filter(tag => tag.status === 'online').length;
+            const lowBatteryTags = tags.filter(tag => tag.battery < settings.batteryThreshold).length;
+            const avgSignal = tags.length > 0 ? Math.round(tags.reduce((sum, tag) => sum + tag.signal, 0) / tags.length) : 0;
+
+            document.getElementById('total-tags').textContent = totalTags;
+            document.getElementById('online-tags').textContent = onlineTags;
+            document.getElementById('low-battery-tags').textContent = lowBatteryTags;
+            document.getElementById('avg-signal').textContent = avgSignal;
+            document.getElementById('tag-count').textContent = `📱 ${totalTags} Tags`;
+        }
+
+        function updateLastUpdate() {
+            const now = new Date().toLocaleTimeString();
+            document.getElementById('last-update').textContent = `🕐 ${now}`;
+        }
+
+        function updateConnectionStatus(status) {
+            const statusElement = document.getElementById('connection-status');
+            if (status === 'connected') {
+                statusElement.textContent = '✅ Connected';
+                statusElement.style.backgroundColor = '#27ae60';
+            } else {
+                statusElement.textContent = '❌ Disconnected';
+                statusElement.style.backgroundColor = '#e74c3c';
+            }
+        }
+
+        function selectTag(mac) {
+            selectedTag = mac;
+            document.getElementById('selected-tag').textContent = mac;
+
+            // Highlight selected tag
+            document.querySelectorAll('.tag-item').forEach(item => {
+                item.style.backgroundColor = item.dataset.mac === mac ? '#e8f4fd' : '';
+            });
+
+            addLog(`Selected tag: ${mac}`);
+            showNotification(`Tag ${mac} selected`, 'success');
+        }
+
+        async function findSpecificTag(mac) {
+            try {
+                addLog(`Finding tag: ${mac}`);
+
+                // Use actual OpenEPL tag_cmd endpoint with ledflash command
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'ledflash');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Find command sent to ${mac}: ${result}`);
+                    showNotification(`Tag ${mac} should be flashing!`, 'success');
+                } else {
+                    throw new Error('Failed to send find command');
+                }
+            } catch (error) {
+                console.error('Error finding tag:', error);
+                addLog(`Error finding tag ${mac}: ${error.message}`, 'error');
+                showNotification(`Error finding tag ${mac}`, 'error');
+            }
+        }
+
+        async function quickLedControl(mac, action) {
+            try {
+                addLog(`LED ${action} for tag: ${mac}`);
+
+                // Use actual OpenEPL tag_cmd endpoint
+                const formData = new FormData();
+                formData.append('mac', mac);
+
+                // Map actions to actual commands
+                let cmd;
+                switch(action) {
+                    case 'blink':
+                    case 'flash':
+                        cmd = 'ledflash';
+                        break;
+                    case 'off':
+                        cmd = 'ledflash_stop';
+                        break;
+                    default:
+                        cmd = 'ledflash';
+                }
+
+                formData.append('cmd', cmd);
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`LED ${action} command sent to ${mac}: ${result}`);
+                    showNotification(`LED ${action} applied to ${mac}`, 'success');
+                } else {
+                    throw new Error('Failed to send LED command');
+                }
+            } catch (error) {
+                console.error('Error controlling LED:', error);
+                addLog(`Error controlling LED for ${mac}: ${error.message}`, 'error');
+                showNotification(`Error controlling LED for ${mac}`, 'error');
+            }
+        }
+
+        async function applyLedControl() {
+            if (!selectedTag) {
+                showNotification('Please select a tag first', 'error');
+                return;
+            }
+
+            const pattern = document.getElementById('led-pattern').value;
+            const brightness = document.getElementById('brightness').value;
+            const duration = document.getElementById('duration').value;
+
+            try {
+                addLog(`Applying LED control to ${selectedTag}: ${pattern}, ${selectedColor}, ${brightness}%, ${duration}s`);
+
+                // Use actual OpenEPL tag_cmd endpoint
+                const formData = new FormData();
+                formData.append('mac', selectedTag);
+
+                // Map pattern to actual command
+                let cmd;
+                switch(pattern) {
+                    case 'on':
+                    case 'blink':
+                    case 'pulse':
+                    case 'strobe':
+                        cmd = 'ledflash';
+                        break;
+                    case 'off':
+                        cmd = 'ledflash_stop';
+                        break;
+                    default:
+                        cmd = 'ledflash';
+                }
+
+                formData.append('cmd', cmd);
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`LED control applied to ${selectedTag}: ${result}`);
+                    showNotification('LED control applied successfully!', 'success');
+                } else {
+                    throw new Error('Failed to apply LED control');
+                }
+            } catch (error) {
+                console.error('Error applying LED control:', error);
+                addLog(`Error applying LED control to ${selectedTag}: ${error.message}`, 'error');
+                showNotification('Error applying LED control', 'error');
+            }
+        }
+
+        async function findTag() {
+            if (!selectedTag) {
+                showNotification('Please select a tag first', 'error');
+                return;
+            }
+            await findSpecificTag(selectedTag);
+        }
+
+        async function turnOffLed() {
+            if (!selectedTag) {
+                showNotification('Please select a tag first', 'error');
+                return;
+            }
+            await quickLedControl(selectedTag, 'off');
+        }
+
+        async function findAllTags() {
+            addLog('Flashing all tag LEDs...');
+            let count = 0;
+
+            for (const tag of tags.filter(t => t.status === 'online')) {
+                try {
+                    await quickLedControl(tag.mac, 'blink');
+                    count++;
+                } catch (error) {
+                    console.error(`Failed to flash ${tag.mac}:`, error);
+                }
+            }
+
+            addLog(`Flashed ${count} tags`);
+            showNotification(`Flashed ${count} online tags!`, 'success');
+        }
+
+        async function batteryReport() {
+            addLog('Generating battery report...');
+            const lowBatteryTags = tags.filter(tag => tag.battery < settings.batteryThreshold);
+
+            if (lowBatteryTags.length === 0) {
+                addLog('Battery report: All tags have sufficient battery');
+                showNotification('All tags have good battery levels!', 'success');
+            } else {
+                addLog(`Battery report: ${lowBatteryTags.length} tags need attention:`);
+                lowBatteryTags.forEach(tag => {
+                    addLog(`  - ${tag.mac}: ${Math.round(tag.battery)}%`);
+                });
+                showNotification(`${lowBatteryTags.length} tags have low battery!`, 'warning');
+            }
+        }
+
+        async function signalReport() {
+            addLog('Generating signal report...');
+            const weakSignalTags = tags.filter(tag => tag.signal < settings.signalThreshold);
+
+            if (weakSignalTags.length === 0) {
+                addLog('Signal report: All tags have good signal strength');
+                showNotification('All tags have good signal strength!', 'success');
+            } else {
+                addLog(`Signal report: ${weakSignalTags.length} tags have weak signal:`);
+                weakSignalTags.forEach(tag => {
+                    addLog(`  - ${tag.mac}: ${Math.round(tag.signal)}dBm`);
+                });
+                showNotification(`${weakSignalTags.length} tags have weak signal!`, 'warning');
+            }
+        }
+
+        function searchTags() {
+            const searchMac = document.getElementById('search-mac').value.toLowerCase();
+            const filterStatus = document.getElementById('filter-status').value;
+            const filterProject = document.getElementById('filter-project').value;
+
+            let filteredTags = tags;
+
+            if (searchMac) {
+                filteredTags = filteredTags.filter(tag =>
+                    tag.mac.toLowerCase().includes(searchMac)
+                );
+            }
+
+            if (filterStatus !== 'all') {
+                if (filterStatus === 'low-battery') {
+                    filteredTags = filteredTags.filter(tag => tag.battery < settings.batteryThreshold);
+                } else {
+                    filteredTags = filteredTags.filter(tag => tag.status === filterStatus);
+                }
+            }
+
+            if (filterProject && filterProject !== 'all') {
+                if (filterProject === 'unassigned') {
+                    filteredTags = filteredTags.filter(tag => !tag.project);
+                } else {
+                    filteredTags = filteredTags.filter(tag => tag.project === filterProject);
+                }
+            }
+
+            addLog(`Search completed: ${filteredTags.length} tags found`);
+
+            // Temporarily replace tags for display
+            const originalTags = tags;
+            tags = filteredTags;
+            updateTagList();
+            updateMetrics();
+            tags = originalTags;
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+
+            refreshInterval = setInterval(() => {
+                refreshTags();
+            }, settings.refreshInterval * 1000);
+
+            addLog(`Auto-refresh started (${settings.refreshInterval}s interval)`);
+        }
+
+        function addLog(message, type = 'info') {
+            const logElement = document.getElementById('activity-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+
+            let icon = '📝';
+            if (type === 'warning') icon = '⚠️';
+            if (type === 'error') icon = '❌';
+            if (type === 'success') icon = '✅';
+
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span> ${icon} ${message}
+            `;
+
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+
+            // Keep only last 100 entries
+            while (logElement.children.length > 100) {
+                logElement.removeChild(logElement.firstChild);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('activity-log').innerHTML = '';
+            addLog('Log cleared');
+        }
+
+        function exportLog() {
+            const logEntries = Array.from(document.querySelectorAll('.log-entry'))
+                .map(entry => entry.textContent);
+
+            const logText = logEntries.join('\n');
+            const blob = new Blob([logText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `outdoor-ap-log-${new Date().toISOString().slice(0, 10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            addLog('Log exported successfully');
+            showNotification('Log exported successfully!', 'success');
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 100);
+
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+
+        function saveSettings() {
+            settings.refreshInterval = parseInt(document.getElementById('refresh-interval').value);
+            settings.batteryThreshold = parseInt(document.getElementById('battery-threshold').value);
+            settings.signalThreshold = parseInt(document.getElementById('signal-threshold').value);
+
+            startAutoRefresh();
+            document.getElementById('settings-modal').style.display = 'none';
+            addLog('Settings saved successfully');
+            showNotification('Settings saved successfully!', 'success');
+        }
+
+
+        async function purgeInactiveTags() {
+            if (!confirm('Are you sure you want to delete all inactive tags? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                addLog('Purging inactive tags...');
+
+                // Find an active tag to send the purge command to (backend will purge all inactive)
+                const activeTags = tags.filter(tag => tag.status === 'online');
+                if (activeTags.length === 0) {
+                    showNotification('No active tags found to send purge command', 'warning');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('mac', activeTags[0].mac);
+                formData.append('cmd', 'purge');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Purge inactive tags command sent: ${result}`);
+                    showNotification('Inactive tags purged successfully!', 'success');
+
+                    // Refresh the tag list
+                    setTimeout(() => {
+                        refreshTags();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to send purge command');
+                }
+            } catch (error) {
+                console.error('Error purging inactive tags:', error);
+                addLog(`Error purging inactive tags: ${error.message}`, 'error');
+                showNotification('Error purging inactive tags', 'error');
+            }
+        }
+
+        // Additional tag management functions
+        async function deleteTag(mac) {
+            if (!confirm(`Are you sure you want to delete tag ${mac}?`)) {
+                return;
+            }
+
+            try {
+                addLog(`Deleting tag: ${mac}`);
+
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'del');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Tag deleted: ${mac} - ${result}`);
+                    showNotification(`Tag ${mac} deleted successfully!`, 'success');
+
+                    // Remove from local tags array and refresh display
+                    tags = tags.filter(tag => tag.mac !== mac);
+                    updateTagList();
+                    updateMetrics();
+
+                    // Clear selection if this was the selected tag
+                    if (selectedTag === mac) {
+                        selectedTag = null;
+                        document.getElementById('selected-tag').textContent = 'None';
+                    }
+                } else {
+                    throw new Error('Failed to delete tag');
+                }
+            } catch (error) {
+                console.error('Error deleting tag:', error);
+                addLog(`Error deleting tag ${mac}: ${error.message}`, 'error');
+                showNotification(`Error deleting tag ${mac}`, 'error');
+            }
+        }
+
+        async function rebootTag(mac) {
+            try {
+                addLog(`Rebooting tag: ${mac}`);
+
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'reboot');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Reboot command sent to ${mac}: ${result}`);
+                    showNotification(`Reboot command sent to ${mac}!`, 'success');
+                } else {
+                    throw new Error('Failed to send reboot command');
+                }
+            } catch (error) {
+                console.error('Error rebooting tag:', error);
+                addLog(`Error rebooting tag ${mac}: ${error.message}`, 'error');
+                showNotification(`Error rebooting tag ${mac}`, 'error');
+            }
+        }
+
+        async function refreshTag(mac) {
+            try {
+                addLog(`Refreshing tag: ${mac}`);
+
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'refresh');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Refresh command sent to ${mac}: ${result}`);
+                    showNotification(`Refresh command sent to ${mac}!`, 'success');
+                } else {
+                    throw new Error('Failed to send refresh command');
+                }
+            } catch (error) {
+                console.error('Error refreshing tag:', error);
+                addLog(`Error refreshing tag ${mac}: ${error.message}`, 'error');
+                showNotification(`Error refreshing tag ${mac}`, 'error');
+            }
+        }
+
+        async function clearPendingTag(mac) {
+            try {
+                addLog(`Clearing pending operations for tag: ${mac}`);
+
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'clear');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.text();
+                    addLog(`Clear pending command sent to ${mac}: ${result}`);
+                    showNotification(`Cleared pending operations for ${mac}!`, 'success');
+                } else {
+                    throw new Error('Failed to clear pending operations');
+                }
+            } catch (error) {
+                console.error('Error clearing pending operations:', error);
+                addLog(`Error clearing pending for ${mac}: ${error.message}`, 'error');
+                showNotification(`Error clearing pending for ${mac}`, 'error');
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey) {
+                switch(event.key) {
+                    case 'r':
+                        event.preventDefault();
+                        refreshTags();
+                        break;
+                    case 'f':
+                        event.preventDefault();
+                        if (selectedTag) findTag();
+                        break;
+                    case 'l':
+                        event.preventDefault();
+                        clearLog();
+                        break;
+                }
+            }
+        });
+
+        // Enhanced Bulk Operations
+        function showBulkActions() {
+            document.getElementById('bulk-actions-modal').style.display = 'block';
+            previewBulkSelection();
+        }
+
+        function closeBulkActions() {
+            document.getElementById('bulk-actions-modal').style.display = 'none';
+        }
+
+        function previewBulkSelection() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+
+            document.getElementById('bulk-selected-count').textContent = selectedTags.length;
+
+            const preview = document.getElementById('bulk-preview');
+            if (selectedTags.length === 0) {
+                preview.innerHTML = '<div style="color: #666; font-style: italic;">No tags match the current criteria</div>';
+                return;
+            }
+
+            const previewHtml = selectedTags.map(tag => `
+                <div style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; border-left: 3px solid ${tag.status === 'online' ? '#4CAF50' : '#f44336'};">
+                    <strong>${tag.mac}</strong> - ${tag.alias || 'No alias'}
+                    <span style="color: #666;">(${tag.status}, Battery: ${tag.battery || 'N/A'}%, Signal: ${tag.signal || 'N/A'}%)</span>
+                </div>
+            `).join('');
+
+            preview.innerHTML = previewHtml;
+        }
+
+        function getBulkSelectionCriteria() {
+            return {
+                onlineOnly: document.getElementById('bulk-online').checked,
+                lowBatteryOnly: document.getElementById('bulk-low-battery').checked,
+                weakSignalOnly: document.getElementById('bulk-weak-signal').checked,
+                specificType: document.getElementById('bulk-specific-type').checked,
+                tagType: document.getElementById('bulk-tag-type').value
+            };
+        }
+
+        function getTagsMatchingCriteria(criteria) {
+            return allTags.filter(tag => {
+                // Online filter
+                if (criteria.onlineOnly && tag.status !== 'online') return false;
+
+                // Low battery filter (assuming < 20% is low)
+                if (criteria.lowBatteryOnly && (tag.battery || 100) >= 20) return false;
+
+                // Weak signal filter (assuming < 30% is weak)
+                if (criteria.weakSignalOnly && (tag.signal || 100) >= 30) return false;
+
+                // Specific tag type filter
+                if (criteria.specificType && criteria.tagType && tag.type !== criteria.tagType) return false;
+
+                return true;
+            });
+        }
+
+        async function bulkFlashLeds() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+
+            if (selectedTags.length === 0) {
+                showNotification('No tags selected for bulk LED flash', 'warning');
+                return;
+            }
+
+            if (!confirm(`Flash LEDs on ${selectedTags.length} tags?`)) return;
+
+            addLog(`Starting bulk LED flash for ${selectedTags.length} tags...`);
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const tag of selectedTags) {
+                try {
+                    await flashTag(tag.mac);
+                    successCount++;
+                    addLog(`✓ LED flashed for ${tag.mac}`);
+                } catch (error) {
+                    errorCount++;
+                    addLog(`✗ Failed to flash LED for ${tag.mac}: ${error.message}`, 'error');
+                }
+
+                // Small delay to prevent overwhelming the system
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            showNotification(`Bulk LED flash completed: ${successCount} successful, ${errorCount} failed`, successCount > errorCount ? 'success' : 'warning');
+            closeBulkActions();
+        }
+
+        async function bulkTestConnection() {
+            const criteria = getBulkSelectionCriteria();
+            const selectedTags = getTagsMatchingCriteria(criteria);
+
+            if (selectedTags.length === 0) {
+                showNotification('No tags selected for connection test', 'warning');
+                return;
+            }
+
+            if (!confirm(`Test connection for ${selectedTags.length} tags?`)) return;
+
+            addLog(`Starting bulk connection test for ${selectedTags.length} tags...`);
+            let onlineCount = 0;
+            let offlineCount = 0;
+
+            for (const tag of selectedTags) {
+                try {
+                    const isOnline = await testTagConnection(tag.mac);
+                    if (isOnline) {
+                        onlineCount++;
+                        addLog(`✓ ${tag.mac} is online`);
+                    } else {
+                        offlineCount++;
+                        addLog(`✗ ${tag.mac} is offline`);
+                    }
+                } catch (error) {
+                    offlineCount++;
+                    addLog(`✗ ${tag.mac} connection test failed: ${error.message}`, 'error');
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            showNotification(`Connection test completed: ${onlineCount} online, ${offlineCount} offline`, 'info');
+            closeBulkActions();
+        }
+
+        async function bulkUpdateContent() {
+            showNotification('Bulk content update feature coming soon!', 'info');
+        }
+
+        async function bulkConfigureSettings() {
+            showNotification('Bulk settings configuration feature coming soon!', 'info');
+        }
+
+        async function exportTagData() {
+            try {
+                const exportData = {
+                    exportDate: new Date().toISOString(),
+                    totalTags: allTags.length,
+                    onlineTags: allTags.filter(t => t.status === 'online').length,
+                    offlineTags: allTags.filter(t => t.status === 'offline').length,
+                    lowBatteryTags: allTags.filter(t => (t.battery || 100) < 20).length,
+                    tags: allTags.map(tag => ({
+                        mac: tag.mac,
+                        alias: tag.alias,
+                        status: tag.status,
+                        battery: tag.battery,
+                        signal: tag.signal,
+                        type: tag.type,
+                        lastSeen: tag.lastSeen
+                    }))
+                };
+
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `tag-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                addLog('Tag data exported successfully');
+                showNotification('Tag data exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting tag data:', error);
+                addLog(`Error exporting tag data: ${error.message}`, 'error');
+                showNotification('Error exporting tag data', 'error');
+            }
+        }
+
+        // Helper function to test tag connection
+        async function testTagConnection(mac) {
+            try {
+                const formData = new FormData();
+                formData.append('mac', mac);
+                formData.append('cmd', 'ping');
+
+                const response = await fetch('/tag_cmd', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('bulk-actions-modal');
+            if (event.target === modal) {
+                closeBulkActions();
+            }
+        }
+    </script>
+    <!-- Footer Status Line -->
+    <div class="footer-status">
+        <div class="footer-left">
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">developer_board</span>
+                <span id="footerSystemInfo">System Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">memory</span>
+                <span id="footerMemoryInfo">Memory OK</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">wifi</span>
+                <span id="footerWifiInfo">WiFi Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">devices</span>
+                <span id="footerTagInfo">Tags Ready</span>
+            </div>
+            <div class="footer-item">
+                <span class="material-symbols-outlined" style="font-size: 10px;">speed</span>
+                <span id="footerPerformance">Performance OK</span>
+            </div>
+        </div>
+        <div class="footer-right">
+            <span id="footerTimestamp">Ready</span>
+        </div>
+    </div>
+
+</body>
+</html>

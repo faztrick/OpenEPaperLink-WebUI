@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>AI Assistant — OpenEPaperLink</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>.container { max-width:980px; margin:1.25rem auto; padding:1.25rem }</style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo"><i class="fas fa-robot"></i><h1>AI Assistant</h1></div>
+        </div>
+    </header>
+
+    <nav class="top-nav">
+        <div class="container">
+            <a href="index.html" class="nav-link">Dashboard</a>
+            <a href="flash.html" class="nav-link">Simple Flasher</a>
+            <a href="files.html" class="nav-link">File Manager</a>
+            <a href="development.html" class="nav-link">Development</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <a href="build.html" class="nav-link">Build</a>
+            <a href="ai.html" class="nav-link active">AI</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h2>AI Assistant</h2>
+        <p style="color:#9ca3af">This page hosts the AI widget used to help with development and diagnostics.</p>
+
+        <!-- The ai-agent-widget.js script will attach and render the assistant UI -->
+        <div id="ai-widget-root"></div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+    <script src="ai-agent-widget.js" defer></script>
+</body>
+</html>

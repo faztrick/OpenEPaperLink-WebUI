@@ -30,10 +30,10 @@ $jobCount = [Math]::Min(24, $cpuCores * 3)  # 3x CPU cores for I/O bound tasks
 
 # Colors for output
 $Colors = @{
-    Success = "Green"
-    Warning = "Yellow"
-    Error = "Red"
-    Info = "Cyan"
+    Success  = "Green"
+    Warning  = "Yellow"
+    Error    = "Red"
+    Info     = "Cyan"
     Progress = "Magenta"
 }
 
@@ -69,65 +69,66 @@ if ($Clean) {
 if (-not $SkipBuild) {
     Write-FastOutput "⚡ Processing web files..." "Progress"
     $webTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    
+
     # Quick check if compression is needed
     $needsCompression = $true
     $dataWwwPath = "data\www"
     $compressedPath = "data\www_compressed"
-    
+
     if ((Test-Path $dataWwwPath) -and (Test-Path $compressedPath)) {
         $sourceTime = (Get-ChildItem $dataWwwPath -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
         $compressedTime = (Get-ChildItem $compressedPath -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
-        
+
         if ($compressedTime -gt $sourceTime) {
             $needsCompression = $false
         }
     }
-    
+
     if ($needsCompression) {
         python gzip_wwwfiles.py
     }
-    
+
     $webTimer.Stop()
     Write-FastOutput "✅ Web files ready ($($webTimer.ElapsedMilliseconds)ms)" "Success"
-    
+
     # Ultra-fast build
     Write-FastOutput "⚡ TURBO BUILD Starting..." "Progress"
     $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    
+
     try {
         if ($FilesystemOnly) {
             Write-FastOutput "  ├─ Filesystem only (${jobCount} jobs)..." "Progress"
             & $pioPath run --target buildfs --environment $Environment --jobs $jobCount
-        } else {
+        }
+        else {
             # Build firmware and filesystem in maximum parallel mode
             Write-FastOutput "  ├─ Firmware + Filesystem (${jobCount} parallel jobs)..." "Progress"
-            
+
             # Start firmware build
             $firmwareJob = Start-Job -ScriptBlock {
                 param($pioPath, $Environment, $jobCount)
                 & $pioPath run --environment $Environment --jobs $jobCount
             } -ArgumentList $pioPath, $Environment, $jobCount
-            
+
             # Start filesystem build simultaneously
             $filesystemJob = Start-Job -ScriptBlock {
                 param($pioPath, $Environment)
                 Start-Sleep 2  # Small delay to not overwhelm system
                 & $pioPath run --target buildfs --environment $Environment --jobs 8
             } -ArgumentList $pioPath, $Environment
-            
+
             # Wait for both to complete
             $firmwareJob, $filesystemJob | Wait-Job | Out-Null
-            
+
             # Check results
             $firmwareResult = $firmwareJob | Receive-Job
             $filesystemResult = $filesystemJob | Receive-Job
-            
+
             $firmwareJob, $filesystemJob | Remove-Job
-            
+
             if ($LASTEXITCODE -ne 0) { throw "Build failed" }
         }
-        
+
         $buildTimer.Stop()
         Write-FastOutput "✅ TURBO BUILD complete in $([math]::Round($buildTimer.ElapsedMilliseconds/1000, 1))s" "Success"
     }
@@ -140,25 +141,25 @@ if (-not $SkipBuild) {
 # Fast binary organization
 if (-not $SkipBuild) {
     Write-FastOutput "⚡ Fast binary prep..." "Progress"
-    
+
     $outputDir = $Environment
     if (-not (Test-Path $outputDir)) {
         New-Item -ItemType Directory -Path $outputDir | Out-Null
     }
-    
+
     # Parallel copy all binaries
     $buildPath = ".pio\build\$Environment"
     $frameworkPath = "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\partitions"
-    
+
     $copyJobs = @()
     $files = @{
-        "boot_app0.bin" = "$frameworkPath\boot_app0.bin"
-        "firmware.bin" = "$buildPath\firmware.bin"
+        "boot_app0.bin"  = "$frameworkPath\boot_app0.bin"
+        "firmware.bin"   = "$buildPath\firmware.bin"
         "bootloader.bin" = "$buildPath\bootloader.bin"
         "partitions.bin" = "$buildPath\partitions.bin"
-        "littlefs.bin" = "$buildPath\littlefs.bin"
+        "littlefs.bin"   = "$buildPath\littlefs.bin"
     }
-    
+
     foreach ($file in $files.GetEnumerator()) {
         if (Test-Path $file.Value) {
             $copyJobs += Start-Job -ScriptBlock {
@@ -167,34 +168,34 @@ if (-not $SkipBuild) {
             } -ArgumentList $file.Value, (Join-Path $outputDir $file.Key)
         }
     }
-    
+
     $copyJobs | Wait-Job | Out-Null
     $copyJobs | Remove-Job
-    
+
     # Fast merged firmware creation (skip if not needed for upload)
     if (-not $SkipUpload) {
         Write-FastOutput "⚡ Creating merged firmware..." "Progress"
         Push-Location $outputDir
-        
+
         try {
             $mergeArgs = @(
                 "--chip", "esp32-s3"
-                "merge_bin", "-o", "merged-firmware.bin"
-                "--flash_mode", "qio", "--flash_freq", "80m", "--flash_size", "32MB"
+                "merge-bin", "-o", "merged-firmware.bin"
+                "--flash-mode", "qio", "--flash-freq", "80m", "--flash-size", "32MB"
                 "0x0000", "bootloader.bin"
                 "0x8000", "partitions.bin"
                 "0xe000", "boot_app0.bin"
                 "0x10000", "firmware.bin"
                 "0x00910000", "littlefs.bin"
             )
-            
+
             python -m esptool @mergeArgs
         }
         finally {
             Pop-Location
         }
     }
-    
+
     Write-FastOutput "✅ Binaries ready" "Success"
 }
 
@@ -202,23 +203,25 @@ if (-not $SkipBuild) {
 if (-not $SkipUpload) {
     Write-FastOutput "⚡ TURBO UPLOAD to $ComPort..." "Progress"
     $uploadTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    
+
     try {
         Push-Location $Environment
-        
+
         if ($FilesystemOnly) {
             # Fast filesystem-only upload
-            python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write_flash --flash_mode qio --flash_size detect 0x00910000 littlefs.bin
-        } else {
+            python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x00910000 littlefs.bin
+        }
+        else {
             # Fast full upload using merged binary (faster than individual files)
             if (Test-Path "merged-firmware.bin") {
-                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write_flash --flash_mode qio --flash_size detect 0x0 merged-firmware.bin
-            } else {
+                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x0 merged-firmware.bin
+            }
+            else {
                 # Fallback to individual files
-                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write_flash --flash_mode qio --flash_size detect 0x0000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin 0x00910000 littlefs.bin
+                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x0000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin 0x00910000 littlefs.bin
             }
         }
-        
+
         $uploadTimer.Stop()
         Write-FastOutput "✅ TURBO UPLOAD complete in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
     }
@@ -229,7 +232,7 @@ if (-not $SkipUpload) {
     finally {
         Pop-Location
     }
-    
+
     # Auto-monitor if requested
     if ($Monitor) {
         Write-FastOutput "📺 Starting monitor..." "Info"
@@ -243,3 +246,7 @@ Write-FastOutput "========================================" "Info"
 Write-FastOutput "⚡ TURBO MODE COMPLETE! ⚡" "Success"
 Write-FastOutput "🌐 Access device at: http://192.168.4.1" "Info"
 Write-FastOutput "========================================" "Info"
+
+# REMOVED: replaced by fast_compile.py
+# Original PowerShell removed in favor of a cross-platform Python script.
+# See ESP32_AP-Flasher/fast_compile.py

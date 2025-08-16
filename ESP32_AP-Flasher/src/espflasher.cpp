@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "JsonDocumentz.h"
 #include <FS.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -212,7 +211,7 @@ bool FlashC6_H2(const char *RepoUrl) {
     bool bLoaderInit = false;
     bool bDownload = strlen(RepoUrl) > 0;
     int retry;
-    JsonDocumentz jsonDoc(2048);
+    JsonDocument jsonDoc;
 
     LOG("%s#%d: ", __FUNCTION__, __LINE__);
     util::printHeap();

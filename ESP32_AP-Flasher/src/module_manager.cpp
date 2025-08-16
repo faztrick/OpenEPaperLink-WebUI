@@ -1,7 +1,6 @@
 #include "module_manager.h"
 
 #include <ArduinoJson.h>
-#include "JsonDocumentz.h"
 #include <Preferences.h>
 
 // Global module manager instance
@@ -208,11 +207,11 @@ void ModuleManager::registerAllWebHandlers(AsyncWebServer& server) {
 void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
     // Module list endpoint
     server.on("/api/modules", HTTP_GET, [this](AsyncWebServerRequest* request) {
-        JsonDocumentz doc(4096);
-        JsonArray moduleArray = doc.createNestedArray("modules");
+        JsonDocument doc;
+        JsonArray moduleArray = doc["modules"].to<JsonArray>();
 
         for (const auto& regModule : modules) {
-            JsonObject moduleObj = moduleArray.createNestedObject();
+            JsonObject moduleObj = moduleArray.add<JsonObject>();
             moduleObj["name"] = regModule.info.name;
             moduleObj["version"] = regModule.info.version;
             moduleObj["description"] = regModule.info.description;
@@ -224,7 +223,7 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             moduleObj["lastActivity"] = regModule.info.lastActivity;
             moduleObj["errorMessage"] = regModule.info.errorMessage;
 
-            JsonObject capsObj = moduleObj.createNestedObject("capabilities");
+            JsonObject capsObj = moduleObj["capabilities"].to<JsonObject>();
             capsObj["hasWebHandlers"] = regModule.info.capabilities.hasWebHandlers;
             capsObj["hasTaskHandlers"] = regModule.info.capabilities.hasTaskHandlers;
             capsObj["hasEventHandlers"] = regModule.info.capabilities.hasEventHandlers;
@@ -272,7 +271,7 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             return;
         }
 
-        JsonDocumentz doc(512);
+        JsonDocument doc;
         doc["success"] = success;
         doc["message"] = message;
         doc["module"] = moduleName;
@@ -290,7 +289,7 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             moduleName = request->getParam("module")->value();
         }
 
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
 
         if (moduleName.length() > 0) {
             // Get specific module status
@@ -301,7 +300,6 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
                 doc["healthy"] = it->instance->isHealthy();
                 doc["status"] = it->instance->getStatus();
                 doc["lastActivity"] = it->info.lastActivity;
-                doc["errorMessage"] = it->info.errorMessage;
             } else {
                 doc["error"] = "Module not found";
             }
@@ -313,12 +311,90 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             doc["uptime"] = getUptime();
             doc["diagnostics"] = getDiagnostics();
 
-            JsonArray unhealthyArray = doc.createNestedArray("unhealthyModules");
+            JsonArray unhealthyArray = doc["unhealthyModules"].to<JsonArray>();
             auto unhealthy = getUnhealthyModules();
             for (const String& name : unhealthy) {
                 unhealthyArray.add(name);
             }
         }
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Module configuration (autoStart) - get current persisted config
+    server.on("/api/modules/config", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        String cfg = getSystemConfig();
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        response->print(cfg);
+        request->send(response);
+    });
+
+    // Module configuration save (accepts JSON body)
+    server.on("/api/modules/config", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        // onRequest callback required by AsyncWebServer signature; body handled in the next parameter
+        // send an interim response if no body is provided
+        if (request->contentLength() == 0) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Empty body\"}");
+        } }, nullptr, [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        static String body = "";
+        if (index == 0) body = "";
+        for (size_t i = 0; i < len; i++) body += (char)data[i];
+        if (index + len == total) {
+            bool ok = setSystemConfig(body) && saveConfig();
+            if (ok) {
+                request->send(200, "application/json", "{\"success\":true}");
+            } else {
+                request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid config\"}");
+            }
+            body = "";
+        } });
+
+    // Toggle autoStart for a single module - POST /api/modules/autoStart
+    server.on("/api/modules/autoStart", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        if (!request->hasParam("module", true) || !request->hasParam("autoStart", true)) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+            return;
+        }
+
+        String moduleName = request->getParam("module", true)->value();
+        String val = request->getParam("autoStart", true)->value();
+        bool autoStart = (val == "1" || val.equalsIgnoreCase("true"));
+
+        auto it = findModule(moduleName);
+        if (it == modules.end()) {
+            request->send(404, "application/json", "{\"success\":false,\"error\":\"Module not found\"}");
+            return;
+        }
+
+        it->autoStart = autoStart;
+        bool ok = saveConfig();
+
+        if (ok) {
+            request->send(200, "application/json", "{\"success\":true}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to persist config\"}");
+        }
+    });
+
+    // Clear persisted module config (factory reset for module prefs) - POST /api/modules/clearConfig
+    server.on("/api/modules/clearConfig", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        Preferences prefs;
+        if (!prefs.begin("modules", false)) {
+            request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to open NVS namespace\"}");
+            return;
+        }
+
+        prefs.remove("modules_config");
+        prefs.end();
+
+        // Apply sensible in-memory defaults now so the change takes effect without reboot
+        const char* defaults = "{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"C6Module\",\"autoStart\":true}]}";
+        this->setSystemConfig(String(defaults));
+
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["message"] = "Module config cleared from NVS and defaults applied in-memory";
 
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
@@ -348,15 +424,15 @@ std::vector<String> ModuleManager::getUnhealthyModules() const {
 }
 
 String ModuleManager::getDiagnostics() const {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
 
     doc["uptime"] = getUptime();
     doc["totalModules"] = modules.size();
     doc["activeModules"] = getActiveModuleCount();
 
-    JsonArray moduleStates = doc.createNestedArray("moduleStates");
+    JsonArray moduleStates = doc["moduleStates"].to<JsonArray>();
     for (const auto& regModule : modules) {
-        JsonObject moduleObj = moduleStates.createNestedObject();
+        JsonObject moduleObj = moduleStates.add<JsonObject>();
         moduleObj["name"] = regModule.info.name;
         moduleObj["state"] = static_cast<int>(regModule.info.state);
         moduleObj["healthy"] = regModule.instance->isHealthy();
@@ -379,7 +455,7 @@ ModuleManager::findModule(const String& name) {
 
 std::vector<ModuleManager::RegisteredModule>::const_iterator
 ModuleManager::findModule(const String& name) const {
-    return std::find_if(modules.begin(), modules.end(),
+    return std::find_if(modules.cbegin(), modules.cend(),
                         [&name](const RegisteredModule& module) {
                             return module.info.name == name;
                         });
@@ -501,4 +577,84 @@ bool ModuleManager::isModuleHealthy(const String& name) const {
         return it->instance->isHealthy() && it->info.state != ModuleState::ERROR;
     }
     return false;
+}
+
+// -----------------------------
+// System configuration methods
+// -----------------------------
+
+String ModuleManager::getSystemConfig() const {
+    JsonDocument doc;
+    JsonArray modulesArr = doc["modules"].to<JsonArray>();
+
+    for (const auto& m : modules) {
+        JsonObject mo = modulesArr.add<JsonObject>();
+        mo["name"] = m.info.name;
+        mo["autoStart"] = m.autoStart;
+    }
+
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+bool ModuleManager::setSystemConfig(const String& config) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, config);
+    if (err) {
+        Serial.printf("[MODULE_MANAGER] Invalid system config JSON: %s\n", err.c_str());
+        return false;
+    }
+
+    if (!doc["modules"].is<JsonArray>()) return false;
+
+    JsonArray arr = doc["modules"].to<JsonArray>();
+    for (JsonVariant v : arr) {
+        if (v["name"].isNull()) continue;
+        String name = v["name"].as<String>();
+        if (v["autoStart"].isNull()) continue;
+        bool autoStart = v["autoStart"].as<bool>();
+        auto it = findModule(name);
+        if (it != modules.end()) {
+            it->autoStart = autoStart;
+        }
+    }
+
+    return true;
+}
+
+bool ModuleManager::saveConfig() const {
+    Preferences prefs;
+    if (!prefs.begin("modules", false)) {
+        Serial.println("[MODULE_MANAGER] Failed to open NVS namespace 'modules' for saving");
+        return false;
+    }
+
+    JsonDocument doc;
+    JsonArray modulesArr = doc["modules"].to<JsonArray>();
+    for (const auto& m : modules) {
+        JsonObject mo = modulesArr.add<JsonObject>();
+        mo["name"] = m.info.name;
+        mo["autoStart"] = m.autoStart;
+    }
+
+    String out;
+    serializeJson(doc, out);
+    prefs.putString("modules_config", out);
+    prefs.end();
+    return true;
+}
+
+bool ModuleManager::loadConfig() {
+    Preferences prefs;
+    if (!prefs.begin("modules", true)) {
+        Serial.println("[MODULE_MANAGER] Failed to open NVS namespace 'modules' for loading");
+        return false;
+    }
+
+    String json = prefs.getString("modules_config", "");
+    prefs.end();
+    if (json.length() == 0) return false;
+
+    return setSystemConfig(json);
 }

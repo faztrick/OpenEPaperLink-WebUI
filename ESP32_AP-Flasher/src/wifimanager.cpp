@@ -54,6 +54,9 @@ WifiManager::WifiManager() {
     _connected = false;
     _savewhensuccessfull = false;
 
+    // Default: verbose WiFi scan debug off
+    _scanVerbose = false;
+
     // Initialize buffer to prevent undefined behavior
     memset(serialBuffer, 0, sizeof(serialBuffer));
     _ssid = "";
@@ -107,6 +110,14 @@ WifiManager::WifiManager() {
         }
     },
                                          WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+}
+
+void WifiManager::setScanVerbose(bool v) {
+    _scanVerbose = v;
+}
+
+bool WifiManager::scanVerbose() const {
+    return _scanVerbose;
 }
 
 void WifiManager::terminalLog(String text) {
@@ -805,7 +816,7 @@ void getAvailableWifiNetworks() {
     // Start optimized scan with timeout protection
     esp_err_t ret = esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
     if (ret != ESP_OK) {
-        Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
+        if (wm.scanVerbose()) Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
         // Send empty response on scan failure
         std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
         send_response(data);
@@ -813,7 +824,17 @@ void getAvailableWifiNetworks() {
     }
 
     int networkNum = WiFi.scanComplete();
-    Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
+    if (networkNum < 0) {
+        // scanComplete returns negative on error
+        if (wm.scanVerbose()) Serial.printf("WiFi scan failed (scanComplete returned %d)\n", networkNum);
+        // Send final empty response to indicate scan completion/error
+        std::vector<uint8_t> finalDataErr = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
+        send_response(finalDataErr);
+        WiFi.scanDelete();
+        return;
+    }
+
+    if (wm.scanVerbose()) Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
 
     if (networkNum > 0) {
         // Create vector for sorting by signal strength with better memory management
@@ -824,6 +845,8 @@ void getAvailableWifiNetworks() {
             String ssid = WiFi.SSID(i);
             if (ssid.length() > 0 && ssid.length() <= 32) {  // Valid SSID length check
                 networks.push_back(std::make_pair(i, WiFi.RSSI(i)));
+            } else {
+                if (wm.scanVerbose()) Serial.printf("Skipping network %d with invalid SSID (len=%d)\n", i, ssid.length());
             }
         }
 
@@ -842,10 +865,17 @@ void getAvailableWifiNetworks() {
             String ssid = WiFi.SSID(id);
             int32_t rssi = WiFi.RSSI(id);
             wifi_auth_mode_t authMode = WiFi.encryptionType(id);
+            int8_t channel = WiFi.channel(id);
 
-            if (ssid.length() == 0) continue;  // Skip invalid entries
+            if (ssid.length() == 0) {
+                if (wm.scanVerbose()) Serial.printf("Skipping empty SSID at scan index %d\n", id);
+                continue;  // Skip invalid entries
+            }
 
-            // Build response efficiently
+            const char *authStr = (authMode == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED";
+            if (wm.scanVerbose()) Serial.printf("Network: '%s' RSSI: %d Auth: %s Channel: %d\n", ssid.c_str(), rssi, authStr, channel);
+
+            // Build response efficiently (SSID, RSSI, Auth required)
             std::vector<uint8_t> data = improv::build_rpc_response(
                 improv::GET_WIFI_NETWORKS,
                 {ssid, String(rssi), (authMode == WIFI_AUTH_OPEN ? "NO" : "YES")},
@@ -856,7 +886,7 @@ void getAvailableWifiNetworks() {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     } else {
-        Serial.println("No WiFi networks found during scan");
+        if (wm.scanVerbose()) Serial.println("No WiFi networks found during scan");
     }
 
     // Send final empty response to indicate scan completion

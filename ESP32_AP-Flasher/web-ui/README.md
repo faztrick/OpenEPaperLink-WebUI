@@ -181,3 +181,13 @@ For issues or questions:
 2. Verify all prerequisites are installed
 3. Test with a simple compile operation first
 4. Check network connectivity if using remote access
+
+## AI Assistant Widget
+
+A lightweight floating AI assistant widget has been added to the main site header. It provides a quick access panel (icon in the bottom-right) that can show canned help responses and integrates with the full AI page at `/ai-agent.html` when available.
+
+Files:
+- `wwwroot/ai-agent-widget.css` — styles for the floating assistant
+- `wwwroot/ai-agent-widget.js` — client logic that initializes the widget
+
+To disable the widget, remove or comment out the include of `ai-agent-widget.js` from `wwwroot/universal-header.html`.

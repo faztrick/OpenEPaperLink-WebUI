@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "JsonDocumentz.h"
 #include <MD5Builder.h>
 #include <WiFi.h>
 
@@ -180,7 +179,7 @@ bool flasher::getInfoBlockType() {
 }
 
 bool flasher::findTagByMD5() {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     fs::File readfile = contentFS->open("/tag_md5_db.json", "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
@@ -209,8 +208,8 @@ bool flasher::findTagByMD5() {
 }
 
 bool flasher::findTagByType(uint8_t type) {
-    JsonDocumentz doc(2048);
     fs::File readfile = contentFS->open("/tag_md5_db.json", "r");
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
         for (JsonObject elem : doc.as<JsonArray>()) {
@@ -365,6 +364,35 @@ bool flasher::writeBlock256(uint16_t offset, uint8_t *flashbuffer) {
     return true;
 }
 
+// Read a block of flash or infopage into data buffer
+bool flasher::readBlock(uint16_t offset, uint8_t *data, uint16_t len, bool infopage) {
+    if (!zbs || data == nullptr) return false;
+    if (!zbs->select_flash(infopage ? 1 : 0)) return false;
+    for (uint16_t i = 0; i < len; i++) {
+        data[i] = zbs->read_flash(offset + i);
+    }
+    return true;
+}
+
+// Write a block of flash or infopage from data buffer with retry logic
+bool flasher::writeBlock(uint16_t offset, uint8_t *data, uint16_t len, bool infopage) {
+    if (!zbs || data == nullptr) return false;
+    if (!zbs->select_flash(infopage ? 1 : 0)) return false;
+
+    for (uint16_t i = 0; i < len; i++) {
+        bool written = false;
+        for (uint8_t attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+            zbs->write_flash(offset + i, data[i]);
+            if (zbs->read_flash(offset + i) == data[i]) {
+                written = true;
+                break;
+            }
+        }
+        if (!written) return false;
+    }
+    return true;
+}
+
 // get info from infoblock (eeprom flash, kinda)
 bool flasher::readInfoBlock() {
     if (!zbs->select_flash(1)) return false;
@@ -449,7 +477,7 @@ bool flasher::writeFlashFromPackOffset(fs::File *file, uint16_t length) {
 }
 
 bool flasher::writeFlashFromPack(String filename, uint8_t type) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     fs::File readfile = contentFS->open(filename, "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {
@@ -479,37 +507,9 @@ bool flasher::writeFlashFromPack(String filename, uint8_t type) {
     return false;
 }
 
-bool flasher::readBlock(uint16_t offset, uint8_t *data, uint16_t len, bool infopage) {
-    if (infopage) {
-        if (!zbs->select_flash(1)) return false;
-        if (offset > 1024) return false;
-    } else {
-        if (!zbs->select_flash(0)) return false;
-        if (offset > 65535) return false;
-    }
-    for (uint32_t c = 0; c < len; c++) {
-        data[c] = zbs->read_flash(offset + c);
-    }
-    return true;
-}
-
-bool flasher::writeBlock(uint16_t offset, uint8_t *data, uint16_t len, bool infopage) {
-    if (infopage) {
-        if (!zbs->select_flash(1)) return false;
-        if (offset > 1024) return false;
-    } else {
-        if (!zbs->select_flash(0)) return false;
-        if (offset > 65535) return false;
-    }
-    for (uint32_t c = 0; c < len; c++) {
-        zbs->write_flash(c + offset, data[c]);
-    }
-    return true;
-}
-
 #ifndef C6_OTA_FLASHING
 uint16_t getAPUpdateVersion(uint8_t type) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
     fs::File readfile = contentFS->open("/AP_FW_Pack.bin", "r");
     DeserializationError err = deserializeJson(doc, readfile);
     if (!err) {

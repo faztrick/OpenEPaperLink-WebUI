@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — OpenEPaperLink</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        /* Modern dark settings container that matches site theme */
+        .settings-container {
+            max-width: 980px;
+            margin: 1.25rem auto;
+            padding: 1.25rem;
+            background: #1a1a1a;
+            border: 1px solid #2d2d2d;
+            border-radius: 8px;
+            color: #e5e7eb;
+        }
+
+        .settings-container h2,
+        .settings-container h3 {
+            color: #60a5fa;
+            margin-bottom: 0.75rem;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        /* Small helper layout for the compact settings page */
+        .settings-row {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 1rem;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) {
+            .settings-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo"><i class="fas fa-microchip"></i><h1>Settings</h1></div>
+        </div>
+    </header>
+
+    <nav class="top-nav">
+        <div class="container">
+            <a href="index.html" class="nav-link">Dashboard</a>
+            <a href="flash.html" class="nav-link">Simple Flasher</a>
+            <a href="files.html" class="nav-link">File Manager</a>
+            <a href="development.html" class="nav-link">Development</a>
+            <a href="settings.html" class="nav-link active">Settings</a>
+            <a href="ai.html" class="nav-link">AI</a>
+        </div>
+    </nav>
+
+    <main class="settings-container container">
+        <h2>Configuration</h2>
+        <div class="settings-row">
+            <div>
+                <div class="form-group">
+                    <label for="environment">Environment</label>
+                    <div style="display:flex;gap:0.5rem;align-items:center">
+                        <select id="environment">
+                            <option value="loading">Loading...</option>
+                        </select>
+                        <button id="refresh-envs" class="btn btn-small" title="Reload environments"><i class="fas fa-sync"></i></button>
+                    </div>
+
+                    <div style="margin-top:8px;display:flex;gap:0.5rem;align-items:center">
+                        <input id="new-env-name" type="text" placeholder="New env id" class="form-input" style="flex:1" />
+                        <input id="new-env-board" type="text" placeholder="board (optional)" class="form-input" style="flex:1" />
+                        <button id="add-env" class="btn btn-small">Add</button>
+                    </div>
+                    <div style="margin-top:6px;font-size:0.9rem;color:#9ca3af">Environments are read from <code>platformio.ini</code>. Adding creates a temporary entry in the UI; to persist it to the file contact the server maintainer or enable server-side save.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="com-port">COM Port</label>
+                    <div style="display:flex;gap:0.5rem;align-items:center">
+                        <select id="com-port">
+                            <option value="COM10">COM10</option>
+                        </select>
+                        <button id="refresh-ports" class="btn btn-small"><i class="fas fa-sync"></i></button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="baud-rate">Baud Rate</label>
+                    <select id="baud-rate">
+                        <option value="115200">115200</option>
+                        <option value="460800">460800</option>
+                        <option value="921600" selected>921600</option>
+                        <option value="1500000">1500000</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="jobs">Parallel Jobs</label>
+                    <select id="jobs">
+                        <option value="0" selected>Auto</option>
+                        <option value="4">4</option>
+                        <option value="8">8</option>
+                        <option value="12">12</option>
+                        <option value="16">16</option>
+                        <option value="24">24</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label"><input type="checkbox" id="fast-build" checked><span class="checkmark"></span> Fast Build (Caching)</label>
+                </div>
+
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="clean-build"><span class="checkmark"></span> Clean Build</label></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="verbose"><span class="checkmark"></span> Verbose Output</label></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="filesystem-only"><span class="checkmark"></span> Filesystem Only</label></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="skip-upload"><span class="checkmark"></span> Skip Upload</label></div>
+                <div class="form-group"><label class="checkbox-label"><input type="checkbox" id="monitor"><span class="checkmark"></span> Auto Monitor</label></div>
+            </div>
+
+            <aside style="min-width:220px">
+                <div class="project-info">
+                    <h3><i class="fas fa-info-circle"></i> Quick Info</h3>
+                    <div class="info-item"><span class="label">Current Env:</span><span class="value" id="current-env">OutdoorAP</span></div>
+                    <div class="info-item"><span class="label">Last Save:</span><span class="value" id="last-save">Never</span></div>
+                </div>
+
+                <div style="margin-top:1rem" class="project-info">
+                    <h3><i class="fas fa-server"></i> Remote</h3>
+                    <div style="font-size:0.9rem;color:#9ca3af;margin-bottom:0.5rem">Use remote build server for heavy tasks</div>
+                    <div class="form-group">
+                        <label class="checkbox-label"><input type="checkbox" id="use-remote"><span class="checkmark"></span> Use Remote Linux Server</label>
+                    </div>
+                    <div id="remote-options" style="display:none">
+                        <div class="form-group"><label for="remote-host">Host:</label><input type="text" id="remote-host" value="94.200.149.94" class="form-input"></div>
+                        <div class="form-group"><label for="remote-port">Port:</label><input type="number" id="remote-port" value="22" class="form-input"></div>
+                        <div class="form-group"><label for="remote-user">User:</label><input type="text" id="remote-user" value="root" class="form-input"></div>
+                        <div style="display:flex;gap:0.5rem"><button class="btn btn-sm btn-info" id="test-connection"><i class="fas fa-plug"></i> Test</button><div id="remote-status" class="status-indicator"><span class="status-text">Not Connected</span></div></div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- PlatformIO INI Editor -->
+        <h3 style="margin-top:1.25rem"><i class="fas fa-file-code"></i> platformio.ini Editor</h3>
+        <div class="form-group">
+            <label for="platformio-raw">platformio.ini (raw)</label>
+            <div style="display:flex;gap:0.5rem;margin-bottom:6px;align-items:center">
+                <select id="write-backend" class="form-input" style="width:160px">
+                    <option value="node">Node (server-side)</option>
+                    <option value="python">Python helper</option>
+                </select>
+                <button id="load-platformio" class="btn btn-small">Load</button>
+                <button id="save-platformio" class="btn btn-small btn-success">Save</button>
+                <span id="platformio-status" style="margin-left:8px;color:#9ca3af"></span>
+            </div>
+            <textarea id="platformio-raw" style="width:100%;height:240px;background:#0f1724;color:#e6eef8;padding:8px;border-radius:6px;border:1px solid #233147;font-family:monospace;font-size:13px"></textarea>
+        </div>
+
+        <!-- Build tools moved to separate page -->
+        <h3 style="margin-top:1.25rem"><i class="fas fa-tools"></i> Advanced Tools</h3>
+        <div style="margin-bottom:8px;color:#9ca3af">Build and upload tools moved to their own page to keep this settings view focused.</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <a href="build.html" class="btn btn-info"><i class="fas fa-hammer"></i> Open Build Tools</a>
+            <a href="build.html" class="btn btn-outline">Go to Build</a>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+            <button id="save-settings" class="btn btn-success"><i class="fas fa-save"></i> Save Settings</button>
+            <div id="save-message" style="color:#9ca3af">Last saved: <span id="last-saved-text">never</span></div>
+        </div>
+
+        <!-- Import / Export JSON -->
+        <h3 style="margin-top:1rem"><i class="fas fa-file-export"></i> Import / Export</h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button id="export-json" class="btn btn-outline"><i class="fas fa-download"></i> Export JSON</button>
+            <label class="btn btn-outline" for="import-file"><i class="fas fa-upload"></i> Import JSON</label>
+            <input id="import-file" type="file" accept="application/json" style="display:none" />
+            <button id="save-local" class="btn"><i class="fas fa-hdd"></i> Save to local</button>
+            <button id="load-local" class="btn"><i class="fas fa-folder-open"></i> Load from local</button>
+            <div id="import-status" style="color:#9ca3af;margin-left:8px">&nbsp;</div>
+        </div>
+    </main>
+
+    <script>
+        // Settings page client logic: load envs from server, refresh COM ports, save settings
+        (function(){
+            const envSelect = document.getElementById('environment');
+            const refreshEnvsBtn = document.getElementById('refresh-envs');
+            const refreshPortsBtn = document.getElementById('refresh-ports');
+            const comPortSelect = document.getElementById('com-port');
+            const saveBtn = document.getElementById('save-settings');
+            const lastSavedText = document.getElementById('last-saved-text');
+
+            async function loadEnvs(){
+                envSelect.innerHTML = '<option>Loading...</option>';
+                try {
+                    const resp = await fetch('/api/platformio-devices');
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const json = await resp.json();
+                    let list = [];
+                    if (json && json.success && Array.isArray(json.devices)) list = json.devices;
+                    if (list.length === 0) list = [{ id: 'OutdoorAP', name: 'OutdoorAP' }];
+
+                    envSelect.innerHTML = '';
+                    list.forEach(e => {
+                        const opt = document.createElement('option');
+                        opt.value = e.id;
+                        opt.textContent = `${e.id} ${e.board ? ' — '+e.board : ''}`;
+                        envSelect.appendChild(opt);
+                    });
+                    // update sidebar display
+                    const currentEnvEl = document.getElementById('current-env');
+                    if (currentEnvEl && envSelect.value) currentEnvEl.textContent = envSelect.value;
+                } catch (err) {
+                    console.warn('Failed to load envs', err);
+                    envSelect.innerHTML = '<option value="OutdoorAP">OutdoorAP</option>';
+                }
+            }
+
+            async function refreshPorts(){
+                refreshPortsBtn.disabled = true;
+                try {
+                    const resp = await fetch('/api/com-ports');
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const ports = await resp.json();
+                    comPortSelect.innerHTML = '';
+                    if (Array.isArray(ports)) {
+                        ports.forEach(p => {
+                            const opt = document.createElement('option');
+                            if (typeof p === 'string') {
+                                opt.value = p; opt.textContent = p;
+                            } else {
+                                opt.value = p.path || p.comName || p; opt.textContent = p.path || p.comName || JSON.stringify(p);
+                            }
+                            comPortSelect.appendChild(opt);
+                        });
+                    } else {
+                        comPortSelect.innerHTML = '<option>COM10</option>';
+                    }
+                } catch (err) {
+                    console.warn('Failed to refresh ports', err);
+                } finally {
+                    refreshPortsBtn.disabled = false;
+                }
+            }
+
+            document.getElementById('add-env').addEventListener('click', () => {
+                const id = document.getElementById('new-env-name').value.trim();
+                const board = document.getElementById('new-env-board').value.trim();
+                if (!id) return alert('Enter an env id');
+                const opt = document.createElement('option');
+                opt.value = id; opt.textContent = `${id} ${board ? ' — '+board : ''}`;
+                envSelect.appendChild(opt);
+                envSelect.value = id;
+                document.getElementById('new-env-name').value = '';
+                document.getElementById('new-env-board').value = '';
+            });
+
+            refreshEnvsBtn.addEventListener('click', loadEnvs);
+            refreshPortsBtn.addEventListener('click', refreshPorts);
+
+            saveBtn.addEventListener('click', async () => {
+                const config = {
+                    environment: envSelect.value,
+                    comPort: comPortSelect.value,
+                    baudRate: parseInt(document.getElementById('baud-rate').value,10) || 115200,
+                    jobs: parseInt(document.getElementById('jobs').value,10) || 0,
+                    fastBuild: document.getElementById('fast-build').checked,
+                    clean: document.getElementById('clean-build').checked,
+                    verbose: document.getElementById('verbose').checked,
+                    filesystemOnly: document.getElementById('filesystem-only').checked,
+                    skipUpload: document.getElementById('skip-upload').checked,
+                    monitor: document.getElementById('monitor').checked,
+                    useRemote: document.getElementById('use-remote')?.checked || false,
+                    remote: {
+                        host: document.getElementById('remote-host')?.value,
+                        port: parseInt(document.getElementById('remote-port')?.value,10) || 22,
+                        user: document.getElementById('remote-user')?.value
+                    }
+                };
+                try {
+                    const resp = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+                    const json = await resp.json();
+                    if (json && json.success !== false) {
+                        lastSavedText.textContent = new Date().toLocaleString();
+                    } else {
+                        alert('Save failed');
+                    }
+                } catch (err) {
+                    console.error('Save error', err);
+                    alert('Save failed: ' + (err.message || err));
+                }
+            });
+
+            // toggle remote options
+            const useRemote = document.getElementById('use-remote');
+            if (useRemote) useRemote.addEventListener('change', (ev) => {
+                document.getElementById('remote-options').style.display = ev.target.checked ? 'block' : 'none';
+            });
+
+            // initial load
+            loadEnvs();
+            refreshPorts();
+
+            // PlatformIO raw editor handlers
+            const loadBtn = document.getElementById('load-platformio');
+            const saveBtnRaw = document.getElementById('save-platformio');
+            const rawArea = document.getElementById('platformio-raw');
+            const backendSel = document.getElementById('write-backend');
+            const pioStatus = document.getElementById('platformio-status');
+
+            async function loadRaw() {
+                pioStatus.textContent = 'Loading...';
+                try {
+                    const resp = await fetch('/api/platformio-raw');
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const json = await resp.json();
+                    if (json && json.success) {
+                        rawArea.value = json.content || '';
+                        pioStatus.textContent = 'Loaded';
+                        setTimeout(()=>pioStatus.textContent='',1500);
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Load raw failed', err);
+                    pioStatus.textContent = 'Load failed';
+                }
+            }
+
+            async function saveRaw() {
+                pioStatus.textContent = 'Saving...';
+                const backend = backendSel.value || 'node';
+                try {
+                    const resp = await fetch('/api/platformio-write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: rawArea.value, backend }) });
+                    const json = await resp.json();
+                    if (json && json.success) {
+                        pioStatus.textContent = `Saved (${json.method})`;
+                        setTimeout(()=>pioStatus.textContent='',1500);
+                        return;
+                    }
+                    pioStatus.textContent = 'Save failed';
+                } catch (err) {
+                    console.error('Save raw failed', err);
+                    pioStatus.textContent = 'Save error';
+                }
+            }
+
+            loadBtn.addEventListener('click', loadRaw);
+            saveBtnRaw.addEventListener('click', saveRaw);
+
+            // --- Import/Export and localStorage support for dev settings ---
+            const exportBtn = document.getElementById('export-json');
+            const importFileInput = document.getElementById('import-file');
+            const saveLocalBtn = document.getElementById('save-local');
+            const loadLocalBtn = document.getElementById('load-local');
+            const importStatus = document.getElementById('import-status');
+
+            function collectSettings() {
+                return {
+                    metadata: { version: 1, exportedAt: new Date().toISOString() },
+                    devSettings: {
+                        environment: envSelect.value,
+                        comPort: comPortSelect.value,
+                        baudRate: parseInt(document.getElementById('baud-rate').value,10) || 115200,
+                        jobs: parseInt(document.getElementById('jobs').value,10) || 0,
+                        fastBuild: document.getElementById('fast-build').checked,
+                        clean: document.getElementById('clean-build').checked,
+                        verbose: document.getElementById('verbose').checked,
+                        filesystemOnly: document.getElementById('filesystem-only').checked,
+                        skipUpload: document.getElementById('skip-upload').checked,
+                        monitor: document.getElementById('monitor').checked
+                    },
+                    deviceDetails: {
+                        currentEnv: document.getElementById('current-env')?.textContent || '',
+                        platformioRaw: document.getElementById('platformio-raw')?.value || ''
+                    },
+                    connection: {
+                        useRemote: document.getElementById('use-remote')?.checked || false,
+                        remote: {
+                            host: document.getElementById('remote-host')?.value || '',
+                            port: parseInt(document.getElementById('remote-port')?.value,10) || 22,
+                            user: document.getElementById('remote-user')?.value || ''
+                        }
+                    }
+                };
+            }
+
+            function applySettings(obj) {
+                if (!obj) return;
+                const s = obj.devSettings || {};
+                if (s.environment) envSelect.value = s.environment;
+                if (s.comPort) comPortSelect.value = s.comPort;
+                if ('baudRate' in s) document.getElementById('baud-rate').value = s.baudRate;
+                if ('jobs' in s) document.getElementById('jobs').value = s.jobs;
+                if ('fastBuild' in s) document.getElementById('fast-build').checked = !!s.fastBuild;
+                if ('clean' in s) document.getElementById('clean-build').checked = !!s.clean;
+                if ('verbose' in s) document.getElementById('verbose').checked = !!s.verbose;
+                if ('filesystemOnly' in s) document.getElementById('filesystem-only').checked = !!s.filesystemOnly;
+                if ('skipUpload' in s) document.getElementById('skip-upload').checked = !!s.skipUpload;
+                if ('monitor' in s) document.getElementById('monitor').checked = !!s.monitor;
+
+                const c = obj.connection || {};
+                if ('useRemote' in c) document.getElementById('use-remote').checked = !!c.useRemote;
+                if (c.remote) {
+                    if ('host' in c.remote) document.getElementById('remote-host').value = c.remote.host || '';
+                    if ('port' in c.remote) document.getElementById('remote-port').value = c.remote.port || '';
+                    if ('user' in c.remote) document.getElementById('remote-user').value = c.remote.user || '';
+                }
+
+                const d = obj.deviceDetails || {};
+                if ('platformioRaw' in d) document.getElementById('platformio-raw').value = d.platformioRaw || '';
+
+                // update UI dependent elements
+                document.getElementById('remote-options').style.display = document.getElementById('use-remote').checked ? 'block' : 'none';
+                const currentEnvEl = document.getElementById('current-env');
+                if (currentEnvEl && envSelect.value) currentEnvEl.textContent = envSelect.value;
+            }
+
+            exportBtn.addEventListener('click', () => {
+                const payload = collectSettings();
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `oepl-settings-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'_')}.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            });
+
+            importFileInput.addEventListener('change', (ev) => {
+                const f = ev.target.files && ev.target.files[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const obj = JSON.parse(e.target.result);
+                        applySettings(obj);
+                        importStatus.textContent = 'Imported OK';
+                        setTimeout(()=>importStatus.textContent='',2500);
+                    } catch (err) {
+                        console.error('Import JSON failed', err);
+                        importStatus.textContent = 'Import failed';
+                    }
+                };
+                reader.readAsText(f);
+                // clear selection so same file can be re-imported
+                ev.target.value = '';
+            });
+
+            saveLocalBtn.addEventListener('click', () => {
+                try {
+                    const payload = collectSettings();
+                    localStorage.setItem('oepl.dev.settings', JSON.stringify(payload));
+                    document.getElementById('last-saved-text').textContent = new Date().toLocaleString();
+                    importStatus.textContent = 'Saved locally';
+                    setTimeout(()=>importStatus.textContent='',2000);
+                } catch (err) {
+                    console.error('Save local failed', err);
+                    importStatus.textContent = 'Save failed';
+                }
+            });
+
+            loadLocalBtn.addEventListener('click', () => {
+                try {
+                    const raw = localStorage.getItem('oepl.dev.settings');
+                    if (!raw) { importStatus.textContent = 'No local settings'; setTimeout(()=>importStatus.textContent='',2000); return; }
+                    const obj = JSON.parse(raw);
+                    applySettings(obj);
+                    importStatus.textContent = 'Loaded local';
+                    setTimeout(()=>importStatus.textContent='',2000);
+                } catch (err) {
+                    console.error('Load local failed', err);
+                    importStatus.textContent = 'Load failed';
+                }
+            });
+        })();
+    </script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

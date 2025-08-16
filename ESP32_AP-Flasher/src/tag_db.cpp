@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "JsonDocumentz.h"
 #include <FS.h>
 
 #include <unordered_map>
@@ -68,15 +67,15 @@ bool hex2mac(const String& hexString, uint8_t* mac) {
 }
 
 String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
-    JsonDocumentz doc(2048);
-    JsonArray tags = doc["tags"].to<JsonArray>();
+    JsonDocument doc;
+    JsonArray tags = doc["tags"].to<ArduinoJson::JsonArray>();
 
     for (uint32_t c = startPos; c < tagDB.size(); ++c) {
         const tagRecord* taginfo = tagDB.at(c);
 
         const bool select = !mac || memcmp(taginfo->mac, mac, 8) == 0;
         if (select && taginfo->version == 0) {
-            JsonObject tag = tags.createNestedObject();
+            JsonObject tag = tags.add<ArduinoJson::JsonObject>();
             fillNode(tag, taginfo);
             if (measureJson(doc) > 5000) {
                 doc["continu"] = c + 1;
@@ -126,7 +125,7 @@ void fillNode(JsonObject& tag, const tagRecord* taginfo) {
 }
 
 void saveDB(const String& filename) {
-    JsonDocumentz doc(2048);
+    JsonDocument doc;
 
     const long t = millis();
 
@@ -158,7 +157,7 @@ void saveDB(const String& filename) {
         doc.clear();
 
         if (taginfo->version == 0) {
-            JsonObject tag = doc.createNestedObject();
+            JsonObject tag = doc.to<ArduinoJson::JsonObject>();
             fillNode(tag, taginfo);
             if (c > 0) {
                 file.write(',');
@@ -188,7 +187,7 @@ bool loadDB(const String& filename) {
     bool parsing = true;
 
     if (readfile.find("[")) {
-        JsonDocumentz doc(2048);
+        JsonDocument doc;
         while (parsing) {
             DeserializationError err = deserializeJson(doc, readfile);
             if (!err) {
@@ -310,7 +309,7 @@ void clearPending(tagRecord* taginfo) {
 }
 
 void initAPconfig() {
-    JsonDocumentz APconfig(2048);
+    JsonDocument APconfig;
     File configFile = contentFS->open("/current/apconfig.json", "r");
     if (configFile) {
         DeserializationError error = deserializeJson(APconfig, configFile);
@@ -324,7 +323,8 @@ void initAPconfig() {
     config.channel = APconfig["channel"].is<uint8_t>() ? APconfig["channel"] : 0;
     config.subghzchannel = APconfig["subghzchannel"].is<uint8_t>() ? APconfig["subghzchannel"] : 0;
     if (APconfig["alias"]) strlcpy(config.alias, APconfig["alias"], sizeof(config.alias));
-    config.led = APconfig["led"].is<uint8_t>() ? APconfig["led"] : 255;
+    // Default LED brightness to 0 (off) to prevent bright startup
+    config.led = APconfig["led"].is<uint8_t>() ? APconfig["led"] : 0;
     config.tft = APconfig["tft"].is<uint8_t>() ? APconfig["tft"] : 255;
     config.language = APconfig["language"].is<uint8_t>() ? APconfig["language"] : 0;
     config.maxsleep = APconfig["maxsleep"].is<uint8_t>() ? APconfig["maxsleep"] : 10;
@@ -354,8 +354,20 @@ void initAPconfig() {
 
 void saveAPconfig() {
     xSemaphoreTake(fsMutex, portMAX_DELAY);
+    // Ensure the /current directory exists before creating files inside it
+    const char* curDir = "/current";
+    if (!contentFS->exists(curDir)) {
+        Serial.println("saveAPconfig: /current directory missing, attempting to create it");
+        if (!contentFS->mkdir(curDir)) {
+            Serial.println("saveAPconfig: Failed to create /current directory — aborting saveAPconfig");
+            xSemaphoreGive(fsMutex);
+            return;
+        }
+        Serial.println("saveAPconfig: created /current directory");
+    }
+
     fs::File configFile = contentFS->open("/current/apconfig.json", "w");
-    JsonDocumentz APconfig(2048);
+    JsonDocument APconfig;
     APconfig["channel"] = config.channel;
     APconfig["subghzchannel"] = config.subghzchannel;
     APconfig["alias"] = config.alias;
@@ -392,7 +404,7 @@ HwType getHwType(const uint8_t id) {
         File jsonFile = contentFS->open(filename, "r");
 
         if (jsonFile) {
-            JsonDocumentz filter(2048);
+            JsonDocument filter;
             filter["width"] = true;
             filter["height"] = true;
             filter["rotatebuffer"] = true;
@@ -402,7 +414,7 @@ HwType getHwType(const uint8_t id) {
             filter["g5_compression"] = true;
             filter["highlight_color"] = true;
             filter["colortable"] = true;
-            JsonDocumentz doc(2048);
+            JsonDocument doc;
             DeserializationError error = deserializeJson(doc, jsonFile, DeserializationOption::Filter(filter));
             jsonFile.close();
             if (error) {

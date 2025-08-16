@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logs — OpenEPaperLink</title>
+<link rel="stylesheet" href="styles.css">
+<style>body{background:#0b1220;color:#e6eef8;font-family:Inter,system-ui,Segoe UI,Arial;padding:16px} .panel{background:#071022;padding:12px;border-radius:8px;border:1px solid #10233a} textarea{width:100%;height:60vh;background:#071022;color:#e6eef8;border:1px solid #123048;padding:8px}</style>
+</head>
+<body>
+<h1>Logs</h1>
+<div style="display:flex;gap:12px;margin-bottom:8px">
+    <select id="log-list"></select>
+    <button id="refresh-list" class="btn">Refresh</button>
+    <button id="load-log" class="btn btn-primary">Load</button>
+    <button id="tail-log" class="btn btn-info">Tail</button>
+    <button id="stop-tail" class="btn">Stop</button>
+</div>
+<div class="panel">
+    <textarea id="log-area" readonly></textarea>
+</div>
+<script>
+(async function(){
+    const list = document.getElementById('log-list');
+    const refresh = document.getElementById('refresh-list');
+    const load = document.getElementById('load-log');
+    const tailBtn = document.getElementById('tail-log');
+    const stopTail = document.getElementById('stop-tail');
+    const area = document.getElementById('log-area');
+    let evt = null;
+
+    async function refreshList(){
+        const resp = await fetch('/api/log/list');
+        const json = await resp.json();
+        list.innerHTML = '';
+        (json.logs||[]).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; list.appendChild(o); });
+    }
+
+    async function loadLog(){
+        const name = list.value; if(!name) return;
+        const resp = await fetch('/api/log/read?name='+encodeURIComponent(name));
+        const json = await resp.json();
+        if(json && json.success) area.value = json.text || '';
+    }
+
+    function tailLog(){
+        const name = list.value; if(!name) return;
+        if(evt) evt.close();
+        evt = new EventSource('/api/log/stream?name='+encodeURIComponent(name));
+        evt.onmessage = (e)=>{
+            try{ const d = JSON.parse(e.data); if(d.initial) area.value = d.initial; if(d.line) area.value += '\n'+d.line; area.scrollTop = area.scrollHeight; }catch(e){}
+        };
+    }
+
+    stopTail.addEventListener('click', ()=>{ if(evt) evt.close(); evt=null; });
+    refresh.addEventListener('click', refreshList);
+    load.addEventListener('click', loadLog);
+    tailBtn.addEventListener('click', tailLog);
+
+    await refreshList();
+})();
+</script>
+</body>
+</html>
