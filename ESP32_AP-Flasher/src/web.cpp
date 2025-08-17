@@ -2414,7 +2414,8 @@ void init_web()
     // has initialized lwIP can trigger a FreeRTOS assert inside xQueueGenericSend
     // (from sys_mutex_unlock). Forcing WIFI_MODE_NULL brings up the TCP/IP stack
     // without joining an AP and avoids that crash.
-    if (WiFi.getMode() == WIFI_OFF) {
+    if (WiFi.getMode() == WIFI_OFF)
+    {
         WiFi.mode(WIFI_MODE_NULL);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
