@@ -1,7 +1,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <nvs_flash.h>  // ESP32-S3 NVS initialization
+#include <nvs_flash.h> // ESP32-S3 NVS initialization
 #include <time.h>
 #ifdef ETHERNET_CLK_MODE
 #include <ETH.h>
@@ -27,7 +27,7 @@
 
 #include "language.h"
 #include "leds.h"
-#include "udp.h"
+#include "oepl_udp.h"
 #include "util.h"
 #include "web.h"
 #ifdef HAS_BLE_WRITER
@@ -50,13 +50,15 @@ util::Timer intervalSaveDB(minutes(5));
 
 SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
-void delayedStart(void* parameter) {
+void delayedStart(void *parameter)
+{
     // Changed: No longer auto-starts content generation
     // Content generation now requires manual start via web interface
     vTaskDelay(30000 / portTICK_PERIOD_MS);
 
     // Just log the availability without auto-starting
-    if (config.runStatus != RUNSTATUS_RUN) {
+    if (config.runStatus != RUNSTATUS_RUN)
+    {
         wsLog("Content generation ready - use manual start button");
     }
 
@@ -64,7 +66,8 @@ void delayedStart(void* parameter) {
     vTaskDelete(NULL);
 }
 
-void setup() {
+void setup()
+{
 #ifdef UART_LOGGING_TX_ONLY_PIN
     Serial.begin(115200, SERIAL_8N1, -1, UART_LOGGING_TX_ONLY_PIN);
     gpio_set_drive_capability((gpio_num_t)FLASHER_AP_RXD, GPIO_DRIVE_CAP_0);
@@ -72,7 +75,7 @@ void setup() {
     Serial.begin(115200);
 #endif
 #if ARDUINO_USB_CDC_ON_BOOT == 1
-    Serial.setTxTimeoutMs(0);  // workaround bug in USB CDC that slows down serial output when no usb connected
+    Serial.setTxTimeoutMs(0); // workaround bug in USB CDC that slows down serial output when no usb connected
 #endif
     // Boot diagnostic: easy-to-search fixed message to verify Serial output early in setup
     Serial.print(">\r\n");
@@ -99,12 +102,14 @@ void setup() {
 #endif
 
 #ifdef BOARD_HAS_PSRAM
-    if (!psramInit()) {
+    if (!psramInit())
+    {
         Serial.printf("This build of the AP expects PSRAM, but we couldn't find/init any. Something is terribly wrong here! System halted.");
 #ifdef HAS_RGB_LED
         showColorPattern(CRGB::Yellow, CRGB::Red, CRGB::Red);
 #endif
-        while (1) {
+        while (1)
+        {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
     };
@@ -113,14 +118,18 @@ void setup() {
 
     // Initialize NVS for ESP32-S3 compatibility
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         Serial.println("NVS partition was truncated or found a newer version, erasing...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK)
+    {
         Serial.println("✅ NVS Flash initialized successfully");
-    } else {
+    }
+    else
+    {
         Serial.printf("❌ NVS Flash initialization failed: %s\n", esp_err_to_name(ret));
     }
 
@@ -170,26 +179,33 @@ void setup() {
     TagData::loadParsers("/parsers.json");
 #endif
 
-    if (!loadDB("/current/tagDB.json")) {
+    if (!loadDB("/current/tagDB.json"))
+    {
         Serial.println("unable to load tagDB, reverting to backup");
         loadDB("/current/tagDB.json.bak");
-    } else {
+    }
+    else
+    {
         cleanupCurrent();
     }
     xTaskCreate(APTask, "AP Process", 6000, NULL, 5, NULL);
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
 #ifdef HAS_BLE_WRITER
-    if (config.ble) {
+    if (config.ble)
+    {
         xTaskCreate(BLETask, "BLE Writer", 12000, NULL, 5, NULL);
     }
 #endif
 
 #ifdef HAS_IR_REMOTE
     // Initialize IR interface
-    if (irInterface.begin()) {
+    if (irInterface.begin())
+    {
         Serial.println("✅ IR Remote interface started");
-    } else {
+    }
+    else
+    {
         Serial.println("❌ Failed to start IR Remote interface");
     }
 #endif
@@ -222,7 +238,8 @@ void setup() {
 #endif
 
     esp_reset_reason_t resetReason = esp_reset_reason();
-    if (resetReason == ESP_RST_PANIC) {
+    if (resetReason == ESP_RST_PANIC)
+    {
         Serial.println("Panic! Pausing content generation for 30 seconds");
         config.runStatus = RUNSTATUS_PAUSE;
     }
@@ -231,28 +248,43 @@ void setup() {
 
     wsSendSysteminfo();
     util::printHeap();
+
+#ifdef ENABLE_UDP_LOG_RECEIVER
+    extern void startUdpLogReceiver();
+    startUdpLogReceiver();
+#endif
 }
 
-void loop() {
+void loop()
+{
     ws.cleanupClients();
     wm.poll();
 
-    if (intervalSysinfo.doRun()) {
+    if (intervalSysinfo.doRun())
+    {
         wsSendSysteminfo();
     }
-    if (intervalVars.doRun() && config.runStatus != RUNSTATUS_STOP) {
+    if (intervalVars.doRun() && config.runStatus != RUNSTATUS_STOP)
+    {
         checkVars();
     }
-    if (intervalSaveDB.doRun() && config.runStatus != RUNSTATUS_STOP) {
+    if (intervalSaveDB.doRun() && config.runStatus != RUNSTATUS_STOP)
+    {
         saveDB("/current/tagDB.json");
     }
-    if (intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO)) {
+    if (intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO))
+    {
         contentRunner();
     }
 
 #ifdef HAS_TFT
     extern void yellow_ap_display_loop(void);
     yellow_ap_display_loop();
+#endif
+
+#ifdef ENABLE_UDP_LOG_RECEIVER
+    extern void pollUdpLogReceiver();
+    pollUdpLogReceiver();
 #endif
 
     vTaskDelay(100 / portTICK_PERIOD_MS);

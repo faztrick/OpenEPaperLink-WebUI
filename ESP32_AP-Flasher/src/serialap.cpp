@@ -50,8 +50,9 @@ struct APInfoS apInfo;
 
 volatile ApSerialState gSerialTaskState;
 
-struct rxCmd {
-    uint8_t* data;
+struct rxCmd
+{
+    uint8_t *data;
     uint8_t len;
     uint8_t type;
 };
@@ -76,12 +77,19 @@ struct rxCmd {
 #define ZBS_RX_WAIT_TAG_RETURN_DATA 18
 #define ZBS_RX_WAIT_SUBCHANNEL 19
 
-bool txStart() {
-    while (1) {
-        if (xPortInIsrContext()) {
-            if (xSemaphoreTakeFromISR(txActive, NULL) == pdTRUE) return true;
-        } else {
-            if (xSemaphoreTake(txActive, portTICK_PERIOD_MS)) return true;
+bool txStart()
+{
+    while (1)
+    {
+        if (xPortInIsrContext())
+        {
+            if (xSemaphoreTakeFromISR(txActive, NULL) == pdTRUE)
+                return true;
+        }
+        else
+        {
+            if (xSemaphoreTake(txActive, portTICK_PERIOD_MS))
+                return true;
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
         Serial.println("wait... tx busy");
@@ -89,33 +97,40 @@ bool txStart() {
     // this never happens. Should we make a timeout?
     return false;
 }
-void txEnd() {
-    if (xPortInIsrContext()) {
+void txEnd()
+{
+    if (xPortInIsrContext())
+    {
         xSemaphoreGiveFromISR(txActive, NULL);
-    } else {
+    }
+    else
+    {
         xSemaphoreGive(txActive);
     }
 }
-bool waitCmdReply() {
+bool waitCmdReply()
+{
     uint32_t val = millis();
-    while (millis() < val + 200) {
-        switch (cmdReplyValue) {
-            case CMD_REPLY_WAIT:
-                break;
-            case CMD_REPLY_ACK:
-                lastAPActivity = millis();
-                if (apInfo.isOnline == false)
-                    setAPstate(true, AP_STATE_ONLINE);
-                return true;
-                break;
-            case CMD_REPLY_NOK:
-                lastAPActivity = millis();
-                return false;
-                break;
-            case CMD_REPLY_NOQ:
-                lastAPActivity = millis();
-                return false;
-                break;
+    while (millis() < val + 200)
+    {
+        switch (cmdReplyValue)
+        {
+        case CMD_REPLY_WAIT:
+            break;
+        case CMD_REPLY_ACK:
+            lastAPActivity = millis();
+            if (apInfo.isOnline == false)
+                setAPstate(true, AP_STATE_ONLINE);
+            return true;
+            break;
+        case CMD_REPLY_NOK:
+            lastAPActivity = millis();
+            return false;
+            break;
+        case CMD_REPLY_NOQ:
+            lastAPActivity = millis();
+            return false;
+            break;
         }
         vTaskDelay(1 / portTICK_RATE_MS);
     }
@@ -140,12 +155,14 @@ int8_t APpowerPins[] = FLASHER_ALT_POWER;
 #endif
 #endif
 
-void APEnterEarlyReset() {
+void APEnterEarlyReset()
+{
     pinMode(AP_RESET_PIN, OUTPUT);
     digitalWrite(AP_RESET_PIN, LOW);
 }
 
-void setAPstate(bool isOnline, uint8_t state) {
+void setAPstate(bool isOnline, uint8_t state)
+{
     apInfo.isOnline = isOnline;
     apInfo.state = state;
 #ifdef HAS_RGB_LED
@@ -157,22 +174,26 @@ void setAPstate(bool isOnline, uint8_t state) {
         CRGB::Aqua,
         CRGB::Red,
         CRGB::YellowGreen,
-        CRGB::Purple};                               // Added for state 7
-    rgbIdleColor = colorMap[state < 8 ? state : 0];  // Bounds check
+        CRGB::Purple};                              // Added for state 7
+    rgbIdleColor = colorMap[state < 8 ? state : 0]; // Bounds check
 #ifdef BLE_ONLY
     rgbIdleColor = CRGB::Green;
 #endif
     rgbIdlePeriod = (isOnline ? 767 : 255);
-    if (isOnline) rgbIdle();
+    if (isOnline)
+        rgbIdle();
 #endif
 #ifdef FLASHER_DEBUG_SHARED
     // Flasher shares port with AP comms
-    if (state == AP_STATE_FLASHING) {
+    if (state == AP_STATE_FLASHING)
+    {
         LOG("Shared COM port, gSerialTaskState %d\n", gSerialTaskState);
         gSerialTaskState = SERIAL_STATE_STOP;
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 100; i++)
+        {
             vTaskDelay(1 / portTICK_RATE_MS);
-            if (gSerialTaskState == SERIAL_STATE_STOPPED) {
+            if (gSerialTaskState == SERIAL_STATE_STOPPED)
+            {
                 gSerialTaskState = SERIAL_STATE_NONE;
                 break;
             }
@@ -184,7 +205,8 @@ void setAPstate(bool isOnline, uint8_t state) {
 }
 
 // Reset the tag
-void APTagReset() {
+void APTagReset()
+{
     Serial.println("Resetting tag");
     uint8_t powerPins = sizeof(APpowerPins);
     if (powerPins > 0 && APpowerPins[0] == -1)
@@ -197,25 +219,31 @@ void APTagReset() {
     pinMode(AP_RESET_PIN, OUTPUT);
     digitalWrite(AP_RESET_PIN, LOW);
     vTaskDelay(50 / portTICK_PERIOD_MS);
-    powerControl(false, (uint8_t*)APpowerPins, powerPins);
+    powerControl(false, (uint8_t *)APpowerPins, powerPins);
     vTaskDelay(300 / portTICK_PERIOD_MS);
-    powerControl(true, (uint8_t*)APpowerPins, powerPins);
+    powerControl(true, (uint8_t *)APpowerPins, powerPins);
     vTaskDelay(100 / portTICK_PERIOD_MS);
     digitalWrite(AP_RESET_PIN, HIGH);
     vTaskDelay(100 / portTICK_PERIOD_MS);
 }
 
 // Send data to the AP
-uint16_t sendBlock(const void* data, const uint16_t len) {
+uint16_t sendBlock(const void *data, const uint16_t len)
+{
     time_t timeCanary = millis();
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!apInfo.isOnline) return false;
-    if (!txStart()) return 0;
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (!apInfo.isOnline)
+        return false;
+    if (!txStart())
+        return 0;
     // don't retry now, as it collides with communication from the tag
-    for (uint8_t attempt = 0; attempt < 1; attempt++) {
+    for (uint8_t attempt = 0; attempt < 1; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print(">D>");
-        if (waitCmdReply()) goto blksend;
+        if (waitCmdReply())
+            goto blksend;
         Serial.printf("block send failed in try %d\r\n", attempt);
     }
     Serial.print("Failed sending block...\r\n");
@@ -223,23 +251,26 @@ uint16_t sendBlock(const void* data, const uint16_t len) {
     return 0;
 blksend:
     uint8_t blockbuffer[sizeof(struct blockData)];
-    struct blockData* bd = (struct blockData*)blockbuffer;
+    struct blockData *bd = (struct blockData *)blockbuffer;
     // set size in header (field name in protocol is 'bytes')
     bd->bytes = len;
 
     // calculate checksum locally (protocol header does not contain a checksum field)
-    const uint8_t* dataBytes = reinterpret_cast<const uint8_t*>(data);
+    const uint8_t *dataBytes = reinterpret_cast<const uint8_t *>(data);
     uint16_t checksum = 0;
-    for (uint16_t c = 0; c < len; c++) {
+    for (uint16_t c = 0; c < len; c++)
+    {
         checksum += dataBytes[c];
     }
 
     // send blockData header
-    dataBytes = reinterpret_cast<const uint8_t*>(&blockbuffer);
+    dataBytes = reinterpret_cast<const uint8_t *>(&blockbuffer);
     const size_t bufferSize = sizeof(struct blockData);
-    uint8_t* modifiedHeader = static_cast<uint8_t*>(malloc(bufferSize));
-    if (modifiedHeader != nullptr) {
-        for (size_t i = 0; i < bufferSize; i++) {
+    uint8_t *modifiedHeader = static_cast<uint8_t *>(malloc(bufferSize));
+    if (modifiedHeader != nullptr)
+    {
+        for (size_t i = 0; i < bufferSize; i++)
+        {
             modifiedHeader[i] = 0xAA ^ dataBytes[i];
         }
         AP_SERIAL_PORT.write(modifiedHeader, bufferSize);
@@ -247,11 +278,13 @@ blksend:
     }
 
     // send an entire block of data
-    uint16_t c = 0;  // Initialize c to prevent undefined behavior
-    dataBytes = reinterpret_cast<const uint8_t*>(data);
-    uint8_t* modifiedBuffer = static_cast<uint8_t*>(malloc(len));
-    if (modifiedBuffer != nullptr) {
-        for (c = 0; c < len; c++) {
+    uint16_t c = 0; // Initialize c to prevent undefined behavior
+    dataBytes = reinterpret_cast<const uint8_t *>(data);
+    uint8_t *modifiedBuffer = static_cast<uint8_t *>(malloc(len));
+    if (modifiedBuffer != nullptr)
+    {
+        for (c = 0; c < len; c++)
+        {
             modifiedBuffer[c] = 0xAA ^ dataBytes[c];
         }
         AP_SERIAL_PORT.write(modifiedBuffer, len);
@@ -260,7 +293,8 @@ blksend:
 
     // fill the rest of the block-length filled with something else (will end up as 0xFF in the buffer)
     const size_t remainingBytes = BLOCK_DATA_SIZE - c;
-    if (remainingBytes > 0) {
+    if (remainingBytes > 0)
+    {
         uint8_t fillBuffer[remainingBytes];
         memset(fillBuffer, 0x55, remainingBytes);
         AP_SERIAL_PORT.write(fillBuffer, remainingBytes);
@@ -271,24 +305,32 @@ blksend:
     memset(dummyBuffer, 0xF5, 32);
     AP_SERIAL_PORT.write(dummyBuffer, 32);
 
-    if (apInfo.type != ESP32_C6) delay(10);
+    if (apInfo.type != ESP32_C6)
+        delay(10);
     txEnd();
     Serial.println("Sendblock complete, " + String(millis() - timeCanary) + "ms");
     return checksum;
 }
 
-bool sendDataAvail(struct pendingData* pending) {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!apInfo.isOnline) return false;
-    if (!txStart()) return false;
+bool sendDataAvail(struct pendingData *pending)
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (!apInfo.isOnline)
+        return false;
+    if (!txStart())
+        return false;
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("SDA>");
-        for (uint8_t c = 0; c < sizeof(struct pendingData); c++) {
-            AP_SERIAL_PORT.write(((uint8_t*)pending)[c]);
+        for (uint8_t c = 0; c < sizeof(struct pendingData); c++)
+        {
+            AP_SERIAL_PORT.write(((uint8_t *)pending)[c]);
         }
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             return true;
         }
@@ -299,18 +341,25 @@ bool sendDataAvail(struct pendingData* pending) {
     txEnd();
     return false;
 }
-bool sendCancelPending(struct pendingData* pending) {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!apInfo.isOnline) return false;
-    if (!txStart()) return false;
+bool sendCancelPending(struct pendingData *pending)
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (!apInfo.isOnline)
+        return false;
+    if (!txStart())
+        return false;
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("CXD>");
-        for (uint8_t c = 0; c < sizeof(struct pendingData); c++) {
-            AP_SERIAL_PORT.write(((uint8_t*)pending)[c]);
+        for (uint8_t c = 0; c < sizeof(struct pendingData); c++)
+        {
+            AP_SERIAL_PORT.write(((uint8_t *)pending)[c]);
         }
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             return true;
         }
@@ -320,18 +369,25 @@ bool sendCancelPending(struct pendingData* pending) {
     txEnd();
     return false;
 }
-bool sendChannelPower(struct espSetChannelPower* scp) {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if ((apInfo.state != AP_STATE_ONLINE) && (apInfo.state != AP_STATE_COMING_ONLINE)) return false;
-    if (!txStart()) return false;
+bool sendChannelPower(struct espSetChannelPower *scp)
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if ((apInfo.state != AP_STATE_ONLINE) && (apInfo.state != AP_STATE_COMING_ONLINE))
+        return false;
+    if (!txStart())
+        return false;
     addCRC(scp, sizeof(struct espSetChannelPower));
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("SCP>");
-        for (uint8_t c = 0; c < sizeof(struct espSetChannelPower); c++) {
-            AP_SERIAL_PORT.write(((uint8_t*)scp)[c]);
+        for (uint8_t c = 0; c < sizeof(struct espSetChannelPower); c++)
+        {
+            AP_SERIAL_PORT.write(((uint8_t *)scp)[c]);
         }
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             apInfo.channel = scp->channel;
             apInfo.power = scp->power;
@@ -343,16 +399,22 @@ bool sendChannelPower(struct espSetChannelPower* scp) {
     txEnd();
     return false;
 }
-bool sendPing() {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (apInfo.state == AP_STATE_FLASHING) return false;
+bool sendPing()
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (apInfo.state == AP_STATE_FLASHING)
+        return false;
     Serial.print("ping");
     int t = millis();
-    if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    if (!txStart())
+        return false;
+    for (uint8_t attempt = 0; attempt < 3; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("RDY?");
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             Serial.printf(" ok, %dms\r\n", millis() - t);
             return true;
@@ -362,13 +424,18 @@ bool sendPing() {
     Serial.println(" failed");
     return false;
 }
-bool sendGetInfo() {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+bool sendGetInfo()
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (!txStart())
+        return false;
+    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("NFO?");
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             return true;
         }
@@ -376,13 +443,18 @@ bool sendGetInfo() {
     txEnd();
     return false;
 }
-bool sendHighspeed() {
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (!txStart()) return false;
-    for (uint8_t attempt = 0; attempt < 5; attempt++) {
+bool sendHighspeed()
+{
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (!txStart())
+        return false;
+    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    {
         cmdReplyValue = CMD_REPLY_WAIT;
         AP_SERIAL_PORT.print("HSPD");
-        if (waitCmdReply()) {
+        if (waitCmdReply())
+        {
             txEnd();
             return true;
         }
@@ -392,309 +464,375 @@ bool sendHighspeed() {
 }
 
 // add RX'd request from the AP to the processor queue
-void addRXQueue(uint8_t* data, uint8_t len, uint8_t type) {
-    struct rxCmd* rxcmd = new struct rxCmd;
+void addRXQueue(uint8_t *data, uint8_t len, uint8_t type)
+{
+    struct rxCmd *rxcmd = new struct rxCmd;
     rxcmd->data = data;
     rxcmd->len = len;
     rxcmd->type = type;
+    // Guard against early use before rxCmdProcessor initializes rxCmdQueue
+    if (!rxCmdQueue)
+    {
+        if (data)
+            free(data);
+        free(rxcmd);
+        return;
+    }
     BaseType_t queuestatus = xQueueSend(rxCmdQueue, &rxcmd, 0);
-    if (queuestatus == pdFALSE) {
-        if (data) free(data);
+    if (queuestatus == pdFALSE)
+    {
+        if (data)
+            free(data);
         free(rxcmd);
     }
 }
 
 // Asynchronous command processor
-void rxCmdProcessor(void* parameter) {
-    rxCmdQueue = xQueueCreate(30, sizeof(struct rxCmd*));
+void rxCmdProcessor(void *parameter)
+{
+    rxCmdQueue = xQueueCreate(30, sizeof(struct rxCmd *));
     txActive = xSemaphoreCreateBinary();
     xSemaphoreGive(txActive);
-    while (1) {
-        if (apInfo.isOnline) {
-            struct rxCmd* rxcmd = nullptr;
+    while (1)
+    {
+        if (apInfo.isOnline)
+        {
+            struct rxCmd *rxcmd = nullptr;
             BaseType_t q = xQueueReceive(rxCmdQueue, &rxcmd, 10);
-            if (q == pdTRUE) {
-                switch (rxcmd->type) {
-                    case RX_CMD_RQB:
-                        processBlockRequest((struct espBlockRequest*)rxcmd->data);
+            if (q == pdTRUE)
+            {
+                switch (rxcmd->type)
+                {
+                case RX_CMD_RQB:
+                    processBlockRequest((struct espBlockRequest *)rxcmd->data);
 #ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Blue);
+                    // shortBlink(CRGB::Blue);
 #endif
-                        quickBlink(3);
-                        break;
-                    case RX_CMD_ADR:
-                        processDataReq((struct espAvailDataReq*)rxcmd->data, true);
+                    quickBlink(3);
+                    break;
+                case RX_CMD_ADR:
+                    processDataReq((struct espAvailDataReq *)rxcmd->data, true);
 #ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Aqua);
+                    // shortBlink(CRGB::Aqua);
 #endif
-                        quickBlink(1);
-                        break;
-                    case RX_CMD_XFC:
-                        processXferComplete((struct espXferComplete*)rxcmd->data, true);
+                    quickBlink(1);
+                    break;
+                case RX_CMD_XFC:
+                    processXferComplete((struct espXferComplete *)rxcmd->data, true);
 #ifdef HAS_RGB_LED
-                        // shortBlink(CRGB::Purple);
+                    // shortBlink(CRGB::Purple);
 #endif
-                        break;
-                    case RX_CMD_XTO:
-                        processXferTimeout((struct espXferComplete*)rxcmd->data, true);
-                        break;
-                    case RX_CMD_RSET:
-                        Serial.println("AP did reset, resending pending\r\n");
-                        refreshAllPending();
-                        sendChannelPower(&curChannel);
-                        break;
-                    case RX_CMD_TRD:
-                        // received tag return data
-                        processTagReturnData((struct espTagReturnData*)rxcmd->data, rxcmd->len, true);
-                        break;
+                    break;
+                case RX_CMD_XTO:
+                    processXferTimeout((struct espXferComplete *)rxcmd->data, true);
+                    break;
+                case RX_CMD_RSET:
+                    Serial.println("AP did reset, resending pending\r\n");
+                    refreshAllPending();
+                    sendChannelPower(&curChannel);
+                    break;
+                case RX_CMD_TRD:
+                    // received tag return data
+                    processTagReturnData((struct espTagReturnData *)rxcmd->data, rxcmd->len, true);
+                    break;
                 }
-                if (rxcmd->data) free(rxcmd->data);
-                if (rxcmd) free(rxcmd);
+                if (rxcmd->data)
+                    free(rxcmd->data);
+                if (rxcmd)
+                    free(rxcmd);
             }
         }
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
-void rxSerialTask(void* parameter) {
+void rxSerialTask(void *parameter)
+{
     static char cmdbuffer[4] = {0};
-    static uint8_t* packetp = nullptr;
+    static uint8_t *packetp = nullptr;
     //    static uint8_t pktlen = 0;
-    static uint8_t pktindex = 0;  // length of the command
+    static uint8_t pktindex = 0; // length of the command
     static uint8_t RXState = ZBS_RX_WAIT_HEADER;
     static char lastchar = 0;
     static uint8_t charindex = 0;
 
     gSerialTaskState = SERIAL_STATE_RUNNING;
     LOG("rxSerialTask starting\n");
-    while (gSerialTaskState == SERIAL_STATE_RUNNING) {
-        while (AP_SERIAL_PORT.available()) {
+    while (gSerialTaskState == SERIAL_STATE_RUNNING)
+    {
+        while (AP_SERIAL_PORT.available())
+        {
             lastchar = AP_SERIAL_PORT.read();
-            switch (RXState) {
-                case ZBS_RX_WAIT_HEADER:
+            switch (RXState)
+            {
+            case ZBS_RX_WAIT_HEADER:
 
-                    Serial.write(lastchar);
+                Serial.write(lastchar);
 
-                    //  shift characters in
-                    for (uint8_t c = 0; c < 3; c++) {
-                        cmdbuffer[c] = cmdbuffer[c + 1];
-                    }
-                    cmdbuffer[3] = lastchar;
+                //  shift characters in
+                for (uint8_t c = 0; c < 3; c++)
+                {
+                    cmdbuffer[c] = cmdbuffer[c + 1];
+                }
+                cmdbuffer[3] = lastchar;
 
-                    if ((strncmp(cmdbuffer, "ACK>", 4) == 0)) cmdReplyValue = CMD_REPLY_ACK;
-                    if ((strncmp(cmdbuffer, "NOK>", 4) == 0)) cmdReplyValue = CMD_REPLY_NOK;
-                    if ((strncmp(cmdbuffer, "NOQ>", 4) == 0)) cmdReplyValue = CMD_REPLY_NOQ;
+                if ((strncmp(cmdbuffer, "ACK>", 4) == 0))
+                    cmdReplyValue = CMD_REPLY_ACK;
+                if ((strncmp(cmdbuffer, "NOK>", 4) == 0))
+                    cmdReplyValue = CMD_REPLY_NOK;
+                if ((strncmp(cmdbuffer, "NOQ>", 4) == 0))
+                    cmdReplyValue = CMD_REPLY_NOQ;
 
-                    if ((strncmp(cmdbuffer, "VER>", 4) == 0)) {
-                        pktindex = 0;
-                        RXState = ZBS_RX_WAIT_VER;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "MAC>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_MAC;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "ZCH>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_CHANNEL;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
+                if ((strncmp(cmdbuffer, "VER>", 4) == 0))
+                {
+                    pktindex = 0;
+                    RXState = ZBS_RX_WAIT_VER;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if ((strncmp(cmdbuffer, "MAC>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_MAC;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if ((strncmp(cmdbuffer, "ZCH>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_CHANNEL;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
 #ifdef HAS_SUBGHZ
-                    if ((strncmp(cmdbuffer, "SCH>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_SUBCHANNEL;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
+                if ((strncmp(cmdbuffer, "SCH>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_SUBCHANNEL;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
 #endif
-                    if ((strncmp(cmdbuffer, "ZPW>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_POWER;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "PEN>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_PENDING;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "NOP>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_NOP;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if ((strncmp(cmdbuffer, "TYP>", 4) == 0)) {
-                        RXState = ZBS_RX_WAIT_TYPE;
-                        charindex = 0;
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "RES>", 4) == 0) {
+                if ((strncmp(cmdbuffer, "ZPW>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_POWER;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if ((strncmp(cmdbuffer, "PEN>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_PENDING;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if ((strncmp(cmdbuffer, "NOP>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_NOP;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if ((strncmp(cmdbuffer, "TYP>", 4) == 0))
+                {
+                    RXState = ZBS_RX_WAIT_TYPE;
+                    charindex = 0;
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if (strncmp(cmdbuffer, "RES>", 4) == 0)
+                {
+                    if (rxCmdQueue)
+                    {
                         addRXQueue(NULL, 0, RX_CMD_RSET);
                     }
-                    if (strncmp(cmdbuffer, "RQB>", 4) == 0) {
-                        RXState = ZBS_RX_BLOCK_REQUEST;
-                        charindex = 0;
-                        pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espBlockRequest) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                        // don't set APstate heree, as it interferes with the flashing process
-                        // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
-                    }
-                    if (strncmp(cmdbuffer, "ADR>", 4) == 0) {
-                        RXState = ZBS_RX_WAIT_DATA_REQ;
-                        charindex = 0;
-                        pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espAvailDataReq) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                        // don't set APstate heree, as it interferes with the flashing process
-                        // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
-                    }
-                    if (strncmp(cmdbuffer, "XFC>", 4) == 0) {
-                        RXState = ZBS_RX_WAIT_XFERCOMPLETE;
-                        pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espXferComplete) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "XTO>", 4) == 0) {
-                        RXState = ZBS_RX_WAIT_XFERTIMEOUT;
-                        pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espXferComplete) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                    }
-                    if (strncmp(cmdbuffer, "RDY>", 4) == 0) {
+                }
+                if (strncmp(cmdbuffer, "RQB>", 4) == 0)
+                {
+                    RXState = ZBS_RX_BLOCK_REQUEST;
+                    charindex = 0;
+                    pktindex = 0;
+                    packetp = (uint8_t *)calloc(sizeof(struct espBlockRequest) + 8, 1);
+                    memset(cmdbuffer, 0x00, 4);
+                    lastAPActivity = millis();
+                    // don't set APstate heree, as it interferes with the flashing process
+                    // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
+                }
+                if (strncmp(cmdbuffer, "ADR>", 4) == 0)
+                {
+                    RXState = ZBS_RX_WAIT_DATA_REQ;
+                    charindex = 0;
+                    pktindex = 0;
+                    packetp = (uint8_t *)calloc(sizeof(struct espAvailDataReq) + 8, 1);
+                    memset(cmdbuffer, 0x00, 4);
+                    lastAPActivity = millis();
+                    // don't set APstate heree, as it interferes with the flashing process
+                    // if (apInfo.isOnline == false && config.runStatus == RUNSTATUS_RUN) setAPstate(true, AP_STATE_ONLINE);
+                }
+                if (strncmp(cmdbuffer, "XFC>", 4) == 0)
+                {
+                    RXState = ZBS_RX_WAIT_XFERCOMPLETE;
+                    pktindex = 0;
+                    packetp = (uint8_t *)calloc(sizeof(struct espXferComplete) + 8, 1);
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if (strncmp(cmdbuffer, "XTO>", 4) == 0)
+                {
+                    RXState = ZBS_RX_WAIT_XFERTIMEOUT;
+                    pktindex = 0;
+                    packetp = (uint8_t *)calloc(sizeof(struct espXferComplete) + 8, 1);
+                    memset(cmdbuffer, 0x00, 4);
+                }
+                if (strncmp(cmdbuffer, "RDY>", 4) == 0)
+                {
+                    if (rxCmdQueue)
+                    {
                         addRXQueue(NULL, 0, RX_CMD_RDY);
                     }
-                    if (strncmp(cmdbuffer, "TRD>", 4) == 0) {
-                        RXState = ZBS_RX_WAIT_TAG_RETURN_DATA;
-                        pktindex = 0;
-                        packetp = (uint8_t*)calloc(sizeof(struct espTagReturnData) + 8, 1);
-                        memset(cmdbuffer, 0x00, 4);
-                        lastAPActivity = millis();
-                    }
-                    break;
-                case ZBS_RX_BLOCK_REQUEST:
-                    packetp[pktindex] = lastchar;
+                }
+                if (strncmp(cmdbuffer, "TRD>", 4) == 0)
+                {
+                    RXState = ZBS_RX_WAIT_TAG_RETURN_DATA;
+                    pktindex = 0;
+                    packetp = (uint8_t *)calloc(sizeof(struct espTagReturnData) + 8, 1);
+                    memset(cmdbuffer, 0x00, 4);
+                    lastAPActivity = millis();
+                }
+                break;
+            case ZBS_RX_BLOCK_REQUEST:
+                packetp[pktindex] = lastchar;
+                pktindex++;
+                if (pktindex == sizeof(struct espBlockRequest))
+                {
+                    addRXQueue(packetp, pktindex, RX_CMD_RQB);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_XFERCOMPLETE:
+                packetp[pktindex] = lastchar;
+                pktindex++;
+                if (pktindex == sizeof(struct espXferComplete))
+                {
+                    addRXQueue(packetp, pktindex, RX_CMD_XFC);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_XFERTIMEOUT:
+                packetp[pktindex] = lastchar;
+                pktindex++;
+                if (pktindex == sizeof(struct espXferComplete))
+                {
+                    addRXQueue(packetp, pktindex, RX_CMD_XTO);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_DATA_REQ:
+                packetp[pktindex] = lastchar;
+                pktindex++;
+                if (pktindex == sizeof(struct espAvailDataReq))
+                {
+                    addRXQueue(packetp, pktindex, RX_CMD_ADR);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_TAG_RETURN_DATA:
+            {
+                packetp[pktindex] = lastchar;
+                pktindex++;
+                if ((pktindex > 10) && (pktindex >= (packetp[9] + 10)))
+                {
+                    addRXQueue(packetp, pktindex, RX_CMD_TRD);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+            }
+            break;
+            case ZBS_RX_WAIT_VER:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 4)
+                {
+                    charindex = 0;
+                    apInfo.version = (uint16_t)strtoul(cmdbuffer, NULL, 16);
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_MAC:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    charindex = 0;
+                    apInfo.mac[pktindex] = (uint8_t)strtoul(cmdbuffer, NULL, 16);
                     pktindex++;
-                    if (pktindex == sizeof(struct espBlockRequest)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_RQB);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_XFERCOMPLETE:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espXferComplete)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_XFC);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_XFERTIMEOUT:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espXferComplete)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_XTO);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_DATA_REQ:
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if (pktindex == sizeof(struct espAvailDataReq)) {
-                        addRXQueue(packetp, pktindex, RX_CMD_ADR);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_TAG_RETURN_DATA: {
-                    packetp[pktindex] = lastchar;
-                    pktindex++;
-                    if ((pktindex > 10) && (pktindex >= (packetp[9] + 10))) {
-                        addRXQueue(packetp, pktindex, RX_CMD_TRD);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                } break;
-                case ZBS_RX_WAIT_VER:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 4) {
-                        charindex = 0;
-                        apInfo.version = (uint16_t)strtoul(cmdbuffer, NULL, 16);
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_MAC:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        charindex = 0;
-                        apInfo.mac[pktindex] = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                        pktindex++;
-                    }
-                    if (pktindex == 8) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                    }
-                    break;
-                case ZBS_RX_WAIT_CHANNEL:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.channel = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
+                }
+                if (pktindex == 8)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                }
+                break;
+            case ZBS_RX_WAIT_CHANNEL:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    apInfo.channel = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                }
+                break;
 #ifdef HAS_SUBGHZ
-                case ZBS_RX_WAIT_SUBCHANNEL:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 3) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        int Channel = atoi(cmdbuffer);
-                        if (Channel != NO_SUBGHZ_CHANNEL) {
-                            apInfo.hasSubGhz = true;
-                            apInfo.SubGhzChannel = Channel;
-                        } else {
-                            apInfo.hasSubGhz = false;
-                            apInfo.SubGhzChannel = 0;
-                        }
+            case ZBS_RX_WAIT_SUBCHANNEL:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 3)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    int Channel = atoi(cmdbuffer);
+                    if (Channel != NO_SUBGHZ_CHANNEL)
+                    {
+                        apInfo.hasSubGhz = true;
+                        apInfo.SubGhzChannel = Channel;
                     }
-                    break;
+                    else
+                    {
+                        apInfo.hasSubGhz = false;
+                        apInfo.SubGhzChannel = 0;
+                    }
+                }
+                break;
 #endif
-                case ZBS_RX_WAIT_POWER:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.power = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
-                case ZBS_RX_WAIT_PENDING:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.pendingBuffer = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
-                case ZBS_RX_WAIT_NOP:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.nop = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
-                case ZBS_RX_WAIT_TYPE:
-                    cmdbuffer[charindex] = lastchar;
-                    charindex++;
-                    if (charindex == 2) {
-                        RXState = ZBS_RX_WAIT_HEADER;
-                        apInfo.type = (uint8_t)strtoul(cmdbuffer, NULL, 16);
-                    }
-                    break;
+            case ZBS_RX_WAIT_POWER:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    apInfo.power = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                }
+                break;
+            case ZBS_RX_WAIT_PENDING:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    apInfo.pendingBuffer = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                }
+                break;
+            case ZBS_RX_WAIT_NOP:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    apInfo.nop = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                }
+                break;
+            case ZBS_RX_WAIT_TYPE:
+                cmdbuffer[charindex] = lastchar;
+                charindex++;
+                if (charindex == 2)
+                {
+                    RXState = ZBS_RX_WAIT_HEADER;
+                    apInfo.type = (uint8_t)strtoul(cmdbuffer, NULL, 16);
+                }
+                break;
             }
         }
         vTaskDelay(1 / portTICK_PERIOD_MS);
-    }  // end of while(1)
+    } // end of while(1)
 
     AP_SERIAL_PORT.end();
     gSerialTaskState = SERIAL_STATE_STOPPED;
@@ -703,7 +841,8 @@ void rxSerialTask(void* parameter) {
 }
 
 #if defined(FLASHER_DEBUG_RXD) && !defined(FLASHER_DEBUG_SHARED)
-uint32_t millisDiff(uint32_t m) {
+uint32_t millisDiff(uint32_t m)
+{
     uint32_t ms = millis();
     if (ms >= m)
         return ms - m;
@@ -711,7 +850,8 @@ uint32_t millisDiff(uint32_t m) {
         return UINT32_MAX - m + ms + 1;
 }
 
-void rxSerialTask2(void* parameter) {
+void rxSerialTask2(void *parameter)
+{
     char rxStr[100] = {0};
     int rxStrCount = 0;
     uint32_t modemResetHoldoff = millis();
@@ -719,8 +859,10 @@ void rxSerialTask2(void* parameter) {
     time_t startTime = millis();
     int charCount = 0;
     Serial2.begin(115200, SERIAL_8N1, FLASHER_DEBUG_TXD, FLASHER_DEBUG_RXD);
-    while (rxSerialStopTask2 == false) {
-        while (Serial2.available()) {
+    while (rxSerialStopTask2 == false)
+    {
+        while (Serial2.available())
+        {
             lastchar = Serial2.read();
             charCount++;
 
@@ -728,8 +870,10 @@ void rxSerialTask2(void* parameter) {
             Serial.write(lastchar);
 
             rxStr[rxStrCount] = lastchar;
-            if (lastchar == '\n' || lastchar == '\r') {
-                if (strncmp(rxStr, "receive buffer full, drop the current frame", 43) == 0 && millisDiff(modemResetHoldoff) > 20000) {
+            if (lastchar == '\n' || lastchar == '\r')
+            {
+                if (strncmp(rxStr, "receive buffer full, drop the current frame", 43) == 0 && millisDiff(modemResetHoldoff) > 20000)
+                {
                     modemResetHoldoff = millis();
                     vTaskDelay(100 / portTICK_PERIOD_MS);
                     config.runStatus = RUNSTATUS_STOP;
@@ -737,19 +881,26 @@ void rxSerialTask2(void* parameter) {
                     APTagReset();
                     vTaskDelay(1000 / portTICK_PERIOD_MS);
                     Serial.println("bringing AP online again");
-                    if (bringAPOnline()) {
+                    if (bringAPOnline())
+                    {
                         config.runStatus = RUNSTATUS_RUN;
                         Serial.println("Finished!");
-                    } else {
+                    }
+                    else
+                    {
                         Serial.println("Failed!");
                     }
                     logLine("IEEE802.15.4 modem reset " + (config.runStatus == RUNSTATUS_RUN) ? ("ok") : ("failed"));
                 }
                 rxStrCount = 0;
                 memset(rxStr, 0, sizeof(rxStr));
-            } else if (rxStrCount < sizeof(rxStr) - 2) {
+            }
+            else if (rxStrCount < sizeof(rxStr) - 2)
+            {
                 rxStrCount++;
-            } else {
+            }
+            else
+            {
                 rxStrCount = 0;
                 memset(rxStr, 0, sizeof(rxStr));
             }
@@ -757,8 +908,10 @@ void rxSerialTask2(void* parameter) {
         vTaskDelay(1 / portTICK_PERIOD_MS);
 
         time_t currentTime = millis();
-        if (currentTime - startTime >= 1000) {
-            if (charCount > 6000) {
+        if (currentTime - startTime >= 1000)
+        {
+            if (charCount > 6000)
+            {
                 rxSerialStopTask2 = true;
                 Serial.println("Serial monitor stopped because of flooding (" + String(charCount) + " characters per second)");
             }
@@ -772,7 +925,8 @@ void rxSerialTask2(void* parameter) {
 }
 #endif
 
-void ShowAPInfo() {
+void ShowAPInfo()
+{
     Serial.printf("\r\n| AP Info - type %02X       |\r\n", apInfo.type);
     Serial.printf("| Ch   |             0x%02X |\r\n", apInfo.channel);
     Serial.printf("| Power|               %02X |\r\n", apInfo.power);
@@ -780,7 +934,8 @@ void ShowAPInfo() {
     Serial.printf("| Ver  |           0x%04X |\r\n", apInfo.version);
 }
 
-void notifySegmentedFlash() {
+void notifySegmentedFlash()
+{
     sendAPSegmentedData(apInfo.mac, (String) "Fl     ash", 0x0800, false, true);
     vTaskDelay(2000 / portTICK_PERIOD_MS);
 #ifdef POWER_NO_SOFT_POWER
@@ -790,7 +945,8 @@ void notifySegmentedFlash() {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 #endif
 }
-void checkWaitPowerCycle() {
+void checkWaitPowerCycle()
+{
     // check if we should wait for a power cycle. If we do, try to inform the user the best we can, and hang.
 #ifdef POWER_NO_SOFT_POWER
     setAPstate(false, AP_STATE_REQUIRED_POWER_CYCLE);
@@ -799,12 +955,14 @@ void checkWaitPowerCycle() {
 #ifdef HAS_RGB_LED
     showColorPattern(CRGB::Aqua, CRGB::Aqua, CRGB::Red);
 #endif
-    while (1) {
+    while (1)
+    {
         vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 #endif
 }
-void segmentedShowIp() {
+void segmentedShowIp()
+{
     IPAddress IP = wm.localIP();
     char temp[12];
     vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -818,14 +976,18 @@ void segmentedShowIp() {
     vTaskDelay(2000 / portTICK_PERIOD_MS);
 }
 
-bool bringAPOnline(uint8_t newState) {
+bool bringAPOnline(uint8_t newState)
+{
 #ifdef BLE_ONLY
     apInfo.state = AP_STATE_NORADIO;
 #endif
-    if (apInfo.state == AP_STATE_NORADIO) return true;
-    if (apInfo.state == AP_STATE_FLASHING) return false;
+    if (apInfo.state == AP_STATE_NORADIO)
+        return true;
+    if (apInfo.state == AP_STATE_FLASHING)
+        return false;
 
-    if (gSerialTaskState != SERIAL_STATE_INITIALIZED) {
+    if (gSerialTaskState != SERIAL_STATE_INITIALIZED)
+    {
 #ifdef HAS_ELECROW_ADV_2_8
         // Set GPIO45 low to connect the wireless interface to the multiplexed pins
         pinMode(45, OUTPUT);
@@ -843,7 +1005,8 @@ bool bringAPOnline(uint8_t newState) {
 #endif
         gSerialTaskState = SERIAL_STATE_INITIALIZED;
     }
-    if (gSerialTaskState != SERIAL_STATE_RUNNING) {
+    if (gSerialTaskState != SERIAL_STATE_RUNNING)
+    {
         gSerialTaskState = SERIAL_STATE_STARTING;
         xTaskCreate(rxSerialTask, "rxSerialTask", 1750, NULL, 11, NULL);
         vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -853,29 +1016,38 @@ bool bringAPOnline(uint8_t newState) {
     AP_SERIAL_PORT.updateBaudRate(115200);
     uint32_t bootTimeout = millis();
     bool APrdy = sendPing();
-    if (!APrdy) {
-        if (apInfo.state == AP_STATE_FLASHING) return false;
+    if (!APrdy)
+    {
+        if (apInfo.state == AP_STATE_FLASHING)
+            return false;
         APTagReset();
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         bootTimeout = millis();
         APrdy = false;
-        while ((!APrdy) && (millis() - bootTimeout < 10 * 1000) && (apInfo.state != AP_STATE_FLASHING)) {
+        while ((!APrdy) && (millis() - bootTimeout < 10 * 1000) && (apInfo.state != AP_STATE_FLASHING))
+        {
             APrdy = sendPing();
             vTaskDelay(300 / portTICK_PERIOD_MS);
         }
     }
-    if (!APrdy) {
+    if (!APrdy)
+    {
         return false;
-    } else {
+    }
+    else
+    {
         setAPstate(false, AP_STATE_COMING_ONLINE);
         sendChannelPower(&curChannel);
         vTaskDelay(200 / portTICK_PERIOD_MS);
-        if (!sendGetInfo()) {
+        if (!sendGetInfo())
+        {
             setAPstate(false, AP_STATE_OFFLINE);
             return false;
         }
-        if (apInfo.type == ESP32_C6) {
-            if (sendHighspeed()) {
+        if (apInfo.type == ESP32_C6)
+        {
+            if (sendHighspeed())
+            {
                 AP_SERIAL_PORT.flush();
                 vTaskDelay(10 / portTICK_PERIOD_MS);
                 AP_SERIAL_PORT.updateBaudRate(2000000);
@@ -889,7 +1061,8 @@ bool bringAPOnline(uint8_t newState) {
     }
 }
 
-bool checkRadio() {
+bool checkRadio()
+{
 #ifdef BLE_ONLY
     return false;
 #endif
@@ -901,15 +1074,19 @@ bool checkRadio() {
     pinMode(FLASHER_AP_TXD, OUTPUT);
     pinMode(FLASHER_AP_RXD, INPUT_PULLDOWN);
     digitalWrite(FLASHER_AP_TXD, LOW);
-    if (digitalRead(FLASHER_AP_RXD) != LOW) return true;
+    if (digitalRead(FLASHER_AP_RXD) != LOW)
+        return true;
     digitalWrite(FLASHER_AP_TXD, HIGH);
-    if (digitalRead(FLASHER_AP_RXD) != HIGH) return true;
+    if (digitalRead(FLASHER_AP_RXD) != HIGH)
+        return true;
     pinMode(FLASHER_AP_TXD, INPUT_PULLDOWN);
     return false;
 }
 
-void APTask(void* parameter) {
-    if (!checkRadio()) {
+void APTask(void *parameter)
+{
+    if (!checkRadio())
+    {
         // no radio
         Serial.println("Working without radio.");
         addFadeMono(config.led);
@@ -927,8 +1104,10 @@ void APTask(void* parameter) {
     bringAPOnline();
 
 #ifndef C6_OTA_FLASHING
-    if (checkForcedAPFlash() && FLASHER_AP_MOSI != -1) {
-        if (apInfo.type == SOLUM_SEG_UK && apInfo.isOnline) {
+    if (checkForcedAPFlash() && FLASHER_AP_MOSI != -1)
+    {
+        if (apInfo.type == SOLUM_SEG_UK && apInfo.isOnline)
+        {
             notifySegmentedFlash();
         }
         Serial.printf("We're going to try to perform an 'AP forced flash' in\r\n");
@@ -941,11 +1120,13 @@ void APTask(void* parameter) {
     }
 #endif
 
-    if (apInfo.isOnline) {
+    if (apInfo.isOnline)
+    {
         // AP works!
         ShowAPInfo();
 
-        if (apInfo.type == SOLUM_SEG_UK) {
+        if (apInfo.type == SOLUM_SEG_UK)
+        {
             setAPstate(true, AP_STATE_COMING_ONLINE);
             segmentedShowIp();
             showAPSegmentedInfo(apInfo.mac, true);
@@ -955,9 +1136,11 @@ void APTask(void* parameter) {
 
         uint16_t fsversion;
 #ifndef C6_OTA_FLASHING
-        if (FLASHER_AP_MOSI != -1) {
+        if (FLASHER_AP_MOSI != -1)
+        {
             fsversion = getAPUpdateVersion(apInfo.type);
-            if ((fsversion) && (apInfo.version != fsversion)) {
+            if ((fsversion) && (apInfo.version != fsversion))
+            {
                 Serial.printf("Firmware version on FS: %04X\r\n", fsversion);
 
                 Serial.printf("We're going to try to update the AP's FW in\r\n");
@@ -965,14 +1148,18 @@ void APTask(void* parameter) {
                 Serial.printf("\r\n");
                 notifySegmentedFlash();
                 setAPstate(false, AP_STATE_FLASHING);
-                if (doAPUpdate(apInfo.type)) {
+                if (doAPUpdate(apInfo.type))
+                {
                     checkWaitPowerCycle();
                     Serial.printf("Flash completed, let's try to boot the AP!\r\n");
-                    if (bringAPOnline()) {
+                    if (bringAPOnline())
+                    {
                         // AP works
                         ShowAPInfo();
                         setAPchannel();
-                    } else {
+                    }
+                    else
+                    {
                         Serial.printf("Failed to bring up the AP after flashing seemed successful... That's not supposed to happen!\r\n");
                         Serial.printf("This can be caused by a bad AP firmware, failed or failing hardware, or the inability to fully power-cycle the AP\r\n");
                         setAPstate(false, AP_STATE_FAILED);
@@ -980,7 +1167,9 @@ void APTask(void* parameter) {
                         showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
 #endif
                     }
-                } else {
+                }
+                else
+                {
                     setAPstate(false, AP_STATE_FAILED);
                     checkWaitPowerCycle();
                     Serial.println("Failed to update version on the AP :(\r\n");
@@ -993,20 +1182,25 @@ void APTask(void* parameter) {
 #endif
 
         refreshAllPending();
-    } else {
+    }
+    else
+    {
 #ifndef FLASH_TIMEOUT
 #define FLASH_TIMEOUT 30
 #endif
 
-        if (FLASHER_AP_MOSI == -1) {
+        if (FLASHER_AP_MOSI == -1)
+        {
             Serial.printf("I wasn't able to connect to the AP radio. Did you flash it?\r\n");
             Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
 #ifdef HAS_RGB_LED
             showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
 #endif
-            if (apInfo.state != AP_STATE_FLASHING)  // In case we are flashing already we do not want to end in a failed AP
+            if (apInfo.state != AP_STATE_FLASHING) // In case we are flashing already we do not want to end in a failed AP
                 setAPstate(false, AP_STATE_FAILED);
-        } else {
+        }
+        else
+        {
 #ifndef C6_OTA_FLASHING
             // AP unavailable, maybe time to flash?
             setAPstate(false, AP_STATE_OFFLINE);
@@ -1017,17 +1211,22 @@ void APTask(void* parameter) {
             Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
             Serial.printf("Performing firmware flash in about %d seconds!\r\n", FLASH_TIMEOUT);
             flashCountDown(FLASH_TIMEOUT);
-            if (doAPFlash()) {
+            if (doAPFlash())
+            {
                 checkWaitPowerCycle();
-                if (bringAPOnline()) {
+                if (bringAPOnline())
+                {
                     // AP works
                     ShowAPInfo();
-                    if (apInfo.type == SOLUM_SEG_UK) {
+                    if (apInfo.type == SOLUM_SEG_UK)
+                    {
                         segmentedShowIp();
                         showAPSegmentedInfo(apInfo.mac, true);
                     }
                     refreshAllPending();
-                } else {
+                }
+                else
+                {
                     Serial.printf("Failed to bring up the AP after successful flashing... That's not supposed to happen!\r\n");
                     Serial.printf("This generally means that the flasher connections (MISO/MOSI/CLK/RESET/CS) are okay,\r\n");
                     Serial.printf("but we can't (yet) talk to the AP over serial lines. Verify the pins mentioned above.\r\n\r\n");
@@ -1042,7 +1241,9 @@ void APTask(void* parameter) {
 #endif
                     setAPstate(false, AP_STATE_FAILED);
                 }
-            } else {
+            }
+            else
+            {
                 // failed to flash
 #ifdef HAS_RGB_LED
                 showColorPattern(CRGB::Red, CRGB::Red, CRGB::Red);
@@ -1069,7 +1270,8 @@ void APTask(void* parameter) {
 #ifdef HAS_SDCARD
             if (SD_CARD_CLK == FLASHER_AP_CLK ||
                 SD_CARD_MISO == FLASHER_AP_MISO ||
-                SD_CARD_MOSI == FLASHER_AP_MOSI) {
+                SD_CARD_MOSI == FLASHER_AP_MOSI)
+            {
                 Serial.println("Reseting in 30 seconds to restore SPI state!\r\n");
                 flashCountDown(30);
                 ESP.restart();
@@ -1080,26 +1282,35 @@ void APTask(void* parameter) {
     }
 
     uint8_t attempts = 0;
-    while (1) {
-        if (((apInfo.state == AP_STATE_ONLINE) || (apInfo.state == AP_STATE_FAILED)) && (millis() - lastAPActivity > AP_ACTIVITY_MAX_INTERVAL)) {
+    while (1)
+    {
+        if (((apInfo.state == AP_STATE_ONLINE) || (apInfo.state == AP_STATE_FAILED)) && (millis() - lastAPActivity > AP_ACTIVITY_MAX_INTERVAL))
+        {
             bool reply = sendPing();
-            if (!reply) {
+            if (!reply)
+            {
                 attempts++;
-            } else {
+            }
+            else
+            {
                 if (apInfo.isOnline == false)
                     setAPstate(true, AP_STATE_ONLINE);
                 attempts = 0;
             }
-            if (attempts > 5 && apInfo.state != AP_STATE_FLASHING) {
+            if (attempts > 5 && apInfo.state != AP_STATE_FLASHING)
+            {
                 setAPstate(false, AP_STATE_WAIT_RESET);
-                if (!bringAPOnline()) {
+                if (!bringAPOnline())
+                {
                     // tried to reset the AP, but we failed... Maybe the AP-Tag died?
                     setAPstate(false, AP_STATE_FAILED);
 #ifdef HAS_RGB_LED
                     showColorPattern(CRGB::Yellow, CRGB::Yellow, CRGB::Red);
 #endif
-                    lastAPActivity = millis();  // we set this to retrigger a recovery in AP_ACTIVITY_MAX_INTERVAL seconds
-                } else {
+                    lastAPActivity = millis(); // we set this to retrigger a recovery in AP_ACTIVITY_MAX_INTERVAL seconds
+                }
+                else
+                {
                     setAPstate(true, AP_STATE_ONLINE);
                     attempts = 0;
                     refreshAllPending();

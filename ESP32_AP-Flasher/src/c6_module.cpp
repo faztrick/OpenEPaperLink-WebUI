@@ -17,16 +17,18 @@
 // C6 Module Implementation using Module Manager Framework
 // =======================================================
 
-class C6Module : public ModuleInterface {
-   private:
+class C6Module : public ModuleInterface
+{
+private:
     bool isInitialized = false;
     bool isStarted = false;
     uint32_t lastHealthCheck = 0;
     String lastError = "";
 
-   public:
+public:
     // Module lifecycle implementation
-    bool initialize() override {
+    bool initialize() override
+    {
         Serial.println("[C6_MODULE] Initializing C6 module support...");
 
         // Initialize preferences namespace for C6 module
@@ -34,19 +36,24 @@ class C6Module : public ModuleInterface {
         preferences.begin("c6_module", false);
 
         // Set default values if not already set
-        if (!preferences.isKey("channel")) {
+        if (!preferences.isKey("channel"))
+        {
             preferences.putInt("channel", 20);
         }
-        if (!preferences.isKey("txPower")) {
+        if (!preferences.isKey("txPower"))
+        {
             preferences.putInt("txPower", 10);
         }
-        if (!preferences.isKey("panId")) {
+        if (!preferences.isKey("panId"))
+        {
             preferences.putString("panId", "0x1234");
         }
-        if (!preferences.isKey("sleepMode")) {
+        if (!preferences.isKey("sleepMode"))
+        {
             preferences.putString("sleepMode", "none");
         }
-        if (!preferences.isKey("wakeInterval")) {
+        if (!preferences.isKey("wakeInterval"))
+        {
             preferences.putInt("wakeInterval", 60);
         }
 
@@ -57,8 +64,10 @@ class C6Module : public ModuleInterface {
         return true;
     }
 
-    bool start() override {
-        if (!isInitialized) {
+    bool start() override
+    {
+        if (!isInitialized)
+        {
             lastError = "Module not initialized";
             return false;
         }
@@ -69,7 +78,8 @@ class C6Module : public ModuleInterface {
         applyC6Settings();
 
         // Test initial connection
-        if (!testC6ModuleConnection()) {
+        if (!testC6ModuleConnection())
+        {
             Serial.println("[C6_MODULE] Warning: Initial connection test failed, but continuing startup");
             // Don't fail startup - module might connect later
         }
@@ -80,7 +90,8 @@ class C6Module : public ModuleInterface {
         return true;
     }
 
-    bool stop() override {
+    bool stop() override
+    {
         Serial.println("[C6_MODULE] Stopping C6 module...");
 
         // Send sleep command to C6 module
@@ -91,10 +102,12 @@ class C6Module : public ModuleInterface {
         return true;
     }
 
-    bool cleanup() override {
+    bool cleanup() override
+    {
         Serial.println("[C6_MODULE] Cleaning up C6 module...");
 
-        if (isStarted) {
+        if (isStarted)
+        {
             stop();
         }
 
@@ -105,21 +118,29 @@ class C6Module : public ModuleInterface {
         return true;
     }
 
-    ModuleInfo getInfo() const override {
+    ModuleInfo getInfo() const override
+    {
         ModuleInfo info;
         info.name = "C6Module";
         info.version = "1.2.0";
         info.description = "ESP32-C6 Co-processor Module Support";
         info.type = ModuleType::HARDWARE;
-        info.initTime = 0;  // Initialize to prevent uninitialized variable warning
+        info.initTime = 0; // Initialize to prevent uninitialized variable warning
 
-        if (!isInitialized) {
+        if (!isInitialized)
+        {
             info.state = ModuleState::UNINITIALIZED;
-        } else if (!isStarted) {
+        }
+        else if (!isStarted)
+        {
             info.state = ModuleState::INITIALIZED;
-        } else if (lastError.length() > 0) {
+        }
+        else if (lastError.length() > 0)
+        {
             info.state = ModuleState::ERROR;
-        } else {
+        }
+        else
+        {
             info.state = ModuleState::ACTIVE;
         }
 
@@ -130,7 +151,7 @@ class C6Module : public ModuleInterface {
         info.capabilities.hasConfigInterface = true;
         info.capabilities.hasStatusInterface = true;
         info.capabilities.requiresHardware = true;
-        info.capabilities.isOptional = false;  // C6 module is core functionality
+        info.capabilities.isOptional = false; // C6 module is core functionality
 
         info.lastActivity = lastHealthCheck;
         info.errorMessage = lastError;
@@ -138,65 +159,88 @@ class C6Module : public ModuleInterface {
         return info;
     }
 
-    bool isHealthy() const override {
-        if (!isStarted) {
+    bool isHealthy() const override
+    {
+        if (!isStarted)
+        {
             return false;
         }
 
         // Check if C6 module is responding
-        if (apInfo.state == AP_STATE_OFFLINE) {
+        if (apInfo.state == AP_STATE_OFFLINE)
+        {
             return false;
         }
 
         // Check if we've had recent activity
-        if (millis() - lastHealthCheck > 30000) {  // 30 seconds timeout
+        if (millis() - lastHealthCheck > 30000)
+        { // 30 seconds timeout
             return false;
         }
 
         return lastError.length() == 0;
     }
 
-    ModuleType getType() const override {
+    ModuleType getType() const override
+    {
         return ModuleType::HARDWARE;
     }
 
-    ModuleState getState() const override {
-        if (!isInitialized) {
+    ModuleState getState() const override
+    {
+        if (!isInitialized)
+        {
             return ModuleState::UNINITIALIZED;
-        } else if (!isStarted) {
+        }
+        else if (!isStarted)
+        {
             return ModuleState::INITIALIZED;
-        } else if (lastError.length() > 0) {
+        }
+        else if (lastError.length() > 0)
+        {
             return ModuleState::ERROR;
-        } else {
+        }
+        else
+        {
             return ModuleState::ACTIVE;
         }
     }
 
-    void registerWebHandlers(AsyncWebServer &server) override {
+    void registerWebHandlers(AsyncWebServer &server) override
+    {
         Serial.println("[C6_MODULE] Registering web handlers...");
         registerC6WebHandlers(server);
     }
 
-    void handleEvent(const String &event, const String &data) override {
-        if (event == "system_restart") {
+    void handleEvent(const String &event, const String &data) override
+    {
+        if (event == "system_restart")
+        {
             Serial.println("[C6_MODULE] Handling system restart event");
             sendC6Command("PREPARE_RESTART", 0);
-        } else if (event == "wifi_connected") {
+        }
+        else if (event == "wifi_connected")
+        {
             Serial.println("[C6_MODULE] WiFi connected, updating C6 module status");
             updateModuleActivity("C6Module");
-        } else if (event == "health_check") {
+        }
+        else if (event == "health_check")
+        {
             performHealthCheck();
         }
     }
 
-    void update() override {
+    void update() override
+    {
         // Periodic health check
-        if (millis() - lastHealthCheck > 10000) {  // Every 10 seconds
+        if (millis() - lastHealthCheck > 10000)
+        { // Every 10 seconds
             performHealthCheck();
         }
     }
 
-    String getConfig() const override {
+    String getConfig() const override
+    {
         JsonDocument doc;
 
         Preferences preferences;
@@ -215,11 +259,13 @@ class C6Module : public ModuleInterface {
         return config;
     }
 
-    bool setConfig(const String &config) override {
+    bool setConfig(const String &config) override
+    {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, config);
 
-        if (error) {
+        if (error)
+        {
             lastError = "Invalid JSON configuration";
             return false;
         }
@@ -228,24 +274,32 @@ class C6Module : public ModuleInterface {
         preferences.begin("c6_module", false);
 
         // reuse parsed document 'doc'
-        if (!doc["txPower"].isNull()) preferences.putInt("txPower", doc["txPower"]);
-        if (!doc["panId"].isNull()) preferences.putString("panId", doc["panId"].as<String>());
-        if (!doc["sleepMode"].isNull()) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-        if (!doc["wakeInterval"].isNull()) preferences.putInt("wakeInterval", doc["wakeInterval"]);
-        if (!doc["autoReconnect"].isNull()) preferences.putBool("autoReconnect", doc["autoReconnect"]);
-        if (!doc["healthCheckInterval"].isNull()) preferences.putInt("healthCheckInterval", doc["healthCheckInterval"]);
+        if (!doc["txPower"].isNull())
+            preferences.putInt("txPower", doc["txPower"]);
+        if (!doc["panId"].isNull())
+            preferences.putString("panId", doc["panId"].as<String>());
+        if (!doc["sleepMode"].isNull())
+            preferences.putString("sleepMode", doc["sleepMode"].as<String>());
+        if (!doc["wakeInterval"].isNull())
+            preferences.putInt("wakeInterval", doc["wakeInterval"]);
+        if (!doc["autoReconnect"].isNull())
+            preferences.putBool("autoReconnect", doc["autoReconnect"]);
+        if (!doc["healthCheckInterval"].isNull())
+            preferences.putInt("healthCheckInterval", doc["healthCheckInterval"]);
 
         preferences.end();
 
         // Apply new settings if module is running
-        if (isStarted) {
+        if (isStarted)
+        {
             applyC6Settings();
         }
 
         return true;
     }
 
-    String getStatus() const override {
+    String getStatus() const override
+    {
         JsonDocument doc;
 
         doc["connected"] = (apInfo.state != AP_STATE_OFFLINE);
@@ -259,8 +313,10 @@ class C6Module : public ModuleInterface {
 
         // MAC address as string
         String macStr = "";
-        for (int i = 0; i < 8; i++) {
-            if (i > 0) macStr += ":";
+        for (int i = 0; i < 8; i++)
+        {
+            if (i > 0)
+                macStr += ":";
             macStr += String(apInfo.mac[i], HEX);
         }
         doc["mac"] = macStr;
@@ -278,7 +334,8 @@ class C6Module : public ModuleInterface {
         return status;
     }
 
-    void getMetrics(JsonObject &metrics) const override {
+    void getMetrics(JsonObject &metrics) const override
+    {
         metrics["c6_connected"] = (apInfo.state != AP_STATE_OFFLINE);
         metrics["c6_rssi"] = apInfo.rssi;
         metrics["c6_uptime"] = apInfo.uptime;
@@ -287,24 +344,30 @@ class C6Module : public ModuleInterface {
         metrics["c6_health_checks"] = (millis() - lastHealthCheck < 30000) ? 1 : 0;
     }
 
-   private:
-    void performHealthCheck() {
+private:
+    void performHealthCheck()
+    {
         lastHealthCheck = millis();
 
-        if (!testC6ModuleConnection()) {
-            if (lastError.length() == 0) {
+        if (!testC6ModuleConnection())
+        {
+            if (lastError.length() == 0)
+            {
                 lastError = "Health check failed - C6 module not responding";
             }
-        } else {
-            lastError = "";  // Clear error if health check passes
+        }
+        else
+        {
+            lastError = ""; // Clear error if health check passes
         }
 
         // Update module manager activity
         updateModuleActivity("C6Module");
     }
 
-   private:
-    void updateModuleActivity(const String &moduleName) {
+private:
+    void updateModuleActivity(const String &moduleName)
+    {
         // Update last activity timestamp in module manager
         // This method tracks module activity for health monitoring
         lastHealthCheck = millis();
@@ -322,7 +385,8 @@ extern SemaphoreHandle_t fsMutex;
 // C6 Module Web Handler Functions
 // ================================
 
-void handleC6UpdateStatus(AsyncWebServerRequest *request) {
+void handleC6UpdateStatus(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
 
     // Check update status from global variables or task status
@@ -332,21 +396,28 @@ void handleC6UpdateStatus(AsyncWebServerRequest *request) {
     static String updateError = "";
 
     // Report update status based on actual apInfo state
-    if (apInfo.state == AP_STATE_FLASHING) {
+    if (apInfo.state == AP_STATE_FLASHING)
+    {
         doc["in_progress"] = true;
         // Progress is not tracked precisely here; report indeterminate progress
         doc["progress"] = 50;
         doc["completed"] = false;
-    } else if (apInfo.state == AP_STATE_ONLINE) {
+    }
+    else if (apInfo.state == AP_STATE_ONLINE)
+    {
         doc["in_progress"] = false;
         doc["progress"] = 100;
         doc["completed"] = true;
-    } else if (apInfo.state == AP_STATE_FAILED) {
+    }
+    else if (apInfo.state == AP_STATE_FAILED)
+    {
         doc["in_progress"] = false;
         doc["progress"] = 0;
         doc["completed"] = false;
         doc["error"] = "Firmware update failed";
-    } else {
+    }
+    else
+    {
         doc["in_progress"] = false;
         doc["progress"] = 0;
         doc["completed"] = false;
@@ -359,47 +430,62 @@ void handleC6UpdateStatus(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleBackupC6Firmware(AsyncWebServerRequest *request) {
+void handleBackupC6Firmware(AsyncWebServerRequest *request)
+{
     // Create a firmware backup
     String backupPath = "/c6_firmware_backup.bin";
 
     // Check if backup file exists
-    if (contentFS->exists(backupPath)) {
+    if (contentFS->exists(backupPath))
+    {
         wsSerial("Sending C6 firmware backup");
         request->send(*contentFS, backupPath, "application/octet-stream", true);
-    } else {
+    }
+    else
+    {
         // Try to create backup by reading from C6 module
         wsSerial("Creating new firmware backup...");
 
         // Send command to C6 module to dump firmware
         bool backupSuccess = sendC6Command("BACKUP_FIRMWARE", 0);
 
-        if (backupSuccess) {
+        if (backupSuccess)
+        {
             // Wait a moment for backup to be created
             delay(1000);
 
-            if (contentFS->exists(backupPath)) {
+            if (contentFS->exists(backupPath))
+            {
                 request->send(*contentFS, backupPath, "application/octet-stream", true);
-            } else {
+            }
+            else
+            {
                 request->send(500, "text/plain", "Backup creation failed");
             }
-        } else {
+        }
+        else
+        {
             request->send(500, "text/plain", "Cannot communicate with C6 module for backup");
         }
     }
 }
 
-void handleAPList(AsyncWebServerRequest *request) {
+void handleAPList(AsyncWebServerRequest *request)
+{
     AsyncResponseStream *response = request->beginResponseStream("application/json");
 
     // Only include a C6 entry if we have evidence a C6 module is present.
     // Use either apInfo.isOnline or a non-zero version/type as indicators.
     bool haveC6 = false;
-    if (apInfo.isOnline) haveC6 = true;
-    if (apInfo.version != 0) haveC6 = true;
-    if (apInfo.type == ESP32_C6) haveC6 = true;
+    if (apInfo.isOnline)
+        haveC6 = true;
+    if (apInfo.version != 0)
+        haveC6 = true;
+    if (apInfo.type == ESP32_C6)
+        haveC6 = true;
 
-    if (!haveC6) {
+    if (!haveC6)
+    {
         // No C6 module detected - return empty array so UIs don't show a dummy entry
         wsSerial("No C6 module detected in AP list (no apInfo present)");
         response->print("[]");
@@ -409,37 +495,40 @@ void handleAPList(AsyncWebServerRequest *request) {
 
     response->print("[");
     response->print("{");
-    response->printf("\"hwType\": 198,");  // 0xC6 in decimal
+    response->printf("\"hwType\": 198,"); // 0xC6 in decimal
     response->printf("\"version\": %d,", apInfo.version);
     response->printf("\"channel\": %d,", apInfo.channel);
     response->printf("\"rssi\": %d,", apInfo.rssi);
     response->printf("\"uptime\": %lu,", apInfo.uptime);
     response->print("\"capabilities\": [\"C6\"],");
     response->print("\"mac\": \"");
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
+    {
         response->printf("%02X", apInfo.mac[i]);
-        if (i < 7) response->print(":");
+        if (i < 7)
+            response->print(":");
     }
     response->print("\",");
 
     // Map numeric apInfo.state to a human-readable string
     const char *stateStr = "offline";
-    switch (apInfo.state) {
-        case AP_STATE_ONLINE:
-            stateStr = "online";
-            break;
-        case AP_STATE_FLASHING:
-            stateStr = "flashing";
-            break;
-        case AP_STATE_FAILED:
-            stateStr = "failed";
-            break;
-        case AP_STATE_NORADIO:
-            stateStr = "noradio";
-            break;
-        default:
-            stateStr = "offline";
-            break;
+    switch (apInfo.state)
+    {
+    case AP_STATE_ONLINE:
+        stateStr = "online";
+        break;
+    case AP_STATE_FLASHING:
+        stateStr = "flashing";
+        break;
+    case AP_STATE_FAILED:
+        stateStr = "failed";
+        break;
+    case AP_STATE_NORADIO:
+        stateStr = "noradio";
+        break;
+    default:
+        stateStr = "offline";
+        break;
     }
     response->printf("\"state\": \"%s\"", stateStr);
     response->print("}");
@@ -448,7 +537,8 @@ void handleAPList(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleGetC6Settings(AsyncWebServerRequest *request) {
+void handleGetC6Settings(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
 
     // Get current C6 module settings from preferences or defaults
@@ -468,30 +558,40 @@ void handleGetC6Settings(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+{
     static String jsonString = "";
 
-    if (index == 0) {
+    if (index == 0)
+    {
         jsonString = "";
     }
 
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++)
+    {
         jsonString += (char)data[i];
     }
 
-    if (index + len == total) {
+    if (index + len == total)
+    {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, jsonString);
 
-        if (!error) {
+        if (!error)
+        {
             Preferences preferences;
             preferences.begin("c6_module", false);
 
-            if (!doc["channel"].isNull()) preferences.putInt("channel", doc["channel"]);
-            if (!doc["txPower"].isNull()) preferences.putInt("txPower", doc["txPower"]);
-            if (!doc["panId"].isNull()) preferences.putString("panId", doc["panId"].as<String>());
-            if (!doc["sleepMode"].isNull()) preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-            if (!doc["wakeInterval"].isNull()) preferences.putInt("wakeInterval", doc["wakeInterval"]);
+            if (!doc["channel"].isNull())
+                preferences.putInt("channel", doc["channel"]);
+            if (!doc["txPower"].isNull())
+                preferences.putInt("txPower", doc["txPower"]);
+            if (!doc["panId"].isNull())
+                preferences.putString("panId", doc["panId"].as<String>());
+            if (!doc["sleepMode"].isNull())
+                preferences.putString("sleepMode", doc["sleepMode"].as<String>());
+            if (!doc["wakeInterval"].isNull())
+                preferences.putInt("wakeInterval", doc["wakeInterval"]);
 
             preferences.end();
 
@@ -499,7 +599,9 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
             applyC6Settings();
 
             request->send(200, "application/json", "{\"success\":true}");
-        } else {
+        }
+        else
+        {
             request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
         }
 
@@ -507,7 +609,8 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
     }
 }
 
-void handleResetC6Settings(AsyncWebServerRequest *request) {
+void handleResetC6Settings(AsyncWebServerRequest *request)
+{
     Preferences preferences;
     preferences.begin("c6_module", false);
     preferences.clear();
@@ -517,7 +620,8 @@ void handleResetC6Settings(AsyncWebServerRequest *request) {
     request->send(200, "application/json", "{\"success\":true}");
 }
 
-void handleTestC6Connection(AsyncWebServerRequest *request) {
+void handleTestC6Connection(AsyncWebServerRequest *request)
+{
     // Test connection to C6 module
     bool connected = testC6ModuleConnection();
 
@@ -525,7 +629,8 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
     doc["connected"] = connected;
     doc["timestamp"] = millis();
 
-    if (connected) {
+    if (connected)
+    {
         doc["rssi"] = apInfo.rssi;
         doc["version"] = apInfo.version;
     }
@@ -535,7 +640,8 @@ void handleTestC6Connection(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleTestC6Radio(AsyncWebServerRequest *request) {
+void handleTestC6Radio(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
 
     // Perform radio test and get results
@@ -552,20 +658,25 @@ void handleTestC6Radio(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleRestartC6(AsyncWebServerRequest *request) {
+void handleRestartC6(AsyncWebServerRequest *request)
+{
     wsSerial("Restarting C6 module...");
 
     // Send restart command to C6 module
     bool success = restartC6Module();
 
-    if (success) {
+    if (success)
+    {
         request->send(200, "application/json", "{\"success\":true}");
-    } else {
+    }
+    else
+    {
         request->send(500, "application/json", "{\"success\":false,\"error\":\"Restart failed\"}");
     }
 }
 
-void handleBackupC6Config(AsyncWebServerRequest *request) {
+void handleBackupC6Config(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
 
     // Collect all C6 configuration data
@@ -588,8 +699,10 @@ void handleBackupC6Config(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleResetC6Config(AsyncWebServerRequest *request) {
-    if (request->hasParam("confirm") && request->getParam("confirm")->value() == "true") {
+void handleResetC6Config(AsyncWebServerRequest *request)
+{
+    if (request->hasParam("confirm") && request->getParam("confirm")->value() == "true")
+    {
         // Reset all C6 configuration
         Preferences preferences;
         preferences.begin("c6_module", false);
@@ -599,37 +712,47 @@ void handleResetC6Config(AsyncWebServerRequest *request) {
         // Reset C6 module to factory defaults
         bool success = factoryResetC6Module();
 
-        if (success) {
+        if (success)
+        {
             wsSerial("C6 module configuration reset completed");
             request->send(200, "application/json", "{\"success\":true}");
-        } else {
+        }
+        else
+        {
             request->send(500, "application/json", "{\"success\":false,\"error\":\"Reset failed\"}");
         }
-    } else {
+    }
+    else
+    {
         request->send(400, "application/json", "{\"success\":false,\"error\":\"Confirmation required\"}");
     }
 }
 
-void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+{
     static File uploadFile;
     static bool verifyAfterUpload = false;
     static size_t totalSize = 0;
 
-    if (!index) {
+    if (!index)
+    {
         // Get verification flag from request parameters
-        if (request->hasParam("verify", true)) {
+        if (request->hasParam("verify", true))
+        {
             verifyAfterUpload = (request->getParam("verify", true)->value() == "1");
         }
 
         wsSerial("Starting C6 firmware upload: " + filename);
-        if (verifyAfterUpload) {
+        if (verifyAfterUpload)
+        {
             wsSerial("Firmware verification enabled");
         }
 
         // Create temporary file for upload
         String tempPath = "/temp_c6_firmware.bin";
         uploadFile = contentFS->open(tempPath, "w");
-        if (!uploadFile) {
+        if (!uploadFile)
+        {
             wsSerial("ERROR: Failed to create temporary file for upload");
             request->send(500, "text/plain", "Storage error");
             return;
@@ -638,9 +761,11 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
         totalSize = 0;
     }
 
-    if (uploadFile && len) {
+    if (uploadFile && len)
+    {
         size_t written = uploadFile.write(data, len);
-        if (written != len) {
+        if (written != len)
+        {
             wsSerial("ERROR: Failed to write firmware data");
             uploadFile.close();
             request->send(500, "text/plain", "Write error");
@@ -649,21 +774,25 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
         totalSize += len;
     }
 
-    if (final) {
-        if (uploadFile) {
+    if (final)
+    {
+        if (uploadFile)
+        {
             uploadFile.close();
 
             wsSerial("Firmware upload completed: " + String(totalSize) + " bytes");
 
             // Validate minimum firmware size
-            if (totalSize < 64 * 1024) {  // 64KB minimum
+            if (totalSize < 64 * 1024)
+            { // 64KB minimum
                 wsSerial("ERROR: Firmware file too small");
                 contentFS->remove("/temp_c6_firmware.bin");
                 request->send(400, "text/plain", "Firmware file too small");
                 return;
             }
 
-            if (totalSize > 2 * 1024 * 1024) {  // 2MB maximum
+            if (totalSize > 2 * 1024 * 1024)
+            { // 2MB maximum
                 wsSerial("ERROR: Firmware file too large");
                 contentFS->remove("/temp_c6_firmware.bin");
                 request->send(400, "text/plain", "Firmware file too large");
@@ -683,7 +812,9 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
                         params, 10, NULL);
 
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Upload complete, starting installation\"}");
-        } else {
+        }
+        else
+        {
             request->send(500, "text/plain", "Upload file handle lost");
         }
     }
@@ -692,7 +823,8 @@ void handleC6FirmwareUpload(AsyncWebServerRequest *request, String filename, siz
 // Drives and Device Management Functions
 // ======================================
 
-void handleListDrives(AsyncWebServerRequest *request) {
+void handleListDrives(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
     JsonArray drives = doc["drives"].to<ArduinoJson::JsonArray>();
 
@@ -703,7 +835,8 @@ void handleListDrives(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-void handleListSerialPorts(AsyncWebServerRequest *request) {
+void handleListSerialPorts(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
     JsonArray ports = doc["ports"].to<ArduinoJson::JsonArray>();
     String response;
@@ -711,8 +844,10 @@ void handleListSerialPorts(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-void handleFlashC6OTA(AsyncWebServerRequest *request) {
-    if (!request->hasParam("firmware_file", true) || !request->hasParam("com_port", true)) {
+void handleFlashC6OTA(AsyncWebServerRequest *request)
+{
+    if (!request->hasParam("firmware_file", true) || !request->hasParam("com_port", true))
+    {
         request->send(400, "application/json",
                       "{\"success\":false,\"error\":\"Missing firmware_file or com_port parameter\"}");
         return;
@@ -728,7 +863,8 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
     int baudRate = request->hasParam("baud_rate", true) ? request->getParam("baud_rate", true)->value().toInt() : 921600;
 
     // Validate firmware file exists
-    if (!contentFS->exists(firmwareFile)) {
+    if (!contentFS->exists(firmwareFile))
+    {
         request->send(400, "application/json",
                       "{\"success\":false,\"error\":\"Firmware file not found: " + firmwareFile + "\"}");
         return;
@@ -736,8 +872,10 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
 
     // Validate firmware file is not empty
     File file = contentFS->open(firmwareFile, "r");
-    if (!file || file.size() == 0) {
-        if (file) file.close();
+    if (!file || file.size() == 0)
+    {
+        if (file)
+            file.close();
         request->send(400, "application/json",
                       "{\"success\":false,\"error\":\"Firmware file is empty or cannot be read\"}");
         return;
@@ -745,7 +883,8 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
     file.close();
 
     // Validate baud rate
-    if (baudRate < 9600 || baudRate > 2000000) {
+    if (baudRate < 9600 || baudRate > 2000000)
+    {
         request->send(400, "application/json",
                       "{\"success\":false,\"error\":\"Invalid baud rate. Must be between 9600 and 2000000\"}");
         return;
@@ -771,10 +910,13 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
     // Start OTA flash task with increased stack size for the enhanced implementation
     BaseType_t result = xTaskCreate(C6OTAFlashTask, "C6OTAFlash", 12288, params, 10, NULL);
 
-    if (result == pdPASS) {
+    if (result == pdPASS)
+    {
         request->send(200, "application/json",
                       "{\"success\":true,\"message\":\"C6 OTA flash started successfully\"}");
-    } else {
+    }
+    else
+    {
         delete params;
         request->send(500, "application/json",
                       "{\"success\":false,\"error\":\"Failed to start C6 OTA flash task\"}");
@@ -784,7 +926,8 @@ void handleFlashC6OTA(AsyncWebServerRequest *request) {
 // C6 Module Helper Functions
 // ===========================
 
-void applyC6Settings() {
+void applyC6Settings()
+{
     // Apply current settings to the C6 module
     Preferences preferences;
     preferences.begin("c6_module", true);
@@ -801,21 +944,25 @@ void applyC6Settings() {
     wsSerial("C6 settings applied successfully");
 }
 
-bool testC6ModuleConnection() {
+bool testC6ModuleConnection()
+{
     // Check if C6 module is physically connected and responding
-    if (apInfo.state == AP_STATE_OFFLINE) {
+    if (apInfo.state == AP_STATE_OFFLINE)
+    {
         wsSerial("C6 Module Connection Test: OFFLINE - Module not responding to ping");
         return false;
     }
 
-    if (apInfo.version == 0) {
+    if (apInfo.version == 0)
+    {
         wsSerial("C6 Module Connection Test: FAILED - No version information received");
         return false;
     }
 
     // Test serial communication
     bool serialTest = sendC6Command("PING", 0);
-    if (!serialTest) {
+    if (!serialTest)
+    {
         wsSerial("C6 Module Connection Test: FAILED - Serial communication test failed");
         return false;
     }
@@ -828,13 +975,15 @@ bool testC6ModuleConnection() {
     return true;
 }
 
-RadioTestResult performC6RadioTest() {
+RadioTestResult performC6RadioTest()
+{
     RadioTestResult result = {0};
 
     wsSerial("Starting C6 Radio Functionality Test...");
 
     // Check if module is online first
-    if (apInfo.state != AP_STATE_ONLINE) {
+    if (apInfo.state != AP_STATE_ONLINE)
+    {
         wsSerial("Radio Test: FAILED - Module offline");
         result.errorRate = 100.0f;
         return result;
@@ -842,7 +991,8 @@ RadioTestResult performC6RadioTest() {
 
     // Test radio transmission
     bool radioInitialized = sendC6Command("TEST_RADIO", 1);
-    if (!radioInitialized) {
+    if (!radioInitialized)
+    {
         wsSerial("Radio Test: FAILED - Radio initialization failed");
         result.errorRate = 100.0f;
         return result;
@@ -853,23 +1003,35 @@ RadioTestResult performC6RadioTest() {
     result.packetsSent = 10;
 
     // Simulate some packet loss based on RSSI
-    if (apInfo.rssi > -50) {
-        result.packetsReceived = 10;  // Good signal
-    } else if (apInfo.rssi > -70) {
-        result.packetsReceived = 9;  // Fair signal
-    } else if (apInfo.rssi > -80) {
-        result.packetsReceived = 7;  // Poor signal
-    } else {
-        result.packetsReceived = 5;  // Very poor signal
+    if (apInfo.rssi > -50)
+    {
+        result.packetsReceived = 10; // Good signal
+    }
+    else if (apInfo.rssi > -70)
+    {
+        result.packetsReceived = 9; // Fair signal
+    }
+    else if (apInfo.rssi > -80)
+    {
+        result.packetsReceived = 7; // Poor signal
+    }
+    else
+    {
+        result.packetsReceived = 5; // Very poor signal
     }
 
     result.errorRate = (1.0f - (float)result.packetsReceived / result.packetsSent) * 100.0f;
 
-    if (result.errorRate > 50.0f) {
+    if (result.errorRate > 50.0f)
+    {
         wsSerial("Radio Test: FAILED - High packet loss (" + String(result.errorRate, 1) + "%)");
-    } else if (result.errorRate > 20.0f) {
+    }
+    else if (result.errorRate > 20.0f)
+    {
         wsSerial("Radio Test: WARNING - Moderate packet loss (" + String(result.errorRate, 1) + "%)");
-    } else {
+    }
+    else
+    {
         wsSerial("Radio Test: PASSED - Low packet loss (" + String(result.errorRate, 1) + "%)");
     }
 
@@ -880,30 +1042,35 @@ RadioTestResult performC6RadioTest() {
     return result;
 }
 
-bool restartC6Module() {
+bool restartC6Module()
+{
     // Send restart command to C6 module
     return sendC6Command("RESTART", 0);
 }
 
-bool factoryResetC6Module() {
+bool factoryResetC6Module()
+{
     // Send factory reset command to C6 module
     return sendC6Command("FACTORY_RESET", 0);
 }
 
-bool sendC6Command(const String &command, int parameter) {
+bool sendC6Command(const String &command, int parameter)
+{
     // Send command to C6 module via serial interface
     String cmd = command + ":" + String(parameter) + "\n";
 
     wsSerial("Sending C6 command: " + command + " with parameter: " + String(parameter));
 
     // Check if serial port is available
-    if (!Serial1) {
+    if (!Serial1)
+    {
         wsSerial("ERROR: Serial1 not available for C6 communication");
         return false;
     }
 
     // Clear any pending data
-    while (Serial1.available()) {
+    while (Serial1.available())
+    {
         Serial1.read();
     }
 
@@ -915,19 +1082,25 @@ bool sendC6Command(const String &command, int parameter) {
     unsigned long startTime = millis();
     String response = "";
 
-    while (millis() - startTime < 2000) {  // 2 second timeout
-        if (Serial1.available()) {
+    while (millis() - startTime < 2000)
+    { // 2 second timeout
+        if (Serial1.available())
+        {
             char c = Serial1.read();
             response += c;
 
             // Check for complete response
-            if (response.indexOf('\n') >= 0 || response.indexOf('>') >= 0) {
+            if (response.indexOf('\n') >= 0 || response.indexOf('>') >= 0)
+            {
                 response.trim();
                 wsSerial("C6 Response: " + response);
 
-                if (response.indexOf("ACK") >= 0 || response.indexOf("OK") >= 0) {
+                if (response.indexOf("ACK") >= 0 || response.indexOf("OK") >= 0)
+                {
                     return true;
-                } else if (response.indexOf("NOK") >= 0 || response.indexOf("ERROR") >= 0) {
+                }
+                else if (response.indexOf("NOK") >= 0 || response.indexOf("ERROR") >= 0)
+                {
                     wsSerial("C6 command failed: " + response);
                     return false;
                 }
@@ -943,7 +1116,8 @@ bool sendC6Command(const String &command, int parameter) {
 // C6 Module initialization and setup (Enhanced with Module Manager)
 // ==================================================================
 
-void initC6Module() {
+void initC6Module()
+{
     Serial.println("[C6_MODULE] Initializing C6 module with enhanced module manager...");
 
     // Create and register the C6 module
@@ -953,22 +1127,27 @@ void initC6Module() {
     // Dependencies: none (this is a core hardware module)
     bool registered = moduleManager.registerModule(
         std::unique_ptr<ModuleInterface>(std::move(g_c6Module)),
-        true,  // auto-start
-        {}     // no dependencies
+        true, // auto-start
+        {}    // no dependencies
     );
 
-    if (registered) {
+    if (registered)
+    {
         Serial.println("[C6_MODULE] C6 module registered successfully with module manager");
-    } else {
+    }
+    else
+    {
         Serial.println("[C6_MODULE] Failed to register C6 module with module manager");
     }
 }
 
-void registerC6WebHandlers(AsyncWebServer &server) {
+void registerC6WebHandlers(AsyncWebServer &server)
+{
     Serial.println("[C6_MODULE] Registering enhanced C6 module web handlers...");
 
     // Enhanced C6 Module Status and Control Endpoints
-    server.on("/api/c6/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/api/c6/status", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         JsonDocument doc;
         doc["success"] = true;
         doc["c6Connected"] = apInfo.isOnline;
@@ -997,10 +1176,10 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    server.on("/api/c6/control", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server.on("/api/c6/control", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
         if (!request->hasParam("action", true)) {
             request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
             return;
@@ -1038,11 +1217,11 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
     // Enhanced module configuration endpoint
-    server.on("/api/c6/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/api/c6/config", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
         auto moduleInfo = moduleManager.getModuleInfo("C6Module");
 
         JsonDocument doc;
@@ -1061,10 +1240,10 @@ void registerC6WebHandlers(AsyncWebServer &server) {
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    server.on("/api/c6/config", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    server.on("/api/c6/config", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
             static String configData = "";
 
             if (index == 0) {
@@ -1083,61 +1262,78 @@ void registerC6WebHandlers(AsyncWebServer &server) {
             } });
 
     // Register all the existing handler functions with enhanced error handling
-    server.on("/c6_update_status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleC6UpdateStatus(request);
-    });
+    server.on("/c6_update_status", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleC6UpdateStatus(request); });
 
-    server.on("/c6_backup_firmware", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleBackupC6Firmware(request);
-    });
+    // Legacy/compat aliases expected by frontend (non c6_ prefixed)
+    server.on("/backup_c6_firmware", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleBackupC6Firmware(request); });
+    server.on("/get_c6_settings", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleGetC6Settings(request); });
+    server.on("/save_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request)
+              { request->send(200, "application/json", "{\"status\":\"ok\"}"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              { handleSaveC6SettingsBody(request, data, len, index, total); });
+    server.on("/reset_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleResetC6Settings(request); });
+    server.on("/test_c6_connection", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleTestC6Connection(request); });
+    server.on("/test_c6_radio", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleTestC6Radio(request); });
+    server.on("/restart_c6", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleRestartC6(request); });
+    server.on("/backup_c6_config", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleBackupC6Config(request); });
+    server.on("/reset_c6_config", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleResetC6Config(request); });
+    // File upload alias used by some UIs
+    server.on("/upload_c6_firmware", HTTP_POST, [](AsyncWebServerRequest *request) {}, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+              { handleC6FirmwareUpload(request, filename, index, data, len, final); });
 
-    server.on("/ap_list", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleAPList(request);
-    });
+    server.on("/c6_backup_firmware", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleBackupC6Firmware(request); });
 
-    server.on("/c6_settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleGetC6Settings(request);
-    });
+    server.on("/ap_list", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleAPList(request); });
 
-    server.on("/c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) { handleSaveC6SettingsBody(request, data, len, index, total); });
+    server.on("/c6_settings", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleGetC6Settings(request); });
 
-    server.on("/c6_settings_reset", HTTP_POST, [](AsyncWebServerRequest *request) {
-        handleResetC6Settings(request);
-    });
+    server.on("/c6_settings", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              { handleSaveC6SettingsBody(request, data, len, index, total); });
 
-    server.on("/c6_test_connection", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleTestC6Connection(request);
-    });
+    server.on("/c6_settings_reset", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleResetC6Settings(request); });
 
-    server.on("/c6_test_radio", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleTestC6Radio(request);
-    });
+    server.on("/c6_test_connection", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleTestC6Connection(request); });
 
-    server.on("/c6_restart", HTTP_POST, [](AsyncWebServerRequest *request) {
-        handleRestartC6(request);
-    });
+    server.on("/c6_test_radio", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleTestC6Radio(request); });
 
-    server.on("/c6_backup_config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleBackupC6Config(request);
-    });
+    server.on("/c6_restart", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleRestartC6(request); });
 
-    server.on("/c6_reset_config", HTTP_POST, [](AsyncWebServerRequest *request) {
-        handleResetC6Config(request);
-    });
+    server.on("/c6_backup_config", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleBackupC6Config(request); });
 
-    server.on("/c6_firmware_upload", HTTP_POST, [](AsyncWebServerRequest *request) {}, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) { handleC6FirmwareUpload(request, filename, index, data, len, final); });
+    server.on("/c6_reset_config", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleResetC6Config(request); });
 
-    server.on("/list_drives", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleListDrives(request);
-    });
+    server.on("/c6_firmware_upload", HTTP_POST, [](AsyncWebServerRequest *request) {}, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+              { handleC6FirmwareUpload(request, filename, index, data, len, final); });
 
-    server.on("/list_serial_ports", HTTP_GET, [](AsyncWebServerRequest *request) {
-        handleListSerialPorts(request);
-    });
+    server.on("/list_drives", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleListDrives(request); });
 
-    server.on("/c6_flash_ota", HTTP_POST, [](AsyncWebServerRequest *request) {
-        handleFlashC6OTA(request);
-    });
+    server.on("/list_serial_ports", HTTP_GET, [](AsyncWebServerRequest *request)
+              { handleListSerialPorts(request); });
+
+    server.on("/c6_flash_ota", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleFlashC6OTA(request); });
+
+    // Alias without c6_ prefix used by web UI
+    server.on("/flash_c6_ota", HTTP_POST, [](AsyncWebServerRequest *request)
+              { handleFlashC6OTA(request); });
 
     Serial.println("[C6_MODULE] Enhanced C6 module web handlers registered successfully");
 }

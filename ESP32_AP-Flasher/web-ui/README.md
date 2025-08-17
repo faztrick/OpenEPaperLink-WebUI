@@ -160,6 +160,44 @@ Future versions will support:
 3. Implement functionality in `app.js`
 4. Add server-side handlers in `server.js`
 
+# OpenEPaperLink Web UI: S3 ↔ C6 Flash and Log Test
+
+This short guide covers flashing the ESP32‑S3 (OutdoorAP) first using the Web UI, then flashing the ESP32‑C6 (OutdoorAP_C6), and verifying wireless log streaming from C6 to S3 (shown on S3 TFT and mirrored in the Web UI).
+
+## Prereqs
+- Connect boards to your PC:
+  - ESP32‑S3 on COM10 (per your setup)
+  - ESP32‑C6 on COM13 (per your setup)
+- Start the Web UI server (PM2 or `node server.js`). It serves from `ESP32_AP-Flasher/web-ui` on http://localhost:3000
+
+## Flash ESP32‑S3 first (OutdoorAP)
+1. Open the Web UI in your browser: http://localhost:3000
+2. In the header COM dropdown, select COM10.
+3. Environment: OutdoorAP.
+4. Click Build + Upload.
+5. When done, click Monitor to watch S3 serial.
+
+## Flash ESP32‑C6 (OutdoorAP_C6)
+1. Switch Environment to OutdoorAP_C6.
+2. Select COM13 in the header COM dropdown.
+3. Click Build + Upload.
+4. Click Monitor to watch C6 serial.
+
+## Verify wireless UDP logs
+- The C6 broadcasts logs to 239.1.2.3:15100; the S3 joins this multicast and displays messages on its TFT.
+- You should see messages like: `C6|heartbeat ok` on the S3 TFT and in the Web UI console.
+- If Wi‑Fi isn’t configured, the C6 starts a fallback AP `OEPL-C6-Logger` (password `oepl1234`). Connect the S3 to the same network or configure Wi‑Fi via the Web UI device commands.
+
+## Tips
+- COM list refresh: click the refresh icon next to the header COM select or the Device section refresh.
+- Logs in the Web UI: open the Console on the main page or use the Logs page to tail `serial` or `process-out`.
+- If you change firmware, rebuild both environments.
+
+## Troubleshooting
+- If S3 doesn’t show UDP logs, ensure both devices are on the same L2 network and multicast isn’t blocked by your Wi‑Fi AP/router.
+- Serial monitor busy: close one monitor before opening another on the same COM.
+- Reset boards after flashing if you don’t see expected output.
+
 ## Security Notes
 
 - The web interface runs on localhost only

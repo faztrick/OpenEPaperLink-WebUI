@@ -72,8 +72,8 @@ body {
 /* Layout variables */
 :root {
     --max-width: 1400px;
-    --header-height: 80px; /* matches header padding and size */
-    --nav-height: 56px;
+    --header-height: 72px; /* visual header height including padding */
+    --nav-height: 48px; /* top nav height */
 }
 
 /* Container to align header, nav and main content */
@@ -87,11 +87,12 @@ body {
 /* Header */
 .header {
     background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-    padding: 1rem 0;
+    padding: 0.75rem 0;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     position: sticky;
     top: 0;
     z-index: 100;
+    min-height: var(--header-height);
 }
 
 .header-content {
@@ -161,11 +162,12 @@ body {
 /* Navigation */
 .top-nav {
     background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
-    padding: 0.5rem 0;
+    padding: 0.25rem 0;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     display: flex;
     justify-content: center;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    min-height: var(--nav-height);
 }
 
 .top-nav .container {

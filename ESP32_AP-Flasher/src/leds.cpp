@@ -19,7 +19,8 @@ QueueHandle_t rgbLedQueue;
 CRGB rgbIdleColor = CRGB::Green;
 uint16_t rgbIdlePeriod = 511;
 
-struct ledInstructionRGB {
+struct ledInstructionRGB
+{
     CRGB ledColor;
     uint16_t fadeTime;
     uint16_t length;
@@ -30,14 +31,16 @@ CRGB leds[1];
 volatile bool rgbQueueFlush = false;
 #endif
 
-struct ledInstruction {
+struct ledInstruction
+{
     uint16_t value;
     uint16_t fadeTime;
     uint16_t length;
     bool reQueue = false;
 };
 
-void ledcSet(uint8_t channel, uint8_t brightness) {
+void ledcSet(uint8_t channel, uint8_t brightness)
+{
 #if ESP_ARDUINO_VERSION_MAJOR == 2
     ledcWrite(channel, brightness);
 #else
@@ -47,28 +50,33 @@ void ledcSet(uint8_t channel, uint8_t brightness) {
 
 #ifdef HAS_RGB_LED
 
-void addToRGBQueue(struct ledInstructionRGB* rgb, bool requeue) {
+void addToRGBQueue(struct ledInstructionRGB *rgb, bool requeue)
+{
     rgb->reQueue = requeue;
-    if (!rgbLedQueue) {
+    if (!rgbLedQueue)
+    {
         delete rgb;
         return;
     }
     BaseType_t queuestatus = xQueueSend(rgbLedQueue, &rgb, 0);
-    if (queuestatus == pdFALSE) {
+    if (queuestatus == pdFALSE)
+    {
         delete rgb;
     }
 }
 
-void addFadeColor(CRGB cname) {
-    struct ledInstructionRGB* rgb = new struct ledInstructionRGB;
+void addFadeColor(CRGB cname)
+{
+    struct ledInstructionRGB *rgb = new struct ledInstructionRGB;
     rgb->ledColor = cname;
     rgb->fadeTime = 750;
     rgb->length = 0;
     addToRGBQueue(rgb, false);
 }
 
-void shortBlink(CRGB cname) {
-    struct ledInstructionRGB* rgb = new struct ledInstructionRGB;
+void shortBlink(CRGB cname)
+{
+    struct ledInstructionRGB *rgb = new struct ledInstructionRGB;
     rgb->ledColor = CRGB::Black;
     rgb->fadeTime = 0;
     rgb->length = 3;
@@ -86,23 +94,30 @@ void shortBlink(CRGB cname) {
     addToRGBQueue(rgb, false);
 }
 
-void flushRGBQueue() {
+void flushRGBQueue()
+{
     rgbQueueFlush = true;
 }
 
-void rgbIdle() {
+void rgbIdle()
+{
     flushRGBQueue();
 }
 
-void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree) {
-    struct ledInstructionRGB* rgb;
+void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree)
+{
+    struct ledInstructionRGB *rgb;
     const int patternLengths[] = {600, 120, 200, 120, 200, 120};
     const CRGB patternColors[] = {CRGB::Black, colorone, CRGB::Black, colortwo, CRGB::Black, colorthree};
 
-    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS) {
+    if (!rgbLedQueue)
+        return;
+    while (xQueueReceive(rgbLedQueue, &rgb, 0) == pdPASS)
+    {
     }
 
-    for (int i = 0; i < sizeof(patternLengths) / sizeof(patternLengths[0]); i++) {
+    for (int i = 0; i < sizeof(patternLengths) / sizeof(patternLengths[0]); i++)
+    {
         rgb = new struct ledInstructionRGB;
         rgb->ledColor = patternColors[i];
         rgb->fadeTime = 0;
@@ -111,36 +126,49 @@ void showColorPattern(CRGB colorone, CRGB colortwo, CRGB colorthree) {
     }
 }
 
-void showRGB() {
+void showRGB()
+{
     FastLED.show();
 }
 
-void rgbIdleStep() {
+void rgbIdleStep()
+{
     static bool dirUp = true;
     static uint16_t step = 0;
 
-    if (dirUp) {
+    if (!rgbLedQueue)
+    {
+        return;
+    }
+    if (dirUp)
+    {
         // up
         step++;
-        if (step >= rgbIdlePeriod) {
+        if (step >= rgbIdlePeriod)
+        {
             dirUp = false;
         }
-    } else {
+    }
+    else
+    {
         // down
         step--;
-        if (step == 0) {
+        if (step == 0)
+        {
             dirUp = true;
         }
     }
-    CRGB newvalue = blend(CRGB::Black, (const CRGB&)rgbIdleColor, map(step, 0, rgbIdlePeriod, 0, 255));
-    if (newvalue != leds[0]) {
+    CRGB newvalue = blend(CRGB::Black, (const CRGB &)rgbIdleColor, map(step, 0, rgbIdlePeriod, 0, 255));
+    if (newvalue != leds[0])
+    {
         leds[0] = newvalue;
         showRGB();
     }
 }
 #endif
 
-void setBrightness(int brightness) {
+void setBrightness(int brightness)
+{
     maxledbrightness = brightness;
 
 #if defined HAS_LILYGO_TPANEL || defined HAS_4inch_TPANEL || HAS_TFT
@@ -151,41 +179,63 @@ void setBrightness(int brightness) {
 #endif
 }
 
-void updateBrightnessFromConfig() {
+void updateBrightnessFromConfig()
+{
     int newbrightness = config.led;
-    if (newbrightness != maxledbrightness) {
+    if (newbrightness != maxledbrightness)
+    {
         setBrightness(newbrightness);
     }
 #if defined HAS_LILYGO_TPANEL || defined HAS_4inch_TPANEL || HAS_TFT
     ledcSet(1, config.tft);
 #endif
-    if (apInfo.state == AP_STATE_NORADIO) addFadeMono(config.led);
+    if (apInfo.state == AP_STATE_NORADIO)
+        addFadeMono(config.led);
 }
 
-void addToMonoQueue(struct ledInstruction* mono) {
+void addToMonoQueue(struct ledInstruction *mono)
+{
+    // Guard against use before ledQueue is created (early boot race)
+    if (!ledQueue)
+    {
+        delete mono;
+        return;
+    }
     BaseType_t queuestatus = xQueueSend(ledQueue, &mono, 0);
-    if (queuestatus == pdFALSE) {
+    if (queuestatus == pdFALSE)
+    {
         delete mono;
     }
 }
 
-void addFadeMono(uint8_t value) {
-    struct ledInstruction* mono = new struct ledInstruction;
+void addFadeMono(uint8_t value)
+{
+    struct ledInstruction *mono = new struct ledInstruction;
     mono->value = value;
     mono->fadeTime = 750;
     mono->length = 0;
+    // If queue isn't ready yet, drop to avoid crashes; early callers will retry later
+    if (!ledQueue)
+    {
+        delete mono;
+        return;
+    }
     addToMonoQueue(mono);
 }
 
-void showMono(uint8_t brightness) {
-    if (FLASHER_LED != -1) {
+void showMono(uint8_t brightness)
+{
+    if (FLASHER_LED != -1)
+    {
         ledcSet(7, gamma8[brightness]);
     }
 }
 
-void quickBlink(uint8_t repeat) {
-    for (int i = 0; i < repeat; i++) {
-        struct ledInstruction* mono = new struct ledInstruction;
+void quickBlink(uint8_t repeat)
+{
+    for (int i = 0; i < repeat; i++)
+    {
+        struct ledInstruction *mono = new struct ledInstruction;
 #ifdef HAS_TFT
         mono->value = 255;
 #else
@@ -204,15 +254,16 @@ void quickBlink(uint8_t repeat) {
 
 volatile uint16_t monoIdlePeriod = 900;
 
-void ledTask(void* parameter) {
+void ledTask(void *parameter)
+{
 #ifdef HAS_RGB_LED
-    FastLED.addLeds<WS2812B, FLASHER_RGB_LED, GRB>(leds, 1);  // GRB ordering is typical
+    FastLED.addLeds<WS2812B, FLASHER_RGB_LED, GRB>(leds, 1); // GRB ordering is typical
     // start with LED off
     leds[0] = CRGB::Black;
     showRGB();
-    rgbLedQueue = xQueueCreate(30, sizeof(struct ledInstructionRGB*));
+    rgbLedQueue = xQueueCreate(30, sizeof(struct ledInstructionRGB *));
 
-    struct ledInstructionRGB* rgb = nullptr;
+    struct ledInstructionRGB *rgb = nullptr;
     // open with a nice RGB crossfade
     addFadeColor(CRGB::Red);
     addFadeColor(CRGB::Green);
@@ -221,9 +272,10 @@ void ledTask(void* parameter) {
     uint16_t rgbInstructionFadeTime = 0;
 #endif
 
-    ledQueue = xQueueCreate(30, sizeof(struct ledInstruction*));
+    ledQueue = xQueueCreate(30, sizeof(struct ledInstruction *));
 
-    if (FLASHER_LED != -1) {
+    if (FLASHER_LED != -1)
+    {
 #if ESP_ARDUINO_VERSION_MAJOR == 2
         ledcSetup(7, 5000, 8);
         ledcAttachPin(FLASHER_LED, 7);
@@ -232,60 +284,82 @@ void ledTask(void* parameter) {
 #endif
     }
 
-    struct ledInstruction* monoled = nullptr;
+    struct ledInstruction *monoled = nullptr;
 
-    addFadeMono(0);
+    // Queue gets created just above; still, guard to avoid early crashes
+    if (ledQueue)
+        addFadeMono(0);
 #ifdef HAS_TFT
-    addFadeMono(255);
+    if (ledQueue)
+        addFadeMono(255);
 #else
-    addFadeMono(maxledbrightness);
+    if (ledQueue)
+        addFadeMono(maxledbrightness);
 #endif
-    addFadeMono(0);
+    if (ledQueue)
+        addFadeMono(0);
 
     uint8_t oldBrightness = 0;
 
     uint16_t monoInstructionFadeTime = 0;
 
-    while (1) {
+    while (1)
+    {
 #ifdef HAS_RGB_LED
         // handle RGB led instructions
-        if (rgb == nullptr) {
+        if (rgb == nullptr)
+        {
             // fetch a led instruction
             BaseType_t q = xQueueReceive(rgbLedQueue, &rgb, 1);
-            if (q == pdTRUE) {
-                if (rgb->reQueue && !rgbQueueFlush) {
+            if (q == pdTRUE)
+            {
+                if (rgb->reQueue && !rgbQueueFlush)
+                {
                     // requeue this instruction at the end of the queue, caveman style.
-                    struct ledInstructionRGB* requeue = new ledInstructionRGB;
+                    struct ledInstructionRGB *requeue = new ledInstructionRGB;
                     requeue->fadeTime = rgb->fadeTime;
                     requeue->ledColor = rgb->ledColor;
                     requeue->length = rgb->length;
                     addToRGBQueue(requeue, true);
                 }
 
-                if (rgbQueueFlush) {
+                if (rgbQueueFlush)
+                {
                     delete rgb;
                     rgb = nullptr;
-                } else {
+                }
+                else
+                {
                     rgbInstructionFadeTime = rgb->fadeTime;
-                    if (rgb->fadeTime <= 1) {
+                    if (rgb->fadeTime <= 1)
+                    {
                         leds[0] = rgb->ledColor;
                         showRGB();
                     }
                 }
-            } else {
+            }
+            else
+            {
                 rgbQueueFlush = false;
                 // no commands, run idle led task
                 rgbIdleStep();
             }
-        } else {
+        }
+        else
+        {
             // process instruction
-            if (rgb->fadeTime) {
+            if (rgb->fadeTime)
+            {
                 rgb->fadeTime--;
                 leds[0] = blend(rgb->ledColor, oldColor, map(rgb->fadeTime, 0, rgbInstructionFadeTime, 0, 255));
                 showRGB();
-            } else if (rgb->length) {
+            }
+            else if (rgb->length)
+            {
                 rgb->length--;
-            } else {
+            }
+            else
+            {
                 oldColor = rgb->ledColor;
                 delete rgb;
                 rgb = nullptr;
@@ -293,21 +367,31 @@ void ledTask(void* parameter) {
         }
 #endif
         // handle flasher LED (single color)
-        if (monoled == nullptr) {
+        if (monoled == nullptr)
+        {
             BaseType_t q = xQueueReceive(ledQueue, &monoled, 1);
-            if (q == pdTRUE) {
+            if (q == pdTRUE)
+            {
                 monoInstructionFadeTime = monoled->fadeTime;
-                if (monoled->fadeTime <= 1) {
+                if (monoled->fadeTime <= 1)
+                {
                     showMono(monoled->value);
                 }
             }
-        } else {
-            if (monoled->fadeTime) {
+        }
+        else
+        {
+            if (monoled->fadeTime)
+            {
                 monoled->fadeTime--;
                 showMono(map(monoled->fadeTime, 0, monoInstructionFadeTime, monoled->value, oldBrightness));
-            } else if (monoled->length) {
+            }
+            else if (monoled->length)
+            {
                 monoled->length--;
-            } else {
+            }
+            else
+            {
                 oldBrightness = monoled->value;
                 delete monoled;
                 monoled = nullptr;

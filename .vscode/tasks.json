@@ -1,0 +1,41 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"group": "build"
+		},
+		{
+			"label": "build: ESP32_AP-Flasher OutdoorAP",
+			"type": "shell",
+			"command": "pio",
+			"args": [
+				"run",
+				"-e",
+				"OutdoorAP"
+			],
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pio build OutdoorAP",
+			"type": "shell",
+			"command": "pio",
+			"args": [
+				"run",
+				"-e",
+				"OutdoorAP"
+			],
+			"group": "build"
+		}
+	]
+}

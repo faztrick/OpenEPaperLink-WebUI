@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build ESP32 OutdoorAP (S3)",
+			"type": "shell",
+			"command": "pio",
+			"args": [
+				"run",
+				"-e",
+				"OutdoorAP"
+			],
+			"group": "build"
+		}
+	]
+}

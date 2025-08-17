@@ -50,6 +50,10 @@ void wsSendSysteminfo();
 void wsSendAPitem(struct APlist *apitem);
 void wsSerial(const String &text);
 void wsSerial(const String &text, const String &color);
+
+// Optional UDP log mirroring configuration helpers
+void wsSetLogUdpTarget(const String &ip, uint16_t port, bool enabled);
+void wsGetLogUdpConfig(String &ip, uint16_t &port, bool &enabled);
 uint8_t wsClientCount();
 
 extern AsyncWebSocket ws;

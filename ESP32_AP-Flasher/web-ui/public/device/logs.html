@@ -15,6 +15,10 @@
 	<!-- Feature-specific modules -->
 	<script src="compact-ui.js?2.75" defer></script>
 	<script src="universal-menu.js" defer></script>
+	<!-- Socket.IO client for live device log streaming via the Node server -->
+	<script src="/socket.io/socket.io.js"></script>
+	<!-- Logs page controller -->
+	<script src="logs-page.js?v=1" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 
 	<link rel="stylesheet"
@@ -34,7 +38,7 @@
 			border-radius: 8px;
 			border: 1px solid rgba(255, 255, 255, 0.2);
 		}
-		
+
 		.tabheader img {
 			cursor: pointer;
 			width: 16px;
@@ -43,11 +47,11 @@
 			opacity: 0.8;
 			transition: opacity 0.3s ease;
 		}
-		
+
 		.tabheader img:hover {
 			opacity: 1;
 		}
-		
+
 		.messages {
 			background: rgba(0, 0, 0, 0.8);
 			border: 1px solid rgba(255, 255, 255, 0.2);
@@ -63,34 +67,34 @@
 			list-style: none;
 			margin: 0;
 		}
-		
+
 		.messages li {
 			margin: 2px 0;
 			line-height: 1.4;
 			padding: 2px 0;
 		}
-		
+
 		.messages li.error {
 			color: #ff6b6b;
 		}
-		
+
 		.messages li.warning {
 			color: #ffd93d;
 		}
-		
+
 		.messages li.info {
 			color: #6bcf7f;
 		}
-		
+
 		.messages li.debug {
 			color: #74b9ff;
 			opacity: 0.7;
 		}
-		
+
 		input[type="checkbox"] {
 			margin-right: 8px;
 		}
-		
+
 		label {
 			color: rgba(255, 255, 255, 0.9);
 			font-size: 14px;
@@ -110,7 +114,7 @@
 					</div>
 				</div>
 			</div>
-			
+
 			<div class="header-status">
 				<div class="status-item">
 					<div class="status-dot" id="systemDot"></div>
@@ -129,7 +133,7 @@
 					<span id="uptimeDisplay">--:--</span>
 				</div>
 			</div>
-			
+
 			<!-- Universal Menu Container -->
 			<div id="menu-container" class="menu-container"></div>
 		</div>
@@ -143,6 +147,15 @@
 					<div><img id="clearlog" src="data:image/gif;base64,R0lGODlhEAAQAPMAANXV1e3t7d/f39HR0dvb2/Hx8dTU1OLi4urq6mZmZpmZmf///wAAAAAAAAAAAAAAACH5BAEAAAwALAAAAAAQABAAAARBkMlJq71Yrp3ZXkr4WWCYnOZSgQVyEMYwJCq1nHhe20qgCAoA7QLyAYU7njE4JPV+zOSkCEUSFbmTVPPpbjvgTAQAOw==
 				"></div>
 					<div><input type="checkbox" id="showdebug" value="1"><label for="showdebug">Show all websocket traffic</label></div>
+					<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+						<input id="deviceHost" type="text" placeholder="Device IP (e.g. 192.168.4.1)" style="min-width:220px; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color:#fff;">
+						<input id="tailLines" type="number" min="10" max="2000" value="200" title="Lines" style="width:82px; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color:#fff;">
+						<button id="btnFollow" class="btn" style="padding:6px 10px">Follow</button>
+						<button id="btnUnfollow" class="btn" style="padding:6px 10px">Stop</button>
+						<button id="btnFetchOnce" class="btn" style="padding:6px 10px">Fetch once</button>
+						<input id="tftText" type="text" placeholder="Send to TFT..." style="min-width:220px; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color:#fff;">
+						<button id="btnTftPrint" class="btn" style="padding:6px 10px">Send to TFT</button>
+					</div>
 				</div>
 				<ul id="messages" class="messages">
 				</ul>
@@ -186,14 +199,14 @@
 			const waitForClasses = () => {
 				const requiredClasses = ['tagDB', 'loadTags'];
 				const allLoaded = requiredClasses.every(className => typeof window[className] !== 'undefined');
-				
+
 				if (allLoaded) {
 					// Initialize logs functionality
 					try {
 						if (typeof loadTags === 'function') {
 							loadTags(0);
 						}
-						
+
 						// Initialize logs-specific functionality
 						if (typeof window.initLogsPage === 'function') {
 							window.initLogsPage();
@@ -206,10 +219,10 @@
 					setTimeout(waitForClasses, 100);
 				}
 			};
-			
+
 			waitForClasses();
 		});
-		
+
 		// Update status functions
 		function updateCompactHeaderStatus() {
 			fetch('get_ap_config')
@@ -219,7 +232,7 @@
 					const systemStatus = document.getElementById('systemStatus');
 					const tagCount = document.getElementById('tagCount');
 					const wifiStatus = document.getElementById('wifiStatus');
-					
+
 					if (systemDot && systemStatus && data.apstate !== undefined) {
 						if (data.apstate === 1) {
 							systemDot.className = 'status-dot online';
@@ -235,12 +248,12 @@
 							systemStatus.textContent = 'Starting';
 						}
 					}
-					
+
 					if (tagCount) {
 						const totalTags = Object.keys(tagDB || {}).length;
 						tagCount.textContent = `${totalTags} Tags`;
 					}
-					
+
 					if (wifiStatus) {
 						wifiStatus.textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
 					}
@@ -249,13 +262,13 @@
 					console.error('Status update error:', error);
 				});
 		}
-		
+
 		function updateFooterStatus() {
 			const timestamp = new Date().toLocaleTimeString();
 			const footerTimestamp = document.getElementById('footerTimestamp');
 			if (footerTimestamp) footerTimestamp.textContent = `Last updated: ${timestamp}`;
 		}
-		
+
 		function updateHeaderUptime() {
 			const now = new Date();
 			const uptime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -264,14 +277,14 @@
 				uptimeDisplay.textContent = uptime;
 			}
 		}
-		
+
 		// Set up periodic updates
 		document.addEventListener('DOMContentLoaded', function() {
 			setTimeout(() => {
 				updateCompactHeaderStatus();
 				updateFooterStatus();
 				updateHeaderUptime();
-				
+
 				setInterval(updateCompactHeaderStatus, 5000);
 				setInterval(updateFooterStatus, 10000);
 				setInterval(updateHeaderUptime, 60000);

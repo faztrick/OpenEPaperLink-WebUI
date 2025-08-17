@@ -16,6 +16,8 @@
 #include <LittleFS.h>
 #include "language.h"
 #include "websocket.h"
+#include "ips_display.h" // for TFTLog() when HAS_TFT
+#include "oepl_udp.h"    // for UDPcomm
 
 // Initialize web server endpoints and handlers
 void init_web()
@@ -169,6 +171,207 @@ void init_web()
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response); });
+
+    // Lightweight device log tail endpoint
+    // GET /api/logs/tail?lines=200
+    server.on("/api/logs/tail", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        int lines = 200;
+        if (request->hasParam("lines")) {
+            int reqLines = (int)request->getParam("lines")->value().toInt();
+            if (reqLines < 1) reqLines = 1;
+            if (reqLines > 2000) reqLines = 2000;
+            lines = reqLines;
+        }
+
+        // Read older then current log and tail last N lines
+        String combined;
+        combined.reserve(16 * lines);
+        if (contentFS->exists("/logold.txt")) {
+            File f2 = contentFS->open("/logold.txt", "r");
+            if (f2) { combined = f2.readString(); f2.close(); }
+        }
+        if (contentFS->exists("/log.txt")) {
+            File f = contentFS->open("/log.txt", "r");
+            if (f) { combined += f.readString(); f.close(); }
+        }
+
+        // Split into lines and take the last N
+        std::vector<String> arr;
+        arr.reserve(lines + 8);
+        int start = 0;
+        while (start >= 0 && start < (int)combined.length()) {
+            int nl = combined.indexOf('\n', start);
+            if (nl < 0) {
+                String last = combined.substring(start);
+                if (last.length()) arr.push_back(last);
+                break;
+            }
+            arr.push_back(combined.substring(start, nl));
+            start = nl + 1;
+        }
+        int begin = std::max(0, (int)arr.size() - lines);
+
+        JsonDocument doc;
+        JsonArray out = doc["lines"].to<JsonArray>();
+        for (int i = begin; i < (int)arr.size(); i++) out.add(arr[i]);
+        doc["count"] = (int)out.size();
+        doc["file"] = "/log.txt";
+
+        String body;
+        serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    // Simple TFT print endpoint to show debug text on onboard display
+    // POST /api/tft/print (form) with field 'text', or GET /api/tft/print?text=...
+    server.on("/api/tft/print", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        String text = request->hasParam("text") ? request->getParam("text")->value() : String();
+        JsonDocument doc;
+#ifdef HAS_TFT
+        if (text.length()) {
+            TFTLog(text);
+        }
+        doc["success"] = true;
+        doc["hasTFT"] = true;
+#else
+        doc["success"] = false;
+        doc["hasTFT"] = false;
+        doc["error"] = "No TFT compiled (HAS_TFT not defined)";
+#endif
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    server.on("/api/tft/print", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        String text;
+        if (request->hasParam("text", true)) {
+            text = request->getParam("text", true)->value();
+        }
+        JsonDocument doc;
+#ifdef HAS_TFT
+        if (text.length()) {
+            TFTLog(text);
+        }
+        doc["success"] = true;
+        doc["hasTFT"] = true;
+#else
+        doc["success"] = false;
+        doc["hasTFT"] = false;
+        doc["error"] = "No TFT compiled (HAS_TFT not defined)";
+#endif
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    // Peer connectivity probe: GET /api/peer/test?host=192.168.x.x
+    server.on("/api/peer/test", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        String host = request->hasParam("host") ? request->getParam("host")->value() : String();
+        JsonDocument doc;
+        if (host.isEmpty()) {
+            doc["success"] = false;
+            doc["error"] = "host required";
+            String body; serializeJson(doc, body);
+            request->send(400, "application/json", body);
+            return;
+        }
+        // Try simple HTTP GET on peer's /sysinfo
+        HTTPClient http;
+        String url = String("http://") + host + "/sysinfo";
+        bool ok = http.begin(url);
+        int code = -1;
+        if (ok) {
+            code = http.GET();
+        }
+        doc["success"] = (ok && code > 0);
+        doc["status"] = code;
+        doc["host"] = host;
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body);
+        if (ok) http.end(); });
+
+    // Mirror peer logs to local TFT: GET /api/bridge/print_c6_logs?host=&lines=100
+    // Also accepts POST form field 'host' and optional 'lines'
+    server.on("/api/bridge/print_c6_logs", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+                  String host = request->hasParam("host") ? request->getParam("host")->value() : String();
+                  int lines = request->hasParam("lines") ? request->getParam("lines")->value().toInt() : 100;
+                  lines = std::max(1, std::min(500, lines));
+                  JsonDocument doc;
+                  if (host.isEmpty())
+                  {
+                      doc["success"] = false;
+                      doc["error"] = "host required";
+                      String body;
+                      serializeJson(doc, body);
+                      request->send(400, "application/json", body);
+                      return;
+                  }
+#ifdef HAS_TFT
+                  // Pull logs JSON from peer
+                  HTTPClient http;
+                  String url = String("http://") + host + "/api/logs/tail?lines=" + String(lines);
+                  if (!http.begin(url))
+                  {
+                      doc["success"] = false;
+                      doc["error"] = "http.begin failed";
+                      String body;
+                      serializeJson(doc, body);
+                      request->send(500, "application/json", body);
+                      return;
+                  }
+                  int code = http.GET();
+                  if (code == 200)
+                  {
+                      String payload = http.getString();
+                      // Parse very small JSON: { lines: [..], count: N }
+                      JsonDocument resp;
+                      DeserializationError derr = deserializeJson(resp, payload);
+                      if (!derr && resp.containsKey("lines"))
+                      {
+                          JsonArray arr = resp["lines"].as<JsonArray>();
+                          int printed = 0;
+                          for (JsonVariant v : arr)
+                          {
+                              const char *s = v.as<const char *>();
+                              if (s && *s)
+                              {
+                                  TFTLog(String(s));
+                                  printed++;
+                              }
+                          }
+                          doc["success"] = true;
+                          doc["printed"] = printed;
+                      }
+                      else
+                      {
+                          doc["success"] = false;
+                          doc["error"] = String("json parse error: ") + derr.c_str();
+                      }
+                  }
+                  else
+                  {
+                      doc["success"] = false;
+                      doc["error"] = String("peer http status ") + code;
+                  }
+                  http.end();
+                  String body;
+                  serializeJson(doc, body);
+                  request->send(200, "application/json", body);
+#else
+                  doc["success"] = false;
+                  doc["error"] = "HAS_TFT not enabled";
+                  String body;
+                  serializeJson(doc, body);
+                  request->send(501, "application/json", body);
+#endif
+              });
+
+    server.on("/api/bridge/print_c6_logs", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        String host = request->hasParam("host", true) ? request->getParam("host", true)->value() : String();
+        int lines = request->hasParam("lines", true) ? request->getParam("lines", true)->value().toInt() : 100;
+        request->redirect(String("/api/bridge/print_c6_logs?host=") + host + "&lines=" + String(lines)); });
 
     // Expose best-effort pin mapping (build-time / driver hints)
     server.on("/api/pins", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -953,31 +1156,7 @@ void init_web()
 
     // Duplicate handlers for DB backup, OTA, features, pins, telemetry removed (already registered above)
 
-    // Enhanced Module Management API Endpoints
-    setupModuleManagementAPI(server);
-
-    // C6 Module Management Endpoints
-    server.on("/get_c6_settings", HTTP_GET, handleGetC6Settings);
-    server.on("/save_c6_settings", HTTP_POST, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/plain", "Settings saved"); }, NULL, handleSaveC6SettingsBody);
-    server.on("/reset_c6_settings", HTTP_POST, handleResetC6Settings);
-    server.on("/test_c6_connection", HTTP_GET, handleTestC6Connection);
-    server.on("/test_c6_radio", HTTP_GET, handleTestC6Radio);
-    server.on("/restart_c6", HTTP_POST, handleRestartC6);
-    server.on("/backup_c6_config", HTTP_GET, handleBackupC6Config);
-    server.on("/reset_c6_config", HTTP_POST, handleResetC6Config);
-    server.on("/ap_list", HTTP_GET, handleAPList); // Add missing endpoint for C6 module interface
-    server.on("/c6_update_status", HTTP_GET, handleC6UpdateStatus);
-    server.on("/backup_c6_firmware", HTTP_GET, handleBackupC6Firmware);
-    server.on("/upload_c6_firmware", HTTP_POST, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/plain", "Upload complete"); }, handleC6FirmwareUpload);
-
-    // /update_c6 already registered above to use handleUpdateC6; no duplicate registration here
-
-    // Drives and device management endpoints
-    server.on("/list_drives", HTTP_GET, handleListDrives);
-    server.on("/list_serial_ports", HTTP_GET, handleListSerialPorts);
-    server.on("/flash_c6_ota", HTTP_POST, handleFlashC6OTA);
+    // C6 Module Management Endpoints are registered by C6 module via moduleManager.registerAllWebHandlers(server)
 
     // Feature detection endpoints (HEAD requests)
     server.on("/tft_status", HTTP_HEAD, [](AsyncWebServerRequest *request)
@@ -1952,6 +2131,39 @@ void init_web()
         serializeJson(doc, *response);
         request->send(response); });
 
+    // Log streaming configuration (UDP mirror for wireless receivers)
+    server.on("/api/log/config", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        String ip; uint16_t port; bool enabled;
+        wsGetLogUdpConfig(ip, port, enabled);
+        JsonDocument doc;
+        doc["ip"] = ip;
+        doc["port"] = port;
+        doc["enabled"] = enabled;
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response); });
+
+    server.on("/api/log/config", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        String ip = request->hasParam("ip", true) ? request->getParam("ip", true)->value() : "";
+        uint16_t port = request->hasParam("port", true) ? request->getParam("port", true)->value().toInt() : 0;
+        bool enabled = request->hasParam("enabled", true) ? (request->getParam("enabled", true)->value() == "true" || request->getParam("enabled", true)->value() == "1") : true;
+        wsSetLogUdpTarget(ip, port, enabled);
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["ip"] = ip;
+        doc["port"] = port;
+        doc["enabled"] = enabled;
+        String out; serializeJson(doc, out);
+        request->send(200, "application/json", out); });
+
+    server.on("/api/log/test", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        String msg = request->hasParam("msg", true) ? request->getParam("msg", true)->value() : "Test log over WS/UDP";
+        wsSerial("[TEST] " + msg);
+        request->send(200, "application/json", "{\"success\":true}"); });
+
     server.on("/zbs_control", HTTP_POST, [](AsyncWebServerRequest *request)
               {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
@@ -2196,6 +2408,16 @@ void init_web()
 
     Serial.println("[WEB] Enhanced module system initialization complete");
 #endif
+
+    // Ensure TCP/IP (lwIP) is initialized before AsyncTCP starts listening.
+    // On ESP-IDF v5 + Arduino core v3, starting AsyncWebServer before WiFi/ETH
+    // has initialized lwIP can trigger a FreeRTOS assert inside xQueueGenericSend
+    // (from sys_mutex_unlock). Forcing WIFI_MODE_NULL brings up the TCP/IP stack
+    // without joining an AP and avoids that crash.
+    if (WiFi.getMode() == WIFI_OFF) {
+        WiFi.mode(WIFI_MODE_NULL);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     server.begin();
 }

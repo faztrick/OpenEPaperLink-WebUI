@@ -44,18 +44,38 @@ class ESP32DevUI {
         }, 1000);
     }
 
-    // Central client logger that posts to server /api/log (non-blocking)
-    log(message, level = 'info', name = 'client') {
-        try {
-            const line = `${level.toUpperCase()}: ${typeof message === 'string' ? message : JSON.stringify(message)}`;
-            // keep small local buffer for console output
-            this.logBuffer = this.logBuffer || [];
-            this.logBuffer.push(line);
-            if (this.logBuffer.length > 500) this.logBuffer.shift();
+    // Central client logger: writes to on-page console and posts to server asynchronously
+    log(message, type = 'info') {
+        const consoleEl = document.getElementById('console');
+        const ts = new Date().toLocaleTimeString();
+        const text = `[${ts}] ${typeof message === 'string' ? message : JSON.stringify(message)}`;
 
-            // POST asynchronously (fire-and-forget)
-            fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, message: line }) }).catch(()=>{});
+        if (consoleEl) {
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            line.textContent = text;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            const lines = consoleEl.querySelectorAll('.console-line');
+            if (lines.length > 1000) lines[0]?.remove();
+        } else {
+            // fallback to browser console
+            try { console[type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log'](text); } catch (_) { }
+        }
+
+        try {
+            this.logBuffer.push({ ts: new Date().toISOString(), type, message: typeof message === 'string' ? message : JSON.stringify(message) });
+            if (this.logBuffer.length > 5000) this.logBuffer.shift();
         } catch (e) { /* ignore */ }
+
+        // Fire-and-forget post to server log aggregator
+        try {
+            fetch('/api/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: 'client', message: `${type.toUpperCase()}: ${typeof message === 'string' ? message : JSON.stringify(message)}` })
+            }).catch(() => {});
+        } catch (_) { }
     }
 
     // Initialize socket.io connection. Chooses remote server when configured and connected,
@@ -393,16 +413,11 @@ class ESP32DevUI {
     }
 
     updateConnectionStatus() {
-        const statusDot = document.querySelector('.status-dot');
-        const statusText = document.querySelector('.status-indicator span');
-
-        if (this.connected) {
-            if (statusDot) statusDot.className = 'status-dot connected';
-            if (statusText) statusText.textContent = 'Connected';
-        } else {
-            if (statusDot) statusDot.className = 'status-dot disconnected';
-            if (statusText) statusText.textContent = 'Disconnected';
-        }
+        // Specifically reflect WebSocket status in the header indicators
+        const dot = document.getElementById('ws-status-dot');
+        const text = document.getElementById('ws-status-text');
+        if (dot) dot.className = `status-dot ${this.connected ? 'connected' : 'disconnected'}`;
+        if (text) text.textContent = this.connected ? 'WS' : 'WS';
     }
 
     updateButtons() {
@@ -1001,7 +1016,7 @@ class ESP32DevUI {
         };
     }
 
-    // Build an args array suitable for passing to compile.ps1 based on formConfig and overrides
+    // Build an args array suitable for passing to compile.py (accepts legacy flags) based on formConfig and overrides
     buildCompileArgs(formConfig, overrides = {}) {
         const cfg = Object.assign({}, formConfig, overrides);
         const args = [];
@@ -1031,23 +1046,23 @@ class ESP32DevUI {
         this.updateButtons();
 
     const script = this.config.fastCompile ? 'fast_compile.py' : 'compile.py';
-        const args = [];
-
-        if (this.config.cleanBuild) args.push('-Clean');
-        if (this.config.verboseOutput) args.push('-Verbose');
-
-        this.socket.emit('run_script', { script, args });
+    const formCfg = this.getFormConfig();
+    // For compile-only, skip upload
+    const args = this.buildCompileArgs(formCfg, { skipUpload: true });
+    this.socket.emit('run_script', { script, args });
     }
 
     fastCompile() {
         if (this.currentProcess) return;
 
-        this.log('Starting fast compilation...', 'info');
+    this.log('Starting fast compilation (no upload)...', 'info');
         this.showProgress('Fast compiling...');
         this.currentProcess = 'fast_compile';
         this.updateButtons();
 
-    this.socket.emit('run_script', { script: 'fast_compile.py', args: [] });
+    const formCfg = this.getFormConfig();
+    const args = this.buildCompileArgs(formCfg, { fastBuild: true, skipUpload: true });
+    this.socket.emit('run_script', { script: 'fast_compile.py', args });
     }
 
     flash() {
@@ -1058,10 +1073,12 @@ class ESP32DevUI {
         this.currentProcess = 'flash';
         this.updateButtons();
 
-        this.socket.emit('run_script', {
-            script: 'compile.py',
-            args: ['-Flash', '-Port', this.config.comPort]
-        });
+    // Flash (upload only) using legacy-compatible flags the Python script understands
+    const formCfg = this.getFormConfig();
+    const args = this.buildCompileArgs(formCfg, { skipBuild: true });
+    // Ensure upload-only even if UI toggles are odd
+    args.push('-Flash', '-Port', this.config.comPort);
+    this.socket.emit('run_script', { script: 'compile.py', args });
     }
 
     monitor() {
@@ -1085,7 +1102,7 @@ class ESP32DevUI {
         switch (action) {
             case 'build': {
                 const args = this.buildCompileArgs(formCfg, { skipUpload: true });
-                this.log('Starting build (compile.ps1)...', 'info');
+                this.log('Starting build (compile.py)...', 'info');
                 this.showProgress('Building...');
                 this.currentProcess = 'build';
                 this.updateButtons();
@@ -1094,7 +1111,7 @@ class ESP32DevUI {
             }
             case 'upload': {
                 const args = this.buildCompileArgs(formCfg, { skipBuild: true });
-                this.log('Starting upload (compile.ps1)...', 'info');
+                this.log('Starting upload (compile.py)...', 'info');
                 this.showProgress('Uploading...');
                 this.currentProcess = 'upload';
                 this.updateButtons();
@@ -1103,7 +1120,7 @@ class ESP32DevUI {
             }
             case 'build-upload': {
                 const args = this.buildCompileArgs(formCfg, {});
-                this.log('Starting build + upload (compile.ps1)...', 'info');
+                this.log('Starting build + upload (compile.py)...', 'info');
                 this.showProgress('Building & Uploading...');
                 this.currentProcess = 'build-upload';
                 this.updateButtons();
@@ -1112,7 +1129,7 @@ class ESP32DevUI {
             }
             case 'fast-build': {
                 const args = this.buildCompileArgs(formCfg, { fastBuild: true });
-                this.log('Starting fast build (compile.ps1)...', 'info');
+                this.log('Starting fast build (fast_compile.py)...', 'info');
                 this.showProgress('Fast building...');
                 this.currentProcess = 'fast-build';
                 this.updateButtons();
@@ -1121,7 +1138,7 @@ class ESP32DevUI {
             }
             case 'clean': {
                 const args = this.buildCompileArgs(formCfg, { clean: true, skipUpload: true });
-                this.log('Starting clean (compile.ps1)...', 'info');
+                this.log('Starting clean (compile.py)...', 'info');
                 this.showProgress('Cleaning...');
                 this.currentProcess = 'clean';
                 this.updateButtons();
@@ -1469,35 +1486,6 @@ class ESP32DevUI {
     }
 
     // Console Operations
-    log(message, type = 'info') {
-        const console = document.getElementById('console');
-        if (!console) {
-            // If no console element, just log to browser console
-            console.log(`[${type}] ${message}`);
-            return;
-        }
-
-        const line = document.createElement('div');
-        line.className = `console-line ${type}`;
-
-        const timestamp = new Date().toLocaleTimeString();
-        line.textContent = `[${timestamp}] ${message}`;
-
-        console.appendChild(line);
-        console.scrollTop = console.scrollHeight;
-
-        // Limit console lines
-        const lines = console.querySelectorAll('.console-line');
-        if (lines.length > 1000) {
-            lines[0].remove();
-        }
-        // Also keep a buffer copy for saving/exporting logs
-        try {
-            this.logBuffer.push({ ts: new Date().toISOString(), type, message });
-            // Keep buffer reasonable
-            if (this.logBuffer.length > 5000) this.logBuffer.shift();
-        } catch (e) { /* ignore */ }
-    }
 
     saveLog() {
         // Create a plain text log from buffer and trigger download

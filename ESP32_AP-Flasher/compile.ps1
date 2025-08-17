@@ -8,6 +8,18 @@ param(
     [string]$Environment = "OutdoorAP",
     [string]$ComPort = "COM10",
     [int]$BaudRate = 921600,
+    [ValidateSet('esp32s3','esp32c6','esp32c3')]
+    [string]$Chip = 'esp32s3',
+    [ValidateSet('qio','dio','dout','qout')]
+    [string]$FlashMode = 'qio',
+    [ValidateSet('80m','40m')]
+    [string]$FlashFreq = '80m',
+    [ValidateSet('32MB','16MB','detect')]
+    [string]$FlashSize = 'detect',
+    [switch]$DetectFlash,
+    [switch]$DetectOnly,
+    [switch]$EraseAll,
+    [switch]$UseMerged,
     [switch]$DotnetBuild,
     [switch]$AutoInstallEsptool,
     [switch]$SkipBuild,
@@ -38,6 +50,11 @@ function Write-ColorOutput {
     $fgColor = if ($Colors.ContainsKey($Color)) { $Colors[$Color] } else { "White" }
     Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] $Message" -ForegroundColor $fgColor
 }
+
+# Ensure script runs from its own directory so relative paths work
+try {
+    Set-Location -Path $PSScriptRoot
+} catch {}
 
 # Optimize job count
 if ($Jobs -eq 0) {
@@ -70,8 +87,8 @@ function Get-AvailableComPorts {
 
 # Header
 Write-ColorOutput "🚀 Enhanced OutdoorAP Build & Flash Tool v2.1 (Speed Optimized)" "Info"
-Write-ColorOutput "Environment: $Environment | Port: $ComPort | Baud: $BaudRate | Jobs: $Jobs" "Info"
-Write-ColorOutput "Usage: compile.ps1 [-Environment <name>] [-ComPort COMx] [-BaudRate 921600] [-DotnetBuild] [-FastBuild] [-FilesystemOnly] [-Jobs <n>]" "Info"
+Write-ColorOutput "Environment: $Environment | Port: $ComPort | Baud: $BaudRate | Chip: $Chip | Jobs: $Jobs" "Info"
+Write-ColorOutput "Usage: compile.ps1 [-Environment <name>] [-ComPort COMx] [-BaudRate 921600] [-Chip esp32s3] [-FlashMode qio] [-FlashFreq 80m] [-FlashSize 32MB|16MB|detect] [-DetectOnly] [-DetectFlash] [-EraseAll] [-UseMerged] [-DotnetBuild] [-FastBuild] [-FilesystemOnly] [-Jobs <n>]" "Info"
 if ($FilesystemOnly) {
     Write-ColorOutput "Mode: Filesystem Only (Build + Erase + Upload)" "Warning"
 }
@@ -151,6 +168,100 @@ function Resolve-EsptoolInvoker {
     return $null
 }
 
+# Probe flash information (size and IDs) using esptool
+function Get-FlashInfo {
+    param(
+        [string]$Port,
+        [int]$Baud,
+        [string]$Chip
+    )
+    $esptoolInvoker = Resolve-EsptoolInvoker
+    if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
+    if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
+
+    $args = @('--chip', $Chip, '-p', $Port, '-b', $Baud, 'flash_id')
+    $output = ""
+    if ($esptoolInvoker[0] -eq 'esptool.py') {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = 'esptool.py'
+        $psi.Arguments = ($args -join ' ')
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        [void]$proc.Start()
+        $output = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+    }
+    else {
+        $python = $esptoolInvoker[0]
+        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $args
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $python
+        $psi.Arguments = ($moduleArgs -join ' ')
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        [void]$proc.Start()
+        $output = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+    }
+
+    $size = $null
+    $manu = $null
+    $dev = $null
+    foreach ($line in ($output -split "\r?\n")) {
+        if ($line -match 'Detected flash size:\s*([0-9]+MB)') { $size = $Matches[1] }
+        if ($line -match 'Manufacturer:\s*0x([0-9a-fA-F]+)') { $manu = $Matches[1] }
+        if ($line -match 'Device memory ID:\s*0x([0-9a-fA-F]+)') { $dev = $Matches[1] }
+    }
+    return [PSCustomObject]@{ RawOutput = $output; Size = $size; Manufacturer = $manu; DeviceID = $dev }
+}
+
+# Derive the active partition CSV for the selected environment and extract spiffs offset
+function Get-PartitionCsvPathForEnv {
+    param([string]$IniPath, [string]$Env)
+    try {
+        $lines = Get-Content $IniPath -Raw -ErrorAction Stop
+        # Find the section header and capture until next section
+        $pattern = "\[env:$([Regex]::Escape($Env))\](?<body>[\s\S]*?)(?=\n\[|\Z)"
+        $m = [Regex]::Match($lines, $pattern)
+        if ($m.Success) {
+            $body = $m.Groups['body'].Value
+            $pm = [Regex]::Match($body, "(?m)^\s*board_build\.partitions\s*=\s*(.+)$")
+            if ($pm.Success) {
+                $p = $pm.Groups[1].Value.Trim()
+                # Normalize path relative to script directory
+                $candidate = Join-Path $PSScriptRoot $p
+                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path $p) { return $p }
+            }
+        }
+    } catch {}
+    return $null
+}
+
+function Get-SpiffsOffsetFromCsv {
+    param([string]$CsvPath)
+    if (-not $CsvPath) { return $null }
+    try {
+        $lines = Get-Content $CsvPath -ErrorAction Stop | Where-Object { -not ($_.Trim().StartsWith('#')) -and $_.Trim() -ne '' }
+        foreach ($l in $lines) {
+            $parts = $l.Split(',').ForEach({ $_.Trim() })
+            if ($parts.Length -ge 5 -and $parts[0] -eq 'spiffs') {
+                $offset = $parts[3]
+                # Ensure 0x prefix
+                if ($offset -notmatch '^0x') { $offset = ('0x{0:X}' -f [int]$offset) }
+                return $offset
+            }
+        }
+    } catch {}
+    return $null
+}
+
 # Validate COM port
 if (-not (Test-ComPort $ComPort)) {
     Write-ColorOutput "⚠️  Warning: COM port $ComPort not found!" "Warning"
@@ -165,7 +276,7 @@ if (-not (Test-ComPort $ComPort)) {
 }
 
 # Validate environment exists
-$pioConfigPath = "platformio.ini"
+$pioConfigPath = Join-Path $PSScriptRoot "platformio.ini"
 if (-not (Test-Path $pioConfigPath)) {
     Write-ColorOutput "❌ platformio.ini not found!" "Error"
     exit 1
@@ -183,6 +294,11 @@ $env:BUILD_VERSION = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "
 $env:SHA = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { "local-build" }
 
 Write-ColorOutput "📦 Build Version: $env:BUILD_VERSION" "Info"
+
+# Auto-adjust defaults based on environment if not explicitly overridden
+if ($Environment -eq 'OutdoorAP') {
+    if (-not $PSBoundParameters.ContainsKey('Chip')) { $Chip = 'esp32s3' }
+}
 
 # Clean if requested
 if ($Clean) {
@@ -317,6 +433,34 @@ if (-not $SkipBuild) {
     }
 }
 
+# Optional: Detect flash info before organizing binaries
+if ($DetectOnly -or $DetectFlash) {
+    try {
+        Write-ColorOutput "🔍 Probing flash info on $ComPort..." "Progress"
+        $info = Get-FlashInfo -Port $ComPort -Baud $BaudRate -Chip $Chip
+        if ($info.Size) { Write-ColorOutput "  ├─ Detected flash size: $($info.Size)" "Info" } else { Write-ColorOutput "  ├─ Detected flash size: (unknown)" "Warning" }
+        if ($info.Manufacturer) { Write-ColorOutput "  ├─ Manufacturer ID: 0x$($info.Manufacturer)" "Info" }
+        if ($info.DeviceID) { Write-ColorOutput "  ├─ Device ID: 0x$($info.DeviceID)" "Info" }
+
+        if ($DetectOnly) {
+            Write-ColorOutput "Detection only requested. Exiting." "Info"
+            exit 0
+        }
+
+        if ($DetectFlash -and $info.Size) {
+            switch ($info.Size) {
+                '32MB' { $FlashSize = '32MB' }
+                '16MB' { $FlashSize = '16MB' }
+                default { Write-ColorOutput "  ├─ Non-standard size '$($info.Size)' detected; keeping CSV-inferred size ($FlashSize) for merge and using 'detect' for write." "Warning" }
+            }
+        }
+    }
+    catch {
+        Write-ColorOutput "Flash detect failed: $_" "Warning"
+        if ($DetectOnly) { exit 1 }
+    }
+}
+
 # Step 3: Prepare binary files (with parallel copying)
 Write-ColorOutput "📁 Organizing binary files..." "Progress"
 
@@ -358,36 +502,31 @@ Push-Location $outputDir
 
 try {
     # Determine flash configuration based on environment
-    $flashConfig = switch ($Environment) {
-        "OutdoorAP" {
-            @{
-                chip      = "esp32-s3"
-                mode      = "qio"
-                freq      = "80m"
-                size      = "32MB"
-                addresses = @{
-                    "0x0000"     = "bootloader.bin"
-                    "0x8000"     = "partitions.bin"
-                    "0xe000"     = "boot_app0.bin"
-                    "0x10000"    = "firmware.bin"
-                    "0x00910000" = "littlefs.bin"
-                }
-            }
-        }
-        default {
-            @{
-                chip      = "esp32-s3"
-                mode      = "qio"
-                freq      = "80m"
-                size      = "16MB"
-                addresses = @{
-                    "0x0000"     = "bootloader.bin"
-                    "0x8000"     = "partitions.bin"
-                    "0xe000"     = "boot_app0.bin"
-                    "0x10000"    = "firmware.bin"
-                    "0x00910000" = "littlefs.bin"
-                }
-            }
+    $partCsv = Get-PartitionCsvPathForEnv -IniPath $pioConfigPath -Env $Environment
+    $spiffsOffset = Get-SpiffsOffsetFromCsv -CsvPath $partCsv
+    if (-not $spiffsOffset) {
+        # Fallback offsets if parse fails
+        $spiffsOffset = if ($FlashSize -eq '16MB') { '0x00410000' } else { '0x00910000' }
+    }
+
+    # Infer flash size from selected partition CSV if not explicitly set
+    if ($FlashSize -eq 'detect' -or -not $PSBoundParameters.ContainsKey('FlashSize')) {
+        if ($partCsv -and (Split-Path $partCsv -Leaf) -match '^32MB_') { $FlashSize = '32MB' }
+        elseif ($partCsv -and (Split-Path $partCsv -Leaf) -match '^16MB_') { $FlashSize = '16MB' }
+        else { $FlashSize = '16MB' }
+    }
+
+    $flashConfig = @{
+        chip      = $Chip
+        mode      = $FlashMode
+        freq      = $FlashFreq
+        size      = $FlashSize
+        addresses = @{
+            "0x0000"   = "bootloader.bin"
+            "0x8000"   = "partitions.bin"
+            "0xe000"   = "boot_app0.bin"
+            "0x10000"  = "firmware.bin"
+            $spiffsOffset = "littlefs.bin"
         }
     }
 
@@ -398,7 +537,7 @@ try {
         "-o", "merged-firmware.bin"
         "--flash-mode", $flashConfig.mode
         "--flash-freq", $flashConfig.freq
-        "--flash-size", $flashConfig.size
+    "--flash-size", $flashConfig.size
     )
 
     foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
@@ -447,15 +586,46 @@ if (Test-Path "$outputDir\merged-firmware.bin") {
 
 # Step 6: Upload firmware
 if (-not $SkipUpload) {
+    # Optional full chip erase
+    if ($EraseAll) {
+        try {
+            Write-ColorOutput "🧽 Erasing entire flash on $ComPort..." "Progress"
+            $eraseAllArgs = @(
+                "-p", $ComPort,
+                "-b", $BaudRate,
+                "--before", "default-reset",
+                "--after", "hard-reset",
+                "--chip", $flashConfig.chip,
+                "erase-flash"
+            )
+            $esptoolInvoker = Resolve-EsptoolInvoker
+            if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
+            if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
+            if ($esptoolInvoker[0] -eq 'esptool.py') {
+                $ecmd = @('esptool.py') + $eraseAllArgs
+                $proc = Start-Process -FilePath $ecmd[0] -ArgumentList $ecmd[1..($ecmd.Length - 1)] -NoNewWindow -Wait -PassThru
+            } else {
+                $python = $esptoolInvoker[0]
+                $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $eraseAllArgs
+                $proc = Start-Process -FilePath $python -ArgumentList $moduleArgs -NoNewWindow -Wait -PassThru
+            }
+            if ($proc.ExitCode -ne 0) { throw "Chip erase failed" }
+        } catch {
+            Write-ColorOutput "❌ Full erase failed: $_" "Warning"
+        }
+    }
+
     if ($FilesystemOnly) {
         Write-ColorOutput "📤 Erasing and uploading filesystem only to $ComPort..." "Progress"
         $uploadTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
         try {
-            # Get filesystem partition address based on environment
-            $filesystemAddress = switch ($Environment) {
-                "OutdoorAP" { "0x00910000" }
-                default { "0x00910000" }
+            # Get filesystem partition address from active environment's partition CSV
+            $partCsv = Get-PartitionCsvPathForEnv -IniPath $pioConfigPath -Env $Environment
+            $filesystemAddress = Get-SpiffsOffsetFromCsv -CsvPath $partCsv
+            if (-not $filesystemAddress) {
+                # Fallback if parsing fails
+                $filesystemAddress = if ($FlashSize -eq '32MB') { '0x00910000' } else { '0x00410000' }
             }
 
             $littlefsPath = Join-Path $outputDir "littlefs.bin"
@@ -557,27 +727,35 @@ if (-not $SkipUpload) {
         }
     }
     else {
-        Write-ColorOutput "�📤 Uploading firmware to $ComPort..." "Progress"
+        Write-ColorOutput "📤 Uploading firmware to $ComPort..." "Progress"
         $uploadTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
         try {
-            # Build upload arguments
-            $uploadArgs = @(
-                "-p", $ComPort
-                "-b", $BaudRate
-                "--before", "default-reset"
-                "--after", "hard-reset"
-                "--chip", $flashConfig.chip
-                "write-flash"
-                "--flash-mode", $flashConfig.mode
-                "--flash-size", "detect"
-            )
-
-            # Add file addresses
-            foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
-                $filePath = Join-Path $outputDir $addr.Value
-                if (Test-Path $filePath) {
-                    $uploadArgs += $addr.Key, $filePath
+            # Build upload arguments (either merged or per-segment)
+            if ($UseMerged -and (Test-Path (Join-Path $outputDir 'merged-firmware.bin'))) {
+                $uploadArgs = @(
+                    "-p", $ComPort,
+                    "-b", $BaudRate,
+                    "--before", "default-reset",
+                    "--after", "hard-reset",
+                    "--chip", $flashConfig.chip,
+                    "write-flash",
+                    "0x0000", (Join-Path $outputDir 'merged-firmware.bin')
+                )
+            } else {
+                $uploadArgs = @(
+                    "-p", $ComPort,
+                    "-b", $BaudRate,
+                    "--before", "default-reset",
+                    "--after", "hard-reset",
+                    "--chip", $flashConfig.chip,
+                    "write-flash",
+                    "--flash-mode", $flashConfig.mode,
+                    "--flash-size", ($FlashSize -ne 'detect' ? $FlashSize : 'detect')
+                )
+                foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
+                    $filePath = Join-Path $outputDir $addr.Value
+                    if (Test-Path $filePath) { $uploadArgs += $addr.Key, $filePath }
                 }
             }
 

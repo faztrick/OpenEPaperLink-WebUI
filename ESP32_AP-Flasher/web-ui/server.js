@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
+const net = require('net');
 const ESP32AIAgent = require('./ai_agent');
 const RemoteServerManager = require('./remote_manager');
 const FileManager = require('./file_manager');
@@ -59,22 +60,18 @@ function resolvePythonExecutable() {
 }
 const PYTHON_EXEC = resolvePythonExecutable();
 let SerialPort;
-let SerialPortBinding;
 let serialAvailable = false;
 try {
-    // prefer @serialport/stream backed by platform bindings when available
-    SerialPort = require('serialport');
-    serialAvailable = true;
-} catch (e) {
-    try {
-        SerialPort = require('@serialport/stream');
-        // try to load bindings if present
-        SerialPortBinding = require('@serialport/bindings');
-        serialAvailable = true;
-    } catch (err) {
-        console.warn('serialport not installed, serial features disabled');
-        serialAvailable = false;
+    // serialport v10+ exposes { SerialPort } named export; older versions exported the class directly
+    const sp = require('serialport');
+    SerialPort = sp.SerialPort || sp;
+    serialAvailable = typeof SerialPort === 'function';
+    if (!serialAvailable) {
+        console.warn('serialport module loaded but no SerialPort constructor found');
     }
+} catch (err) {
+    console.warn('serialport not installed, serial features disabled');
+    serialAvailable = false;
 }
 
 const app = express();
@@ -252,7 +249,7 @@ const serialPorts = new Map(); // key: id (e.g., COM3) -> { port: SerialPort ins
 async function listSystemSerialPorts() {
     if (!serialAvailable) return [];
     try {
-        const ports = await SerialPort.list();
+    const ports = await SerialPort.list();
         return ports;
     } catch (err) {
         console.error('Error listing serial ports:', err.message || err);
@@ -483,7 +480,8 @@ app.post('/api/serial/open', (req, res) => {
     try {
         if (serialPorts.has(portPath)) return res.json({ success: true, message: 'already open' });
 
-        const port = new SerialPort(portPath, { baudRate: parseInt(baudRate, 10) });
+    // serialport v10+ expects an options object with path
+    const port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
         port.on('data', (data) => {
             const text = data.toString();
             // broadcast to all sockets
@@ -549,7 +547,7 @@ app.post('/api/com/check', async (req, res) => {
             port = rec.port;
         } else {
             // open temporary port
-            port = new SerialPort(portPath, { baudRate: parseInt(baudRate, 10) });
+            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
             tempOpened = true;
         }
 
@@ -906,6 +904,38 @@ app.post('/api/log', (req, res) => {
 });
 
 // Device file management endpoints - proxy to ESP32 device
+// New: device log tail proxy and TFT print proxy
+app.get('/api/device/logs/tail', async (req, res) => {
+    try {
+        const host = req.query.host;
+        const lines = req.query.lines || 200;
+        if (!host) return res.status(400).json({ success: false, error: 'host required' });
+
+        const url = `http://${host}/api/logs/tail?lines=${encodeURIComponent(lines)}`;
+        const response = await axios.get(url, { timeout: 8000 });
+        res.json({ success: true, host, lines: Number(lines), data: response.data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message || 'Failed to tail logs' });
+    }
+});
+
+app.post('/api/device/tft/print', async (req, res) => {
+    try {
+        const { host, text } = req.body || {};
+        if (!host) return res.status(400).json({ success: false, error: 'host required' });
+        const payload = new URLSearchParams();
+        if (typeof text === 'string') payload.append('text', text);
+        const url = `http://${host}/api/tft/print`;
+        const response = await axios.post(url, payload.toString(), {
+            timeout: 8000,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+        res.json({ success: true, host, data: response.data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message || 'Failed to print to TFT' });
+    }
+});
+
 app.get('/api/device-files/list', async (req, res) => {
     try {
         const host = req.query.host || '192.168.26.117';
@@ -1564,6 +1594,55 @@ app.post('/api/remote/server', async (req, res) => {
     }
 });
 
+// Lightweight remote connectivity probe: POST { host, port? }
+// - If port provided: attempt TCP connect within 3s
+// - Else: attempt HTTP HEAD to http://host (5s)
+app.post('/api/remote/test-connection', async (req, res) => {
+    try {
+        const { host, port } = req.body || {};
+        if (!host || typeof host !== 'string' || host.trim() === '') {
+            return res.status(400).json({ success: false, error: 'host required' });
+        }
+
+        const cleanHost = host.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
+        const started = Date.now();
+
+        const tcpProbe = (h, p, timeoutMs = 3000) => new Promise((resolve) => {
+            const socket = new net.Socket();
+            let done = false;
+            const onDone = (ok, err) => {
+                if (done) return; done = true;
+                try { socket.destroy(); } catch (e) { /* ignore */ }
+                resolve({ ok, error: err ? (err.message || String(err)) : undefined });
+            };
+            socket.setTimeout(timeoutMs);
+            socket.once('connect', () => onDone(true));
+            socket.once('timeout', () => onDone(false, new Error('timeout')));
+            socket.once('error', (e) => onDone(false, e));
+            try { socket.connect({ host: h, port: Number(p) }); } catch (e) { onDone(false, e); }
+        });
+
+        let result;
+        if (port) {
+            result = await tcpProbe(cleanHost, port);
+        } else {
+            // HTTP HEAD probe
+            const url = /^https?:\/\//i.test(host) ? host : `http://${cleanHost}`;
+            try {
+                const resp = await axios.head(url, { timeout: 5000, validateStatus: () => true });
+                result = { ok: resp.status < 500, status: resp.status };
+            } catch (err) {
+                result = { ok: false, error: err.message || String(err) };
+            }
+        }
+
+        const durationMs = Date.now() - started;
+        return res.json({ success: !!result.ok, durationMs, details: result, host: cleanHost, port: port || null });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.put('/api/remote/server/:serverId', async (req, res) => {
     try {
         const { serverId } = req.params;
@@ -1906,6 +1985,46 @@ io.on('connection', (socket) => {
                 socket.emit('debug-output', { message: 'Memory profile: No leaks detected', level: 'SUCCESS' });
             }
         }, 3000);
+    });
+
+    // Live device log tail bridge
+    // Client: socket.emit('device-log-follow', { host, lines?: 200, intervalMs?: 1500 });
+    // Stop: socket.emit('device-log-unfollow', { host })
+    const logTimers = new Map();
+    socket.on('device-log-follow', async ({ host, lines = 200, intervalMs = 1500 } = {}) => {
+        try {
+            if (!host) return;
+            const key = `${socket.id}:${host}`;
+            if (logTimers.has(key)) clearInterval(logTimers.get(key));
+            const pull = async () => {
+                try {
+                    const url = `http://${host}/api/logs/tail?lines=${encodeURIComponent(lines)}`;
+                    const resp = await axios.get(url, { timeout: 7000 });
+                    socket.emit('device-log', { host, ...resp.data });
+                } catch (e) {
+                    socket.emit('device-log', { host, error: e.message || String(e) });
+                }
+            };
+            await pull();
+            const t = setInterval(pull, Math.max(750, Number(intervalMs) || 1500));
+            logTimers.set(key, t);
+        } catch (err) {
+            socket.emit('device-log', { host, error: err.message || String(err) });
+        }
+    });
+    socket.on('device-log-unfollow', ({ host } = {}) => {
+        const key = `${socket.id}:${host}`;
+        if (logTimers.has(key)) {
+            clearInterval(logTimers.get(key));
+            logTimers.delete(key);
+        }
+    });
+    socket.on('disconnect', () => {
+        // Cleanup intervals
+        for (const [key, t] of logTimers.entries()) {
+            clearInterval(t);
+            logTimers.delete(key);
+        }
     });
 
     socket.on('git-command', (data) => {
