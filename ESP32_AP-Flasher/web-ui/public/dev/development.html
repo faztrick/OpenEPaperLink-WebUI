@@ -8,311 +8,438 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="styles.css" rel="stylesheet">
     <link href="ai-agent-widget.css" rel="stylesheet">
+    <style>
+        /* Minimal inline styles to ensure layout works even if styles.css is missing */
+        :root{--card-bg:#0f1724;--panel-border:#1f2937;--muted:#9ca3af;--console-bg:#071018;--console-text:#d1e8ff}
+        html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+        .header{background:linear-gradient(90deg,#0b1220,#0f1724);color:#fff;padding:12px 16px}
+        .header-content{display:flex;align-items:center;gap:16px}
+        .logo{display:flex;align-items:center;gap:10px}
+        .logo i{font-size:20px}
+        .top-nav{display:flex;gap:8px;padding:8px 16px;background:#071029}
+        .nav-link{color:#9fb0c9;text-decoration:none;padding:8px 12px;border-radius:6px}
+        .nav-link.active{background:#142433;color:#fff}
+        .dev-container{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px}
+        .build-panel,.dev-card,.memory-viewer{background:var(--card-bg);padding:12px;border-radius:8px;border:1px solid var(--panel-border);color:#e6eef8}
+        .status-panel{display:flex;gap:12px}
+        .status-item{flex:1}
+        .status-value{font-size:18px;font-weight:700}
+        .tool-grid{display:flex;flex-wrap:wrap;gap:8px}
+        .tool-btn{background:#0b1228;padding:10px;border-radius:8px;min-width:120px;text-align:center;cursor:pointer;border:1px solid #1f2a38}
+        .memory-bar{background:#071018;border-radius:6px;padding:6px;position:relative}
+        .memory-fill{background:#2dd4bf;height:12px;border-radius:6px}
+        .log-viewer{background:#01070a;padding:12px;border-radius:6px;height:220px;overflow:auto;font-family:monospace}
+        .btn{padding:6px 10px;border-radius:6px;border:none;cursor:pointer}
+        .btn-small{padding:6px 8px;font-size:13px}
+        .btn-primary{background:#2563eb;color:#fff}
+        .btn-info{background:#0ea5a4;color:#fff}
+        .btn-success{background:#16a34a;color:#fff}
+        .device-grid{display:flex;gap:8px;flex-wrap:wrap}
+        .device-card{background:#071429;padding:8px;border-radius:6px;border:1px solid #112335;width:220px}
+        @media (max-width:980px){.dev-container{grid-template-columns:1fr}.build-panel{order:1}}
+    </style>
 </head>
 <body>
     <header class="header">
         <div class="header-content">
             <div class="logo">
-                <i class="fas fa-code"></i>
-                <h1>Development Tools</h1>
+                <i class="fas fa-microchip"></i>
+                <h1 style="margin:0;font-size:18px">ESP32 OutdoorAP Development UI</h1>
             </div>
-            <div class="status-indicator">
-                <span id="connection-status" class="status-dot status-online"></span>
-                <span id="status-text">Development Mode</span>
-            </div>
-            <div style="margin-left: 12px;">
-                <button id="theme-toggle" class="theme-toggle" title="Toggle light/dark">🌙 Dark</button>
+            <!-- connection status indicators -->
+            <div class="status-indicators" style="display:flex;gap:10px;align-items:center;margin-left:auto">
+                <div class="status-item" title="API">
+                    <span id="api-status-dot" class="status-dot disconnected" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#cbd5e1;margin-right:6px"></span>
+                    <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API (host)</small>
+                </div>
+
+                <div class="status-item" title="WebSocket">
+                    <span id="ws-status-dot" class="status-dot disconnected" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#cbd5e1;margin-right:6px"></span>
+                    <small id="ws-status-text" style="margin-left:6px;color:#9ca3af">WS (host)</small>
+                </div>
+
+                <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
+                    <span id="serial-status-dot" class="status-dot disconnected" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#cbd5e1;margin-right:6px"></span>
+                    <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
+                    <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111"></select>
+                    <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;margin-left:6px">⟳</button>
+                </div>
+
+                <div>
+                    <button id="theme-toggle" class="theme-toggle btn" title="Toggle light/dark">🌙 Dark</button>
+                </div>
             </div>
         </div>
     </header>
 
-    <nav class="top-nav">
-    <a href="index.html" class="nav-link">Dashboard</a>
-    <a href="flash.html" class="nav-link">Simple Flasher</a>
-    <a href="files.html" class="nav-link">File Manager</a>
-    <a href="development.html" class="nav-link active">Development</a>
-    <a href="settings.html" class="nav-link">Settings</a>
-    <a href="ai.html" class="nav-link">AI</a>
+    <nav class="top-nav" role="navigation" aria-label="Main Navigation">
+        <div class="container">
+            <a href="index.html" class="nav-link">Dashboard</a>
+            <a href="flash.html" class="nav-link">Simple Flasher</a>
+            <a href="files.html" class="nav-link">File Manager</a>
+            <a href="development.html" class="nav-link active">Development</a>
+            <a href="settings.html" class="nav-link">Settings</a>
+            <a href="ai.html" class="nav-link">AI</a>
+        </div>
     </nav>
 
-    <div class="dev-container">
-        <!-- Device Status Overview -->
-        <div class="build-panel">
-            <h3><i class="fas fa-project-diagram icon"></i> Device Status</h3>
-            <div class="status-panel">
-                <div class="status-item">
-                    <div class="status-value" id="build-status">Ready</div>
-                    <div class="status-label">Build Status</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="last-build-time">Never</div>
-                    <div class="status-label">Last Build</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="firmware-size">-</div>
-                    <div class="status-label">Firmware Size</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="flash-usage">-</div>
-                    <div class="status-label">Flash Usage</div>
-                </div>
-            </div>
-            <div class="build-controls">
-                <button class="btn btn-info" id="analyze-build">
-                    <i class="fas fa-chart-bar"></i> Analyze
-                </button>
-            </div>
-            <div class="progress-bar" id="build-progress" style="display: none;">
-                <div class="progress-fill" id="build-progress-fill"></div>
-            </div>
-        </div>
 
-        <!-- Flash Actions -->
-        <div class="dev-card">
-            <h3><i class="fas fa-bolt icon"></i> Flash Actions</h3>
-            <div class="tool-grid">
-                <div class="tool-btn" onclick="quickBuild()" id="quick-build">
-                    <i class="fas fa-hammer"></i>
-                    <span>Quick Build</span>
-                </div>
-                <div class="tool-btn" onclick="buildAndUpload()" id="build-upload">
-                    <i class="fas fa-rocket"></i>
-                    <span>Build & Flash</span>
-                </div>
-                <div class="tool-btn" onclick="uploadOnly()">
-                    <i class="fas fa-upload"></i>
-                    <span>Upload Only</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Development Tools Grid -->
-        <div class="dev-grid">
-            <!-- Code Analysis -->
-            <div class="dev-card">
-                <h3><i class="fas fa-search icon"></i> Code Analysis</h3>
-                <div class="tool-grid">
-                    <div class="tool-btn" onclick="runCodeAnalysis()">
-                        <i class="fas fa-bug"></i>
-                        <span>Find Bugs</span>
-                    </div>
-                    <div class="tool-btn" onclick="checkMemoryUsage()">
-                        <i class="fas fa-memory"></i>
-                        <span>Memory Check</span>
-                    </div>
-                    <div class="tool-btn" onclick="analyzePerformance()">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Performance</span>
-                    </div>
-                    <div class="tool-btn" onclick="checkDependencies()">
-                        <i class="fas fa-sitemap"></i>
-                        <span>Dependencies</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Device Management -->
-            <div class="dev-card">
-                <h3><i class="fas fa-microchip icon"></i> Device Tools</h3>
-                <div class="tool-grid">
-                    <div class="tool-btn" onclick="monitorSerial()">
-                        <i class="fas fa-terminal"></i>
-                        <span>Serial Monitor</span>
-                    </div>
-                    <div class="tool-btn" onclick="resetDevice()">
-                        <i class="fas fa-redo"></i>
-                        <span>Reset Device</span>
-                    </div>
-                    <div class="tool-btn" onclick="eraseFlash()">
-                        <i class="fas fa-eraser"></i>
-                        <span>Erase Flash</span>
-                    </div>
-                    <div class="tool-btn" onclick="uploadFilesystem()">
-                        <i class="fas fa-upload"></i>
-                        <span>Upload FS</span>
-                    </div>
-                    <!-- New endpoints buttons -->
-                    <div class="tool-btn" onclick="callWebApi()">
-                        <i class="fas fa-network-wired"></i>
-                        <span>Web API</span>
-                    </div>
-                    <div class="tool-btn" onclick="serialEndpoints()">
-                        <i class="fas fa-plug"></i>
-                        <span>Serial API</span>
-                    </div>
-                    <div class="tool-btn" onclick="wsEndpoints()">
-                        <i class="fas fa-wave-square"></i>
-                        <span>WS Endpoints</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Testing Tools -->
-            <div class="dev-card">
-                <h3><i class="fas fa-flask icon"></i> Testing & Debug</h3>
-                <div class="tool-grid">
-                    <div class="tool-btn" onclick="runUnitTests()">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Unit Tests</span>
-                    </div>
-                    <div class="tool-btn" onclick="testEndpoints()">
-                        <i class="fas fa-globe"></i>
-                        <span>API Tests</span>
-                    </div>
-                    <div class="tool-btn" onclick="benchmarkCode()">
-                        <i class="fas fa-stopwatch"></i>
-                        <span>Benchmark</span>
-                    </div>
-                    <div class="tool-btn" onclick="profileMemory()">
-                        <i class="fas fa-chart-line"></i>
-                        <span>Memory Profile</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Version Control -->
-            <div class="dev-card">
-                <h3><i class="fas fa-code-branch icon"></i> Version Control</h3>
-                <div class="tool-grid">
-                    <div class="tool-btn" onclick="gitStatus()">
-                        <i class="fab fa-git-alt"></i>
-                        <span>Git Status</span>
-                    </div>
-                    <div class="tool-btn" onclick="createBackup()">
-                        <i class="fas fa-save"></i>
-                        <span>Backup</span>
-                    </div>
-                    <div class="tool-btn" onclick="diffChanges()">
-                        <i class="fas fa-exchange-alt"></i>
-                        <span>View Diff</span>
-                    </div>
-                    <div class="tool-btn" onclick="tagRelease()">
-                        <i class="fas fa-tag"></i>
-                        <span>Tag Release</span>
-                    </div>
-                </div>
-            </div>
-            <!-- Web API Explorer -->
-            <div class="dev-card">
-                <h3><i class="fas fa-list icon"></i> Web API</h3>
-                <div style="margin-bottom:10px;">
-                    <button class="btn btn-small btn-primary" onclick="loadApiList()">Load APIs</button>
-                </div>
-                <div id="api-list" style="max-height:260px; overflow:auto; font-family:monospace; font-size:12px; background:var(--card-bg); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
-                    <div style="color:var(--muted);">No API list loaded.</div>
-                </div>
-            </div>
-        </div>
-
-            <!-- Source Browser -->
-            <div class="dev-card" style="grid-column: span 2;">
-                <h3><i class="fas fa-folder-open icon"></i> Source Browser</h3>
-                <div style="display:flex; gap:12px;">
-                    <div style="flex:1; min-width:260px;">
-                        <div style="margin-bottom:8px;">
-                            <button class="btn btn-small btn-primary" onclick="loadSourceTree()">Load Files</button>
-                            <button class="btn btn-small" onclick="loadRecentFiles()">Recent</button>
-                        </div>
-                        <div id="source-tree" style="height:360px; overflow:auto; background:var(--card-bg); border:1px solid var(--panel-border); padding:8px; border-radius:6px; font-family:monospace; font-size:12px;">
-                            <div style="color:var(--muted);">No files loaded.</div>
-                        </div>
-                    </div>
-                    <div style="flex:2; min-width:320px;">
-                        <div style="margin-bottom:8px;">
-                            <strong id="file-path">No file selected</strong>
-                        </div>
-                        <div id="file-content" style="height:360px; overflow:auto; background:var(--console-bg); color:var(--console-text); padding:12px; border-radius:6px; white-space:pre; font-family: 'Courier New', monospace; font-size:12px;">
-                            <div style="color:#999;">Open a file from the tree to view its contents.</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-        <!-- Connected Devices -->
-        <div class="build-panel">
-            <h3><i class="fas fa-wifi icon"></i> Connected Devices</h3>
-            <div class="device-grid" id="device-grid">
-                <div class="device-card">
-                    <div class="device-status">
-                        <span class="status-dot status-online"></span>
-                        <strong>ESP32-S3 DevKit</strong>
-                    </div>
-                    <div><small>IP: 192.168.26.117</small></div>
-                    <div><small>Firmware: OutdoorAP v1.2.3</small></div>
-                    <div><small>Uptime: 2h 34m</small></div>
-                    <div style="margin-top: 10px;">
-                        <button class="btn btn-small btn-info" onclick="openDeviceWebUI('192.168.26.117')">
-                            <i class="fas fa-globe"></i> Web UI
+            <!-- Debug Console -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-terminal"></i> Debug Console</h3>
+                    <div class="console-controls">
+                        <button id="clear-debug-log" class="btn btn-small">
+                            <i class="fas fa-eraser"></i> Clear
                         </button>
-                        <button class="btn btn-small" onclick="pingDevice('192.168.26.117')">
-                            <i class="fas fa-wifi"></i> Ping
+                        <button id="save-debug-log" class="btn btn-small">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <select id="debug-level-filter" class="form-control">
+                            <option value="ALL">All Levels</option>
+                            <option value="ERROR">Errors Only</option>
+                            <option value="WARN">Warnings+</option>
+                            <option value="INFO">Info+</option>
+                            <option value="DEBUG">Debug+</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="console-input">
+                    <input type="text" id="debug-command" placeholder="Enter debug command..." />
+                    <button id="send-debug-btn" class="btn btn-primary">
+                        <i class="fas fa-play"></i> Send
+                    </button>
+                </div>
+
+                <div class="debug-console" id="debug-log">
+                    <div class="log-line info">
+                        <span class="timestamp">[12:34:56]</span>
+                        <span class="level">[INFO]</span>
+                        <span class="message">Development tools initialized</span>
+                    </div>
+                    <div class="log-line success">
+                        <span class="timestamp">[12:34:57]</span>
+                        <span class="level">[SUCCESS]</span>
+                        <span class="message">Device connection established</span>
+                    </div>
+                    <div class="log-line debug">
+                        <span class="timestamp">[12:34:58]</span>
+                        <span class="level">[DEBUG]</span>
+                        <span class="message">Monitoring ESP32 device</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory Analysis -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-memory"></i> Memory Analysis</h3>
+                    <button id="refresh-memory" class="btn btn-small">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+
+                <div class="memory-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon">💾</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="heap-free">256KB</div>
+                            <div class="stat-label">Free Heap</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stack-usage">12KB</div>
+                            <div class="stat-label">Stack Usage</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💿</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="flash-free">1.2MB</div>
+                            <div class="stat-label">Free Flash</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚙️</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="task-count">8</div>
+                            <div class="stat-label">Active Tasks</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="memory-bars">
+                    <div class="memory-item">
+                        <label>Flash Memory Usage</label>
+                        <div class="memory-bar">
+                            <div class="memory-fill" style="width: 65%"></div>
+                            <span class="memory-text">65% Used (2.1MB / 3.2MB)</span>
+                        </div>
+                    </div>
+                    <div class="memory-item">
+                        <label>Heap Memory Usage</label>
+                        <div class="memory-bar">
+                            <div class="memory-fill" style="width: 45%"></div>
+                            <span class="memory-text">45% Used (115KB / 256KB)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+    <div class="main-container container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="project-info">
+                <h3><i class="fas fa-project-diagram"></i> Project Info</h3>
+                <div class="info-item">
+                    <span class="label">Target:</span>
+                    <span class="value">ESP32-S3 DevKit C-1</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Environment:</span>
+                    <span class="value" id="current-env">OutdoorAP</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Last Build:</span>
+                    <span class="value" id="last-build">Never</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Firmware Size:</span>
+                    <span class="value" id="firmware-size">-</span>
+                </div>
+            </div>
+
+            <!-- Status Dashboard -->
+            <div class="status-dashboard">
+                <h4><i class="fas fa-heartbeat"></i> System Status</h4>
+                <div class="status-grid">
+                    <div class="status-badge" id="badge-webapi">
+                        <span class="status-icon">🌐</span>
+                        <span class="status-text">API: Loading...</span>
+                    </div>
+                    <div class="status-badge" id="badge-ws">
+                        <span class="status-icon">⚡</span>
+                        <span class="status-text">WS: Loading...</span>
+                    </div>
+                    <div class="status-badge" id="badge-com">
+                        <span class="status-icon">🔌</span>
+                        <span class="status-text">COM: Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="advanced-pages">
+                <h4><i class="fas fa-folder-open"></i> Quick Navigation</h4>
+                <div class="nav-grid">
+                    <button class="nav-card quick-open" data-href="files.html">
+                        <i class="fas fa-folder"></i>
+                        <span>File Manager</span>
+                    </button>
+                    <button class="nav-card quick-open" data-href="ai.html">
+                        <i class="fas fa-robot"></i>
+                        <span>AI Assistant</span>
+                    </button>
+                    <button class="nav-card quick-open" data-href="settings.html">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Device Manager -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-plug"></i> Device Management</h2>
+                    <p>Save your devices and select one to use across the Web UI</p>
+                </div>
+
+                <div class="device-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="device-name">Device Name</label>
+                            <input id="device-name" placeholder="My OutdoorAP" />
+                        </div>
+                        <div class="form-group">
+                            <label for="device-ip">IP Address / Host</label>
+                            <input id="device-ip" placeholder="192.168.1.50" />
+                        </div>
+                        <div class="form-group">
+                            <label for="device-com">COM Port</label>
+                            <select id="device-com"></select>
+                        </div>
+                        <div class="form-group">
+                            <button id="device-add" class="btn btn-success">
+                                <i class="fas fa-plus"></i> Add Device
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="saved-devices" class="device-grid"></div>
+            </div>
+
+            <!-- ESP32 Quick Actions -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                    <div class="selected-device-info">
+                        <span id="selected-device-name">None</span>
+                        <small id="selected-device-details">
+                            <span id="selected-device-ip">-</span> •
+                            <span id="selected-device-com">-</span>
+                        </small>
+                    </div>
+                </div>
+
+                <div class="action-grid">
+                    <button id="open-selected-webui" class="action-btn" disabled>
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>Open Web UI</span>
+                    </button>
+                    <button id="ping-selected" class="action-btn" disabled>
+                        <i class="fas fa-satellite-dish"></i>
+                        <span>Ping Device</span>
+                    </button>
+                    <button id="call-device-reboot" class="action-btn" disabled>
+                        <i class="fas fa-power-off"></i>
+                        <span>Reboot</span>
+                    </button>
+                    <button id="call-device-led" class="action-btn" disabled>
+                        <i class="fas fa-lightbulb"></i>
+                        <span>Flash LED</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Debug Console (moved) -->
+            <div class="console-panel">
+                <div class="console-header">
+                    <h3><i class="fas fa-terminal"></i> Console Output</h3>
+                    <div class="console-controls">
+                        <button id="clear-console" class="btn btn-small">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                        <button id="save-log" class="btn btn-small">
+                            <i class="fas fa-save"></i> Save Log
+                        </button>
+                        <button id="kill-process" class="btn btn-danger btn-small" disabled>
+                            <i class="fas fa-stop"></i> Stop
                         </button>
                     </div>
                 </div>
-                <!-- Removed dummy device card (ESP32-C6 Radio) -->
-            </div>
-        </div>
 
-        <!-- Memory Usage Viewer -->
-        <div class="memory-viewer">
-            <h3><i class="fas fa-memory icon"></i> Memory Analysis</h3>
-            <div class="memory-stats">
-                <div class="status-item">
-                    <div class="status-value" id="heap-free">256KB</div>
-                    <div class="status-label">Free Heap</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="stack-usage">12KB</div>
-                    <div class="status-label">Stack Usage</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="flash-free">1.2MB</div>
-                    <div class="status-label">Free Flash</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-value" id="task-count">8</div>
-                    <div class="status-label">Active Tasks</div>
-                </div>
+                <div id="console" class="console"></div>
             </div>
-            <div style="margin-bottom: 10px;">
-                <strong>Flash Memory Usage:</strong>
-                <div class="memory-bar">
-                    <div class="memory-fill" style="width: 65%"></div>
-                    <div class="memory-label">65% Used (2.1MB / 3.2MB)</div>
-                </div>
-            </div>
-            <div style="margin-bottom: 10px;">
-                <strong>Heap Memory Usage:</strong>
-                <div class="memory-bar">
-                    <div class="memory-fill" style="width: 45%"></div>
-                    <div class="memory-label">45% Used (115KB / 256KB)</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Debug Console -->
-        <div class="build-panel">
-            <h3><i class="fas fa-terminal icon"></i> Debug Console</h3>
-            <div class="build-controls">
-                <button class="btn btn-small" onclick="clearDebugLog()">
-                    <i class="fas fa-eraser"></i> Clear
-                </button>
-                <button class="btn btn-small" onclick="saveDebugLog()">
-                    <i class="fas fa-save"></i> Save Log
-                </button>
-                <button class="btn btn-small" onclick="toggleDebugLevel()">
-                    <i class="fas fa-filter"></i> Debug Level
-                </button>
-                <input type="text" id="debug-command" placeholder="Enter debug command..." style="flex: 1; margin: 0 10px;">
-                <button class="btn btn-small btn-primary" onclick="sendDebugCommand()">
-                    <i class="fas fa-play"></i> Send
-                </button>
+            <!-- API Testing Section -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-network-wired"></i> API Testing</h3>
+                    <div class="api-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="default-to-selected-main" checked>
+                            <span class="checkmark"></span>
+                            Use selected device
+                        </label>
+                        <button id="load-api-list" class="btn btn-small btn-primary">
+                            <i class="fas fa-sync"></i> Load Endpoints
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Test Buttons -->
+                <div class="quick-tests">
+                    <h4>Quick Tests</h4>
+                    <div class="test-grid">
+                        <button class="test-btn" data-endpoint="/sysinfo" data-method="GET">
+                            <i class="fas fa-info-circle"></i>
+                            <span>System Info</span>
+                        </button>
+                        <button class="test-btn" data-endpoint="/api/features" data-method="GET">
+                            <i class="fas fa-list"></i>
+                            <span>Features</span>
+                        </button>
+                        <button class="test-btn" data-endpoint="/get_db" data-method="GET">
+                            <i class="fas fa-database"></i>
+                            <span>Tag Database</span>
+                        </button>
+                        <button class="test-btn" data-endpoint="/list_serial_ports" data-method="GET">
+                            <i class="fas fa-usb"></i>
+                            <span>Serial Ports</span>
+                        </button>
+                        <button class="test-btn" data-endpoint="/api/telemetry" data-method="GET">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Telemetry</span>
+                        </button>
+                        <button class="test-btn" data-endpoint="/reboot" data-method="POST" data-confirm="true">
+                            <i class="fas fa-power-off"></i>
+                            <span>Reboot Device</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Custom API Test -->
+                <div class="custom-test">
+                    <h4>Custom Request</h4>
+                    <div class="custom-form">
+                        <div class="form-row">
+                            <select id="custom-method" class="form-control">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                            <input id="custom-endpoint" class="form-control" placeholder="/api/endpoint" />
+                            <button id="send-custom" class="btn btn-primary">Send</button>
+                        </div>
+                        <textarea id="custom-body" class="form-control" placeholder="Request body (JSON for POST/PUT)" rows="3"></textarea>
+                    </div>
+                </div>
+
+                <!-- Response Display -->
+                <div class="response-panel">
+                    <div class="response-header">
+                        <h4>Response</h4>
+                        <div class="response-controls">
+                            <button id="clear-response" class="btn btn-small">Clear</button>
+                            <button id="copy-response" class="btn btn-small">Copy</button>
+                        </div>
+                    </div>
+                    <pre id="api-response" class="response-output">No response yet. Click a test button or send a custom request.</pre>
+                </div>
             </div>
-            <div class="log-viewer" id="debug-log">
-                <div style="color: #00ff00;">[INFO] Development tools initialized</div>
-                <div style="color: #ffff00;">[WARN] Device connection established</div>
-                <div style="color: #00ffff;">[DEBUG] Monitoring ESP32 device at 192.168.26.117</div>
-                <div style="color: #ff9900;">[TRACE] Ready for development commands</div>
+        </main>
+    </div>
+
+    <!-- Device Edit Modal -->
+    <div id="device-edit-modal" class="modal" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Edit Device</h3>
+                <button class="modal-close" id="device-edit-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-device-name">Name</label>
+                    <input id="edit-device-name" class="form-input" placeholder="My OutdoorAP">
+                </div>
+                <div class="form-group">
+                    <label for="edit-device-ip">IP / Host</label>
+                    <input id="edit-device-ip" class="form-input" placeholder="192.168.1.50">
+                </div>
+                <div class="form-group">
+                    <label for="edit-device-com">COM Port</label>
+                    <input id="edit-device-com" class="form-input" placeholder="COM3">
+                </div>
+                <div class="modal-actions">
+                    <button id="device-edit-delete" class="btn btn-danger">Delete</button>
+                    <button id="device-edit-save" class="btn btn-success">Save</button>
+                </div>
             </div>
         </div>
     </div>
@@ -343,5 +470,7 @@
             });
         })();
     </script>
+
 </body>
+
 </html>

@@ -6,6 +6,9 @@ class ESP32DevUI {
         this.aiAvailable = false;
         this.aiConfig = null;
     this.logBuffer = [];
+    // device manager state
+    this.devices = [];
+    this.selectedDeviceId = null;
         this.config = {
             comPort: 'COM3',
             wifiSSID: '',
@@ -30,7 +33,15 @@ class ESP32DevUI {
         this.initSocket();
         this.bindEvents();
         this.loadConfig();
+    this.initDeviceManager();
         this.updateUI();
+    // ensure COM header and device form are populated like Simple Flasher
+    try { this.refreshPorts(); } catch (e) {}
+
+        // Start API health checks after a short delay
+        setTimeout(() => {
+            this.startApiHealthChecks();
+        }, 1000);
     }
 
     // Central client logger that posts to server /api/log (non-blocking)
@@ -111,6 +122,11 @@ class ESP32DevUI {
             this.socket.on('serial-error', (err) => {
                 this.updateSerialStatus(false);
                 this.log(`Serial error: ${err && err.message ? err.message : err}`, 'error');
+            });
+
+            this.socket.on('com_ports', (ports) => {
+                this.updateComPorts(ports);
+                this.log(`Received ${ports.length} COM ports`, 'info');
             });
 
             // Generic log passthrough
@@ -220,8 +236,20 @@ class ESP32DevUI {
     // Refresh COM ports (support multiple button ids used in different pages)
     const refreshPortsBtn = document.getElementById('refresh-ports');
     if (refreshPortsBtn) refreshPortsBtn.addEventListener('click', () => this.refreshComPorts());
+    const comRefreshBtn = document.getElementById('com-refresh');
+    if (comRefreshBtn) comRefreshBtn.addEventListener('click', () => this.refreshPorts());
     const serialRefreshBtn = document.getElementById('serial-refresh');
     if (serialRefreshBtn) serialRefreshBtn.addEventListener('click', () => this.refreshSerialPorts());
+
+    // Header COM select change: persist and copy to device form
+    const headerComSelect = document.getElementById('com-port-select');
+    if (headerComSelect) headerComSelect.addEventListener('change', (e) => {
+        try { this.saveLastPort(e.target.value); } catch (_) {}
+        const devCom = document.getElementById('device-com');
+        if (devCom) devCom.value = e.target.value;
+        // also update main config
+        this.updateConfig('comPort', e.target.value);
+    });
 
     // Serial open/close/send bindings (C6 panel)
     const serialOpenBtn = document.getElementById('serial-open');
@@ -327,6 +355,41 @@ class ESP32DevUI {
                 this.handleActionButton(act);
             });
         });
+
+    // Device manager UI bindings (if present on this page)
+    const addDevBtn = document.getElementById('device-add');
+    if (addDevBtn) addDevBtn.addEventListener('click', () => this.addDeviceFromForm());
+
+    // Quick-open buttons used in several pages (data-href)
+    try {
+        document.querySelectorAll('button.quick-open').forEach(b => {
+            if (b.__bound_quick_open) return; // idempotent
+            b.addEventListener('click', (e) => {
+                const href = b.getAttribute('data-href');
+                if (!href) return;
+                // prefer opening in same window for dev tools
+                window.location.href = href;
+            });
+            b.__bound_quick_open = true;
+        });
+    } catch (e) { /* ignore when not present */ }
+
+    // Open settings button (some pages include this)
+    const openSettingsBtn = document.getElementById('open-settings-btn');
+    if (openSettingsBtn) openSettingsBtn.addEventListener('click', () => { window.location.href = 'settings.html'; });
+
+    // AI modal close buttons (index.html and other pages)
+    const aiChatClose = document.getElementById('ai-chat-close');
+    if (aiChatClose) aiChatClose.addEventListener('click', () => closeAIChat());
+    const aiConfigClose = document.getElementById('ai-config-close');
+    if (aiConfigClose) aiConfigClose.addEventListener('click', () => closeAIConfig());
+
+    // File manager: cancel new file modal
+    const cancelNewFileBtn = document.getElementById('cancel-newfile');
+    if (cancelNewFileBtn) cancelNewFileBtn.addEventListener('click', (e) => {
+        const modal = document.getElementById('newFileModal');
+        if (modal) modal.style.display = 'none';
+    });
     }
 
     updateConnectionStatus() {
@@ -391,6 +454,208 @@ class ESP32DevUI {
         }
     }
 
+    // ---- Device Manager ----
+    initDeviceManager() {
+        // Load from server (preferred) then localStorage fallback
+        this.fetchDevices().then(() => {
+            this.renderDevices();
+            // if a selection exists, apply it
+            const sel = this.getSelectedDevice();
+            if (sel) this.applySelectedDevice(sel);
+        }).catch(() => {
+            this.loadDevicesFromLocal();
+            this.renderDevices();
+            const sel = this.getSelectedDevice();
+            if (sel) this.applySelectedDevice(sel);
+        });
+        // ensure COM dropdown for device form is hydrated by header COM list
+        try { this.refreshHeaderComListToDeviceForm(); } catch (e) {}
+    }
+
+    async fetchDevices() {
+        try {
+            const resp = await fetch('/api/devices');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const json = await resp.json();
+            if (!Array.isArray(json.devices)) throw new Error('invalid');
+            this.devices = json.devices;
+            this.selectedDeviceId = json.selectedId || null;
+            return this.devices;
+        } catch (err) {
+            throw err;
+        }
+    }
+
+    saveDevices() {
+        // Try server first, fallback to localStorage
+        const payload = { devices: this.devices, selectedId: this.selectedDeviceId };
+        fetch('/api/devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            .then(r => r.json()).then(() => {})
+            .catch(() => {
+                try { localStorage.setItem('oepl_devices', JSON.stringify(payload)); } catch (e) {}
+            });
+    }
+
+    loadDevicesFromLocal() {
+        try {
+            const raw = localStorage.getItem('oepl_devices');
+            if (raw) {
+                const j = JSON.parse(raw);
+                this.devices = Array.isArray(j.devices) ? j.devices : [];
+                this.selectedDeviceId = j.selectedId || null;
+            }
+        } catch (e) {
+            this.devices = [];
+        }
+    }
+
+    addDeviceFromForm() {
+        const nameEl = document.getElementById('device-name');
+        const ipEl = document.getElementById('device-ip');
+        const comEl = document.getElementById('device-com');
+        if (!nameEl || !ipEl || !comEl) return;
+        const name = (nameEl.value || '').trim();
+        const ip = (ipEl.value || '').trim();
+        const com = (comEl.value || '').trim();
+        if (!name) { alert('Enter a device name'); return; }
+        const id = `${name}`.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
+        const dev = { id, name, ip, com };
+        this.devices.push(dev);
+        this.selectedDeviceId = id;
+        this.saveDevices();
+        this.renderDevices();
+        this.applySelectedDevice(dev);
+        // clear form
+        nameEl.value = '';
+        // leave IP/COM as-is for convenience
+    }
+
+    getSelectedDevice() {
+        if (!this.selectedDeviceId) return null;
+        return this.devices.find(d => d.id === this.selectedDeviceId) || null;
+    }
+
+    selectDevice(id) {
+        this.selectedDeviceId = id;
+        this.saveDevices();
+        const dev = this.getSelectedDevice();
+        if (dev) this.applySelectedDevice(dev);
+        this.renderDevices();
+    }
+
+    deleteDevice(id) {
+        this.devices = this.devices.filter(d => d.id !== id);
+        if (this.selectedDeviceId === id) this.selectedDeviceId = this.devices[0]?.id || null;
+        this.saveDevices();
+        this.renderDevices();
+        const dev = this.getSelectedDevice();
+        if (dev) this.applySelectedDevice(dev);
+    }
+
+    renderDevices() {
+        const container = document.getElementById('saved-devices');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!Array.isArray(this.devices) || this.devices.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'device-card';
+            empty.innerHTML = '<em>No saved devices yet</em>';
+            container.appendChild(empty);
+            return;
+        }
+        this.devices.forEach(d => {
+            const card = document.createElement('div');
+            card.className = 'device-card';
+            const selected = d.id === this.selectedDeviceId;
+            card.innerHTML = `
+                <div class="device-status">
+                    <span class="status-dot ${selected ? 'status-online' : 'status-offline'}"></span>
+                    <strong>${d.name || d.id}</strong>
+                </div>
+                <div><small>IP: ${d.ip || '-'}</small></div>
+                <div><small>COM: ${d.com || '-'}</small></div>
+                <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-small ${selected ? 'btn-success' : 'btn-outline'}" data-act="select" data-id="${d.id}">${selected ? 'Selected' : 'Select'}</button>
+                    <button class="btn btn-small btn-outline" data-act="ping" data-id="${d.id}">Ping</button>
+                    <button class="btn btn-small btn-danger" data-act="delete" data-id="${d.id}">Delete</button>
+                </div>
+            `;
+            container.appendChild(card);
+
+            // wire actions
+            card.querySelectorAll('button[data-act]')?.forEach(btn => {
+                const act = btn.getAttribute('data-act');
+                const id = btn.getAttribute('data-id');
+                btn.addEventListener('click', async () => {
+                    if (act === 'select') this.selectDevice(id);
+                    if (act === 'delete') this.deleteDevice(id);
+                    if (act === 'ping') {
+                        const dev = this.devices.find(x => x.id === id);
+                        if (dev && dev.ip) {
+                            try {
+                                const ok = await this.testRemoteHost(dev.ip);
+                                alert(ok ? `Device ${dev.name} reachable` : `Device ${dev.name} not reachable`);
+                            } catch (_) { alert('Ping failed'); }
+                        } else {
+                            alert('No IP set for device');
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    applySelectedDevice(dev) {
+        // Update config COM
+        if (dev && dev.com) {
+            this.config.comPort = dev.com;
+            // reflect in header selector if present
+            const headerSel = document.getElementById('com-port-select');
+            if (headerSel) {
+                const opt = Array.from(headerSel.options).find(o => o.value === dev.com);
+                if (opt) headerSel.value = dev.com;
+                const statusText = document.getElementById('serial-status-text');
+                if (statusText) statusText.textContent = `Serial (${dev.com})`;
+            }
+            // persist new COM to backend config
+            try { this.saveConfig(); } catch (e) {}
+        }
+
+        // Update API hint in header if IP provided (WS remains local to this server)
+        if (dev && dev.ip) {
+            const apiText = document.getElementById('api-status-text');
+            if (apiText) apiText.textContent = `API(${dev.ip})`;
+            // set remote config for API/device proxy usage only
+            this.remoteConfig.enabled = true;
+            this.remoteConfig.host = dev.ip;
+            // try reachability and mark
+            this.testRemoteHost(dev.ip).then(ok => {
+                this.remoteConfig.connected = !!ok;
+                this.updateApiStatus(!!ok, 'API');
+            }).catch(() => {
+                this.remoteConfig.connected = false;
+                this.updateApiStatus(false);
+            });
+        }
+        if (!dev || !dev.ip) {
+            this.remoteConfig.enabled = false;
+            this.remoteConfig.host = '';
+            this.remoteConfig.connected = false;
+            this.updateApiStatus(false);
+        }
+
+        // Keep websocket local; no reconnect to device
+    }
+
+    refreshHeaderComListToDeviceForm() {
+        const headerSel = document.getElementById('com-port-select');
+        const devSel = document.getElementById('device-com');
+        if (headerSel && devSel) {
+            devSel.innerHTML = headerSel.innerHTML;
+            if (headerSel.value) devSel.value = headerSel.value;
+        }
+    }
+
     // Internal helper to enable/disable flash & erase buttons based on serial availability
     _updateFlashEraseButtons() {
         const flashBtn = document.getElementById('btn-flash') || document.getElementById('c6-flash');
@@ -449,16 +714,143 @@ class ESP32DevUI {
     }
 
     loadConfig() {
-        this.socket.emit('load_config');
+        // Try to load config via API first, then fall back to socket
+        this.loadConfigViaAPI().catch(() => {
+            // Fallback to socket if available
+            if (this.socket && this.connected) {
+                this.socket.emit('load_config');
+            }
+        });
+    }
+
+    async loadConfigViaAPI() {
+        try {
+            const response = await fetch('/api/config');
+            if (response.ok) {
+                const config = await response.json();
+                this.config = { ...this.config, ...config };
+                this.updateConfigUI();
+                this.log('Configuration loaded via API', 'info');
+            }
+        } catch (error) {
+            this.log('Failed to load config via API', 'warning');
+            throw error;
+        }
     }
 
     saveConfig() {
-        this.socket.emit('save_config', this.config);
+        // Try to save config via API first, then fall back to socket
+        this.saveConfigViaAPI().catch(() => {
+            // Fallback to socket if available
+            if (this.socket && this.connected) {
+                this.socket.emit('save_config', this.config);
+            }
+        });
+    }
+
+    async saveConfigViaAPI() {
+        try {
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(this.config)
+            });
+            if (response.ok) {
+                const result = await response.json();
+                this.log('Configuration saved via API', 'success');
+                return result;
+            }
+        } catch (error) {
+            this.log('Failed to save config via API', 'warning');
+            throw error;
+        }
     }
 
     refreshComPorts() {
-        this.socket.emit('get_com_ports');
+        this.refreshComPortsViaAPI().catch(() => {
+            // Fallback to socket if available
+            if (this.socket && this.connected) {
+                this.socket.emit('get_com_ports');
+            }
+        });
         this.log('Refreshing COM ports...', 'info');
+    }
+
+    // --- COM helpers copied from flash.js to keep behavior identical ---
+    saveLastPort(p) {
+        try { localStorage.setItem('oepl:lastPort', p); } catch (e) {}
+    }
+    loadLastPort() { try { return localStorage.getItem('oepl:lastPort') || null } catch (e) { return null } }
+
+    // Populate header (#com-port-select) and device form (#device-com) with ports
+    async refreshPorts() {
+        try {
+            this.log('Refreshing COM ports (header)...', 'info');
+            const r = await fetch('/api/com-ports');
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const ports = await r.json();
+
+            const headerSelect = document.getElementById('com-port-select');
+            const deviceSelect = document.getElementById('device-com');
+            if (headerSelect) headerSelect.innerHTML = '';
+            if (deviceSelect) deviceSelect.innerHTML = '';
+
+            if (Array.isArray(ports) && ports.length > 0) {
+                ports.forEach(p => {
+                    const val = p.path || p;
+                    const o = document.createElement('option');
+                    o.value = val;
+                    o.textContent = val;
+                    if (headerSelect) headerSelect.appendChild(o);
+                    if (deviceSelect) deviceSelect.appendChild(o.cloneNode(true));
+                });
+                this.log(`Found ${ports.length} COM ports`, 'info');
+            } else {
+                ['COM1', 'COM3', 'COM10', 'COM13'].forEach(port => {
+                    const o = document.createElement('option');
+                    o.value = port;
+                    o.textContent = port;
+                    if (headerSelect) headerSelect.appendChild(o);
+                    if (deviceSelect) deviceSelect.appendChild(o.cloneNode(true));
+                });
+                this.log('Using fallback COM ports', 'warning');
+            }
+
+            const last = this.loadLastPort();
+            if (last) {
+                try { if (headerSelect) headerSelect.value = last; if (deviceSelect) deviceSelect.value = last; } catch (e) {}
+            }
+        } catch (e) {
+            this.log(`Failed to refresh header COM ports: ${e.message}`, 'error');
+            const headerSelect = document.getElementById('com-port-select');
+            const deviceSelect = document.getElementById('device-com');
+            if (headerSelect) headerSelect.innerHTML = '';
+            if (deviceSelect) deviceSelect.innerHTML = '';
+            ['COM1', 'COM3', 'COM10', 'COM13'].forEach(port => {
+                const o = document.createElement('option');
+                o.value = port;
+                o.textContent = port;
+                if (headerSelect) headerSelect.appendChild(o);
+                if (deviceSelect) deviceSelect.appendChild(o.cloneNode(true));
+            });
+        }
+    }
+
+    async refreshComPortsViaAPI() {
+        try {
+            const response = await fetch('/api/com-ports');
+            if (response.ok) {
+                const ports = await response.json();
+                this.updateComPorts(ports);
+                this.log('COM ports refreshed via API', 'info');
+                return ports;
+            }
+        } catch (error) {
+            this.log('Failed to refresh COM ports via API', 'warning');
+            throw error;
+        }
     }
 
     // Serial port helpers (server-backed)
@@ -763,6 +1155,14 @@ class ESP32DevUI {
                 this.validateConfig();
                 break;
             }
+            case 'gzip-www': {
+                this.log('Gzipping www files...', 'info');
+                this.showProgress('Gzipping www files...');
+                this.currentProcess = 'gzip_www';
+                this.updateButtons();
+                this.socket.emit('run_script', { script: 'gzip_wwwfiles.py', args: [] });
+                break;
+            }
             default: {
                 this.log(`Unknown action: ${action}`, 'warning');
             }
@@ -857,7 +1257,18 @@ class ESP32DevUI {
         this.currentProcess = 'ota';
         this.updateButtons();
 
-    this.socket.emit('run_script', { script: 'simple_upload.py', args: [] });
+        this.socket.emit('run_script', { script: 'simple_upload.py', args: [] });
+    }
+
+    gzipWwwFiles() {
+        if (this.currentProcess) return;
+
+        this.log('Gzipping www files...', 'info');
+        this.showProgress('Gzipping www files...');
+        this.currentProcess = 'gzip_www';
+        this.updateButtons();
+
+        this.socket.emit('run_script', { script: 'gzip_wwwfiles.py', args: [] });
     }
 
     testNetwork() {
@@ -1060,6 +1471,12 @@ class ESP32DevUI {
     // Console Operations
     log(message, type = 'info') {
         const console = document.getElementById('console');
+        if (!console) {
+            // If no console element, just log to browser console
+            console.log(`[${type}] ${message}`);
+            return;
+        }
+
         const line = document.createElement('div');
         line.className = `console-line ${type}`;
 
@@ -1107,7 +1524,9 @@ class ESP32DevUI {
 
     clearConsole() {
         const console = document.getElementById('console');
-        console.innerHTML = '';
+        if (console) {
+            console.innerHTML = '';
+        }
         this.log('Console cleared', 'info');
     }
 

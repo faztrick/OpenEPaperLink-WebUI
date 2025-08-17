@@ -86,7 +86,7 @@
                     <h3><i class="fas fa-wrench"></i> Settings</h3>
                     <p>Move configuration and remote server options to a dedicated settings page.</p>
                     <div class="button-grid">
-                        <button class="btn btn-primary" onclick="window.open('settings.html', '_self')">
+                        <button id="open-settings-btn" class="btn btn-primary">
                             <i class="fas fa-cog"></i> Open Settings
                         </button>
                     </div>
@@ -95,373 +95,30 @@
 
             <!-- Main Content Area -->
             <main class="main-content">
-                <!-- Action Buttons -->
-                <div class="action-panel">
+                <!-- Device Manager -->
+                <div class="build-panel" id="device-manager">
+                    <h2><i class="fas fa-plug"></i> Devices</h2>
+                    <p style="color:#6b7280;margin-top:-6px">Save your devices (name, IP and COM). Select one to use across the Web UI.</p>
 
-       <script>
-                    // Populate device list: platformio environments AND saved remote servers.
-                    (async function(){
-                        const container = document.getElementById('device-list');
-
-                        function clear() { container.innerHTML = ''; }
-
-                        function renderPlatformio(devices){
-                            if (!Array.isArray(devices) || devices.length === 0) return;
-                            const sectionTitle = document.createElement('div');
-                            sectionTitle.style.marginBottom = '6px';
-                            sectionTitle.innerHTML = '<strong>Local Environments</strong>';
-                            container.appendChild(sectionTitle);
-
-                            devices.forEach(d => {
-                                const card = document.createElement('div');
-                                card.className = 'device-card';
-                                const port = d.port || d.defaultPort || '';
-                                const dotClass = port ? 'status-online' : 'status-offline';
-                                card.innerHTML = `
-                                    <div class="device-status">
-                                        <span class="status-dot ${dotClass}"></span>
-                                        <strong>${d.name || d.id}</strong>
-                                    </div>
-                                    <div><small>Env: ${d.id}</small></div>
-                                    <div><small>Board: ${d.board || '-'}</small></div>
-                                    <div><small>Serial: ${port || '-'}</small></div>
-                                    <div style="margin-top:8px">
-                                        <button class="btn btn-small btn-info" onclick="window.open('esp32c6.html','_self')">Open C6 Page</button>
-                                    </div>
-                                `;
-                                container.appendChild(card);
-                            });
-                        }
-
-                        function renderRemotes(remotes){
-                            if (!Array.isArray(remotes) || remotes.length === 0) return;
-                            const sectionTitle = document.createElement('div');
-                            sectionTitle.style.margin = '12px 0 6px';
-                            sectionTitle.innerHTML = '<strong>Saved Remote Servers</strong>';
-                            container.appendChild(sectionTitle);
-
-                            remotes.forEach(s => {
-                                const card = document.createElement('div');
-                                card.className = 'device-card';
-                                const host = s.host || '-';
-                                const statusDot = s.enabled ? 'status-online' : 'status-offline';
-                                card.innerHTML = `
-                                    <div class="device-status">
-                                        <span class="status-dot ${statusDot}"></span>
-                                        <strong>${s.name || s.id}</strong>
-                                    </div>
-                                    <div><small>Host: ${host}:${s.port || 22}</small></div>
-                                    <div><small>Project: ${s.projectPath || '-'}</small></div>
-                                    <div style="margin-top:8px;display:flex;gap:8px">
-                                        <button class="btn btn-small btn-outline" data-action="remote-test" data-id="${s.id}">Test Connection</button>
-                                        <button class="btn btn-small btn-info" data-action="remote-open" data-host="${host}">Open SSH</button>
-                                    </div>
-                                    <div class="remote-status" style="margin-top:6px;font-size:12px;color:#9ca3af"></div>
-                                `;
-                                container.appendChild(card);
-
-                                // wire up test button
-                                const testBtn = card.querySelector('button[data-action="remote-test"]');
-                                const openBtn = card.querySelector('button[data-action="remote-open"]');
-                                const statusDiv = card.querySelector('.remote-status');
-
-                                if (testBtn) testBtn.addEventListener('click', async () => {
-                                    statusDiv.textContent = 'Testing...';
-                                    try {
-                                        const resp = await fetch(`/api/remote/test/${encodeURIComponent(s.id)}`, { method: 'POST' });
-                                        const json = await resp.json();
-                                        if (json && json.success) {
-                                            statusDiv.textContent = `OK: ${json.message || 'Connection successful'}`;
-                                        } else {
-                                            statusDiv.textContent = `Failed: ${json && json.message ? json.message : JSON.stringify(json)}`;
-                                        }
-                                    } catch (err) {
-                                        statusDiv.textContent = `Error: ${err.message || err}`;
-                                    }
-                                });
-
-                                if (openBtn) openBtn.addEventListener('click', () => {
-                                    // Open a new tab to an SSH web client if available, otherwise show host in a new tab as http
-                                    if (s.host) {
-                                        // try opening an ssh:// link (may be handled by local client)
-                                        window.open(`ssh://${s.host}`, '_blank');
-                                    } else {
-                                        alert('No host configured for this remote server');
-                                    }
-                                });
-                            });
-                        }
-
-                        clear();
-
-                        // Try to fetch platformio devices and render
-                        try {
-                            const resp = await fetch('/api/platformio-devices');
-                            if (resp.ok) {
-                                const json = await resp.json();
-                                if (json && json.success && Array.isArray(json.devices)) {
-                                    const devices = json.devices.map(d => ({ id: d.id, name: d.name || d.id, board: d.board || '-', monitor_speed: d.monitor_speed || 115200 }));
-                                    renderPlatformio(devices);
-                                    window.__oepl_devices = devices;
-                                }
-                            }
-                        } catch (err) {
-                            console.warn('Failed to fetch platformio devices:', err);
-                        }
-
-                        // Then try to fetch saved remote servers and render them
-                        try {
-                            const r = await fetch('/api/remote/servers');
-                            if (r.ok) {
-                                const remotes = await r.json();
-                                if (Array.isArray(remotes)) {
-                                    renderRemotes(remotes);
-                                    window.__oepl_remotes = remotes;
-                                }
-                            }
-                        } catch (err) {
-                            console.warn('Failed to fetch remote servers:', err);
-                        }
-
-                        // If nothing rendered, show fallback
-                        if (!container.children.length) {
-                            const fallback = [
-                                { id: 'OutdoorAP', name: 'ESP32-S3 DevKit C-1', board: 'esp32-s3-devkitc-1', monitor_speed: 115200 }
-                            ];
-                            renderPlatformio(fallback);
-                            window.__oepl_devices = fallback;
-                        }
-                    })();
-
-                    // Source browser client logic
-                    (function(){
-                        const treeEl = document.getElementById('src-tree');
-                        const previewEl = document.getElementById('src-preview');
-                        const currentPathEl = document.getElementById('src-current-path');
-                        const refreshBtn = document.getElementById('src-refresh');
-                        const filterInput = document.getElementById('src-filter');
-                        const downloadBtn = document.getElementById('src-download');
-
-                        let lastTree = null;
-                        let selectedFile = null;
-
-                        function renderTree(node, container, prefix=''){
-                            const item = document.createElement('div');
-                            item.style.marginLeft = prefix ? '8px' : '0';
-                            if (node.type === 'directory'){
-                                const title = document.createElement('div');
-                                title.style.fontWeight = '600';
-                                title.textContent = node.name;
-                                container.appendChild(title);
-                                if (node.children && node.children.length){
-                                    const sub = document.createElement('div');
-                                    sub.style.marginLeft = '6px';
-                                    node.children.forEach(child => renderTree(child, sub, prefix + '  '));
-                                    container.appendChild(sub);
-                                }
-                            } else {
-                                const line = document.createElement('div');
-                                line.className = 'file-item';
-                                line.textContent = node.path || node.name || node;
-                                line.style.cursor = 'pointer';
-                                line.addEventListener('click', () => openFile(node.path));
-                                container.appendChild(line);
-                            }
-                        }
-
-                        async function loadTree(){
-                            treeEl.innerHTML = 'Loading...';
-                            try {
-                                const resp = await fetch('/api/source-files/tree');
-                                const json = await resp.json();
-                                if (json && json.success && json.tree){
-                                    lastTree = json.tree;
-                                    renderFilteredTree();
-                                    return;
-                                }
-                            } catch (err){ console.warn('src tree load failed', err); }
-                            treeEl.innerHTML = '<div class="error">Failed to load source tree</div>';
-                        }
-
-                        function renderFilteredTree(){
-                            const filter = (filterInput.value || '').toLowerCase().trim();
-                            treeEl.innerHTML = '';
-                            if (!lastTree) return;
-                            // simple recursive render with filter on path/name
-                            const walk = (node, cont) => {
-                                if (node.type === 'directory'){
-                                    const children = node.children || [];
-                                    const match = children.some(c => {
-                                        if (c.type === 'directory') return (c.children||[]).length>0;
-                                        return (!filter) || (c.name||'').toLowerCase().includes(filter) || (c.path||'').toLowerCase().includes(filter);
-                                    });
-                                    if (!filter || match) renderTree(node, cont);
-                                } else {
-                                    if (!filter || (node.name||'').toLowerCase().includes(filter) || (node.path||'').toLowerCase().includes(filter)) renderTree(node, cont);
-                                }
-                            };
-                            walk(lastTree, treeEl);
-                        }
-
-                        async function openFile(relPath){
-                            currentPathEl.textContent = relPath;
-                            previewEl.textContent = 'Loading...';
-                            selectedFile = relPath;
-                            downloadBtn.disabled = true;
-                            try {
-                                const resp = await fetch(`/api/source-files/read?path=${encodeURIComponent(relPath)}`);
-                                const json = await resp.json();
-                                if (json && json.success && json.file){
-                                    previewEl.textContent = json.file.content;
-                                    downloadBtn.disabled = false;
-                                    return;
-                                }
-                                previewEl.textContent = 'Failed to load file';
-                            } catch (err){
-                                previewEl.textContent = 'Error: ' + (err.message || err);
-                            }
-                        }
-
-                        downloadBtn.addEventListener('click', () => {
-                            if (!selectedFile) return;
-                            const a = document.createElement('a');
-                            a.href = `/api/source-files/read?path=${encodeURIComponent(selectedFile)}`;
-                            a.download = selectedFile.split('/').pop();
-                            // perform fetch to get content
-                            fetch(`/api/source-files/read?path=${encodeURIComponent(selectedFile)}`)
-                            .then(r => r.json()).then(j => {
-                                if (j && j.success && j.file){
-                                    const blob = new Blob([j.file.content], { type: 'text/plain' });
-                                    const url = URL.createObjectURL(blob);
-                                    const dl = document.createElement('a');
-                                    dl.href = url;
-                                    dl.download = selectedFile.split('/').pop();
-                                    dl.click();
-                                    URL.revokeObjectURL(url);
-                                }
-                            }).catch(() => {});
-                        });
-
-                        refreshBtn.addEventListener('click', loadTree);
-                        filterInput.addEventListener('input', renderFilteredTree);
-
-                        // initial load
-                        loadTree();
-                    })();
-                </script>
-
-
-                    <h2><i class="fas fa-tools"></i> Build & Flash Actions</h2>
-
-                    <div class="button-grid">
-                        <button class="btn btn-primary" data-action="build">
-                            <i class="fas fa-hammer"></i>
-                            Build Only
-                        </button>
-
-                        <button class="btn btn-secondary" data-action="upload">
-                            <i class="fas fa-upload"></i>
-                            Upload Only
-                        </button>
-
-                        <button class="btn btn-success" data-action="build-upload">
-                            <i class="fas fa-rocket"></i>
-                            Build + Upload
-                        </button>
-
-                        <button class="btn btn-warning" data-action="fast-build">
-                            <i class="fas fa-bolt"></i>
-                            Turbo Build
-                        </button>
-
-                        <button class="btn btn-info" data-action="monitor">
-                            <i class="fas fa-tv"></i>
-                            Serial Monitor
-                        </button>
-                        <button class="btn btn-info" data-action="monitor-com13">
-                            <i class="fas fa-tv"></i>
-                            COM13 Monitor
-                        </button>
-
-                        <button class="btn btn-danger" data-action="clean">
-                            <i class="fas fa-broom"></i>
-                            Clean Build
-                        </button>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+                        <div class="form-group" style="min-width:200px">
+                            <label for="device-name">Name</label>
+                            <input id="device-name" placeholder="My OutdoorAP" />
+                        </div>
+                        <div class="form-group" style="min-width:220px">
+                            <label for="device-ip">Device IP (host[:port])</label>
+                            <input id="device-ip" placeholder="192.168.1.50" />
+                        </div>
+                        <div class="form-group" style="min-width:180px">
+                            <label for="device-com">COM Port</label>
+                            <select id="device-com"></select>
+                        </div>
+                        <button id="device-add" class="btn btn-success"><i class="fas fa-plus"></i> Add Device</button>
                     </div>
 
-                    <h3><i class="fas fa-cogs"></i> Project Tools</h3>
-
-                    <div class="button-grid">
-                        <button class="btn btn-outline" data-action="configure-wifi">
-                            <i class="fas fa-wifi"></i>
-                            Configure WiFi
-                        </button>
-
-                        <button class="btn btn-outline" data-action="configure-newton">
-                            <i class="fas fa-cog"></i>
-                            Configure Newton M3
-                        </button>
-
-                        <button class="btn btn-outline" data-action="validate-config">
-                            <i class="fas fa-check-circle"></i>
-                            Validate Config
-                        </button>
-
-                        <button class="btn btn-outline" data-action="test-endpoints">
-                            <i class="fas fa-flask"></i>
-                            Test API
-                        </button>
-
-                        <button class="btn btn-outline" onclick="window.open('http://192.168.26.117', '_blank')">
-                            <i class="fas fa-globe"></i>
-                            Open Web UI
-                        </button>
-
-                        <button class="btn btn-primary" onclick="window.open('flash.html', '_blank')">
-                            <i class="fas fa-rocket"></i>
-                            Simple Flasher
-                        </button>
-
-                        <button class="btn btn-info" onclick="window.open('development.html', '_blank')">
-                            <i class="fas fa-code"></i>
-                            Development Tools
-                        </button>
-
-                        <button class="btn btn-outline" onclick="window.open('files.html', '_blank')">
-                            <i class="fas fa-folder-open"></i>
-                            File Manager
-                        </button>
-
-                        <button class="btn btn-outline" onclick="openBuildFolder()">
-                            <i class="fas fa-folder-open"></i>
-                            Build Folder
-                        </button>
-                    </div>
-
-                    <h3><i class="fas fa-robot"></i> AI Assistant</h3>
-
-                    <div class="button-grid">
-                        <button class="btn btn-info" id="ai-analyze-project">
-                            <i class="fas fa-search"></i>
-                            Analyze Project
-                        </button>
-
-                        <button class="btn btn-info" id="ai-chat-toggle">
-                            <i class="fas fa-comments"></i>
-                            AI Chat
-                        </button>
-
-                        <button class="btn btn-outline" id="ai-suggestions">
-                            <i class="fas fa-lightbulb"></i>
-                            Get Suggestions
-                        </button>
-
-                        <button class="btn btn-outline" id="ai-config">
-                            <i class="fas fa-robot"></i>
-                            AI Config
-                        </button>
-                    </div>
+                    <div id="saved-devices" class="device-grid"></div>
                 </div>
+                <!-- Build sections removed from index page -->
 
                 <!-- Console Output -->
                 <div class="console-panel">
@@ -481,37 +138,6 @@
                     </div>
 
                     <div id="console" class="console"></div>
-                </div>
-
-                <!-- Devices panel populated from platformio.ini -->
-                <div class="build-panel">
-                    <h3><i class="fas fa-microchip icon"></i> Devices</h3>
-                    <div class="device-grid" id="device-list">
-                        <!-- Rendered by script -->
-                    </div>
-                </div>
-
-                <!-- COM Control Panel -->
-                <div class="build-panel" id="com-control-panel" style="margin-top:12px">
-                    <h3><i class="fas fa-plug icon"></i> COM Control</h3>
-                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-                        <label for="com-main-select">COM:</label>
-                        <select id="com-main-select" style="min-width:160px;padding:6px;border-radius:4px;border:1px solid #e5e7eb"></select>
-                        <select id="com-action-select" style="min-width:160px;padding:6px;border-radius:4px;border:1px solid #e5e7eb">
-                            <option value="monitor">Open Monitor</option>
-                            <option value="check">COM Check</option>
-                            <option value="set-wifi">Set WiFi</option>
-                            <option value="led-off">LED Off</option>
-                            <option value="led-on">LED On</option>
-                            <option value="test">Run Test</option>
-                        </select>
-                        <button id="com-action-go" class="btn btn-primary">Go</button>
-                        <button id="com-sync-select" class="btn btn-outline" title="Sync from header">Sync</button>
-                    </div>
-
-                    <div id="com-action-params" style="margin-bottom:8px"></div>
-
-                    <div id="com-action-result" class="console" style="min-height:60px;padding:8px;background:#111827;color:#ecfccb;white-space:pre-wrap"></div>
                 </div>
 
                 <!-- Source Browser Panel -->
@@ -534,6 +160,8 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- (Removed duplicate Devices/COM panels) -->
 
             </main>
         </div>
@@ -558,7 +186,7 @@
             <div class="modal-content ai-modal">
                 <div class="modal-header">
                     <h3><i class="fas fa-robot"></i> AI Assistant</h3>
-                    <button class="modal-close" onclick="closeAIChat()">&times;</button>
+                    <button class="modal-close" id="ai-chat-close">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div id="ai-chat-messages" class="ai-chat-messages"></div>
@@ -578,7 +206,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3><i class="fas fa-robot"></i> AI Configuration</h3>
-                    <button class="modal-close" onclick="closeAIConfig()">&times;</button>
+                    <button class="modal-close" id="ai-config-close">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="ai-config-form">
@@ -670,145 +298,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
-    <script>
-        // COM ports dropdown: fetch from server and populate select
-        (function(){
-            const sel = document.getElementById('com-port-select');
-            const dot = document.getElementById('serial-status-dot');
-            const text = document.getElementById('serial-status-text');
 
-            async function loadPorts(){
-                if (!sel) return;
-                sel.disabled = true;
-                sel.innerHTML = '<option>Loading...</option>';
-                try {
-                    const r = await fetch('/api/com-ports');
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    const ports = await r.json();
-                    sel.innerHTML = '';
-                    if (Array.isArray(ports) && ports.length){
-                        ports.forEach(p => {
-                            const opt = document.createElement('option');
-                            opt.value = p.path || p;
-                            opt.textContent = p.path || p;
-                            sel.appendChild(opt);
-                        });
-                        dot.classList.remove('disconnected');
-                        dot.classList.add('connected');
-                        text.textContent = `Serial (${sel.value})`;
-                        window.__oepl_selected_com = sel.value;
-                    } else {
-                        sel.innerHTML = '<option disabled>No COM ports</option>';
-                        dot.classList.remove('connected');
-                        dot.classList.add('disconnected');
-                        text.textContent = 'Serial (none)';
-                        window.__oepl_selected_com = null;
-                    }
-                } catch (err){
-                    sel.innerHTML = '<option disabled>Error</option>';
-                    dot.classList.remove('connected');
-                    dot.classList.add('disconnected');
-                    text.textContent = 'Serial (error)';
-                    window.__oepl_selected_com = null;
-                    console.warn('Failed to fetch COM ports', err);
-                } finally {
-                    sel.disabled = false;
-                }
-            }
-
-            document.getElementById('com-refresh').addEventListener('click', loadPorts);
-            sel.addEventListener('change', () => {
-                window.__oepl_selected_com = sel.value;
-                document.getElementById('serial-status-text').textContent = `Serial (${sel.value})`;
-            });
-
-            loadPorts();
-        })();
-        // COM control panel wiring
-        (function(){
-            const headerSel = document.getElementById('com-port-select');
-            const mainSel = document.getElementById('com-main-select');
-            const actionSel = document.getElementById('com-action-select');
-            const goBtn = document.getElementById('com-action-go');
-            const syncBtn = document.getElementById('com-sync-select');
-            const paramsDiv = document.getElementById('com-action-params');
-            const resultDiv = document.getElementById('com-action-result');
-
-            function copyHeaderToMain(){
-                if (!headerSel || !mainSel) return;
-                mainSel.innerHTML = '';
-                Array.from(headerSel.options).forEach(o => {
-                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; mainSel.appendChild(opt);
-                });
-                if (headerSel.value) mainSel.value = headerSel.value;
-            }
-
-            function renderParamsForAction(action){
-                paramsDiv.innerHTML = '';
-                if (action === 'set-wifi') {
-                    paramsDiv.innerHTML = `
-                        <input id="wifi-ssid" placeholder="SSID" style="padding:6px;margin-right:8px" />
-                        <input id="wifi-pass" placeholder="Password" style="padding:6px" />
-                    `;
-                } else if (action === 'check') {
-                    paramsDiv.innerHTML = `<input id="check-cmd" placeholder="Test command (eg: \n or AT)" style="padding:6px" /> <input id="check-timeout" placeholder="Timeout ms" style="padding:6px;width:90px;margin-left:8px" value="1000" />`;
-                } else {
-                    // no params
-                }
-            }
-
-            actionSel.addEventListener('change', () => renderParamsForAction(actionSel.value));
-            syncBtn.addEventListener('click', copyHeaderToMain);
-
-            goBtn.addEventListener('click', async () => {
-                const action = actionSel.value;
-                const port = mainSel.value;
-                resultDiv.textContent = 'Running...';
-                try {
-                    if (action === 'monitor') {
-                        // open monitor in new tab - reuse existing page or open serial monitor route
-                        window.open('flash.html', '_blank');
-                        resultDiv.textContent = 'Opened monitor page';
-                        return;
-                    }
-
-                    if (action === 'check') {
-                        const cmd = document.getElementById('check-cmd')?.value || '\n';
-                        const timeout = parseInt(document.getElementById('check-timeout')?.value || '1000', 10);
-                        const resp = await fetch('/api/com/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: port, testCmd: cmd, timeout }) });
-                        const json = await resp.json();
-                        resultDiv.textContent = JSON.stringify(json, null, 2);
-                        return;
-                    }
-
-                    if (action === 'set-wifi') {
-                        const ssid = document.getElementById('wifi-ssid')?.value;
-                        const pass = document.getElementById('wifi-pass')?.value;
-                        const resp = await fetch('/api/device/wifi', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ssid, password: pass, host: null }) });
-                        const json = await resp.json();
-                        resultDiv.textContent = JSON.stringify(json, null, 2);
-                        return;
-                    }
-
-                    // LED or test actions -> device command
-                    if (action === 'led-off' || action === 'led-on' || action === 'test') {
-                        const params = { action, port };
-                        const resp = await fetch('/api/device/cmd', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action, params, host: null }) });
-                        const json = await resp.json();
-                        resultDiv.textContent = JSON.stringify(json, null, 2);
-                        return;
-                    }
-
-                    resultDiv.textContent = 'Unknown action';
-                } catch (err) {
-                    resultDiv.textContent = 'Error: ' + err.message;
-                }
-            });
-
-            // init
-            copyHeaderToMain(); renderParamsForAction(actionSel.value);
-        })();
-    </script>
 </body>
 
 </html>

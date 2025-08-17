@@ -1804,7 +1804,9 @@ if (taglistForContextMenu) {
 				);
 			}
 		}
+		// Add an Edit action to open the tag configuration dialog
 		contextMenuOptions.push(
+			{ id: 'edit', label: 'Edit' },
 			{ id: 'del', label: 'Delete tag from list' }
 		);
 		let idletime = (Date.now() / 1000) - servertimediff - clickedGridItem.dataset.lastseen;
@@ -1829,7 +1831,18 @@ if (taglistForContextMenu) {
 			li.textContent = option.label;
 			li.addEventListener('click', (e) => {
 				e.preventDefault();
-				sendCmd(mac, option.id);
+				// Special-case the edit action to open the tag config modal
+				if (option.id === 'edit') {
+					if (typeof loadContentCard === 'function') {
+						loadContentCard(mac);
+					} else {
+						// Fallback: trigger the tag click behavior
+						const el = document.querySelector('#tag' + mac);
+						if (el) el.click();
+					}
+				} else {
+					sendCmd(mac, option.id);
+				}
 				contextMenu.style.display = 'none';
 			});
 			contextMenu.appendChild(li);

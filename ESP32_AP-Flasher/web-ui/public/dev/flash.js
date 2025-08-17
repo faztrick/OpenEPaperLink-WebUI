@@ -17,9 +17,18 @@
   let currentProcess = null;
 
   function log(msg, type='info'){
-    const ts = new Date().toISOString();
-    consoleEl.textContent += `[${ts}] ${msg}\n`;
+    const ts = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.className = `log-line log-${type}`;
+    line.textContent = `[${ts}] ${msg}`;
+    consoleEl.appendChild(line);
     consoleEl.scrollTop = consoleEl.scrollHeight;
+
+    // Limit console lines
+    const lines = consoleEl.querySelectorAll('.log-line');
+    if (lines.length > 1000) {
+      lines[0].remove();
+    }
   }
 
   function saveLastPort(p) {
@@ -27,56 +36,150 @@
   }
   function loadLastPort(){ try { return localStorage.getItem('oepl:lastPort') || null } catch(e){ return null } }
 
-  socket.on('connect', ()=>log('Connected to server'));
-  socket.on('disconnect', ()=>log('Disconnected'));
-  socket.on('process-output', (d)=>{
-    log(d.data || d);
-  });
-  socket.on('process-started', (d)=>{
-    currentProcess = d.processId || 'socket';
-    log(`Process started: ${d.command || ''}`);
-  });
-  socket.on('process-finished', (d)=>{
-    log(`Process finished (code ${d.exitCode})`);
-    currentProcess = null;
-  });
-  socket.on('serial-data', (d)=>{
-    log(`[serial:${d.port}] ${d.data}`);
+  socket.on('connect', ()=>log('Connected to server', 'success'));
+  socket.on('disconnect', ()=>log('Disconnected from server', 'warning'));
+  socket.on('connect_error', (err)=>log(`Connection error: ${err.message}`, 'error'));
+
+  socket.on('output', (d)=>{
+    if (d && d.data) {
+      log(d.data, d.type || 'info');
+    }
   });
 
+  socket.on('process_complete', (d)=>{
+    currentProcess = null;
+    updateButtons();
+    if (d.success) {
+      log('Process completed successfully', 'success');
+    } else {
+      log(`Process failed: ${d.error || 'Unknown error'}`, 'error');
+    }
+  });
+
+  socket.on('process-output', (d)=>{
+    if (d && d.data) {
+      log(d.data, d.type || 'info');
+    }
+  });
+
+  socket.on('process-started', (d)=>{
+    currentProcess = d.processId || 'socket';
+    updateButtons();
+    log(`Process started: ${d.command || d.action || 'Unknown process'}`, 'info');
+  });
+
+  socket.on('process-finished', (d)=>{
+    log(`Process finished with exit code: ${d.exitCode}`, d.exitCode === 0 ? 'success' : 'error');
+    currentProcess = null;
+    updateButtons();
+  });
+
+  socket.on('serial-data', (d)=>{
+    if (d && d.data) {
+      log(`[${d.port || 'serial'}] ${d.data}`, 'info');
+    }
+  });
+
+  function updateButtons() {
+    const buttons = [buildBtn, monitorBtn, uploadBtn, triggerBtn];
+    buttons.forEach(btn => {
+      if (btn) {
+        btn.disabled = !!currentProcess;
+      }
+    });
+  }
+
   buildBtn.addEventListener('click', ()=>{
-    if (smokeCheckbox && smokeCheckbox.checked) {
-      // Simulate build output
-      log('Starting smoke-test build (simulated)...');
-      let i=0; const ints = setInterval(()=>{ i++; log(`(sim) build step ${i}`); if (i>8){ clearInterval(ints); log('Simulated build finished (0)'); } }, 400);
+    if (currentProcess) {
+      log('Another process is already running', 'warning');
       return;
     }
 
-  const args = ['-Environment', envEl.value, '-ComPort', portEl.value, '-BaudRate', baudEl.value];
-  socket.emit('run_script', { script: 'compile.py', args });
-    log('Requested build+upload...');
+    if (smokeCheckbox && smokeCheckbox.checked) {
+      // Simulate build output
+      log('Starting smoke-test build (simulated)...', 'info');
+      currentProcess = 'smoke-test';
+      updateButtons();
+      let i=0;
+      const ints = setInterval(()=>{
+        i++;
+        log(`[simulation] Build step ${i}/10 - Processing...`, 'info');
+        if (i>=10){
+          clearInterval(ints);
+          log('✓ Simulated build completed successfully', 'success');
+          currentProcess = null;
+          updateButtons();
+        }
+      }, 800);
+      return;
+    }
+
+    const args = ['-Environment', envEl.value, '-ComPort', portEl.value, '-BaudRate', baudEl.value];
+    socket.emit('run_script', { script: 'compile.py', args });
+    log(`Starting build and upload for ${envEl.value} on ${portEl.value}`, 'info');
     saveLastPort(portEl.value);
   });
 
   monitorBtn.addEventListener('click', ()=>{
-  socket.emit('run_command', { command: 'pio', args: ['device','monitor','--port', portEl.value, '--baud', baudEl.value] });
-  log('Started serial monitor...');
-  saveLastPort(portEl.value);
+    if (currentProcess) {
+      log('Another process is already running', 'warning');
+      return;
+    }
+
+    socket.emit('run_command', { command: 'pio', args: ['device','monitor','--port', portEl.value, '--baud', baudEl.value] });
+    log(`Opening serial monitor on ${portEl.value} at ${baudEl.value} baud`, 'info');
+    saveLastPort(portEl.value);
   });
 
-  clearBtn.addEventListener('click', ()=>{ consoleEl.textContent = ''; });
+  clearBtn.addEventListener('click', ()=>{
+    consoleEl.innerHTML = '';
+    log('Console cleared', 'info');
+  });
 
   // populate ports from server
   async function refreshPorts(){
     try{
-      const r = await fetch('/api/serial/list');
-      const j = await r.json();
-      if (j.success && Array.isArray(j.ports)){
-        portEl.innerHTML = '';
-        j.ports.forEach(p=>{ const o=document.createElement('option'); o.value=p.path;o.textContent=p.path;portEl.appendChild(o);});
-        const last = loadLastPort(); if (last) { try{ portEl.value = last }catch(e){} }
+      log('Refreshing COM ports...', 'info');
+      const r = await fetch('/api/com-ports');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const ports = await r.json();
+
+      portEl.innerHTML = '';
+
+      if (Array.isArray(ports) && ports.length > 0){
+        ports.forEach(p=>{
+          const o=document.createElement('option');
+          o.value = p.path || p;
+          o.textContent = p.path || p;
+          portEl.appendChild(o);
+        });
+        log(`Found ${ports.length} COM ports`, 'success');
+      } else {
+        // Add fallback ports
+        ['COM1', 'COM3', 'COM10', 'COM13'].forEach(port => {
+          const o=document.createElement('option');
+          o.value = port;
+          o.textContent = port;
+          portEl.appendChild(o);
+        });
+        log('Using fallback COM ports', 'warning');
       }
-    }catch(e){/* ignore */}
+
+      const last = loadLastPort();
+      if (last) {
+        try{ portEl.value = last; }catch(e){}
+      }
+    }catch(e){
+      log(`Failed to refresh ports: ${e.message}`, 'error');
+      // Add fallback ports on error
+      portEl.innerHTML = '';
+      ['COM1', 'COM3', 'COM10', 'COM13'].forEach(port => {
+        const o=document.createElement('option');
+        o.value = port;
+        o.textContent = port;
+        portEl.appendChild(o);
+      });
+    }
   }
   refreshPorts();
 

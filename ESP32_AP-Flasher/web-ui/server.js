@@ -15,24 +15,47 @@ const FileManager = require('./file_manager');
 function resolvePythonExecutable() {
     const projectRoot = path.join(__dirname, '..');
     const candidates = [];
+
     if (os.platform() === 'win32') {
         candidates.push(path.join(projectRoot, 'venv', 'Scripts', 'python.exe'));
         candidates.push(path.join(projectRoot, '.venv', 'Scripts', 'python.exe'));
+
+
         candidates.push(path.join(projectRoot, 'env', 'Scripts', 'python.exe'));
         candidates.push(path.join(__dirname, 'venv', 'Scripts', 'python.exe'));
         candidates.push(path.join(__dirname, '.venv', 'Scripts', 'python.exe'));
+        // System Python fallbacks
+        candidates.push('python');
+        candidates.push('python3');
+        candidates.push('py');
     } else {
         candidates.push(path.join(projectRoot, 'venv', 'bin', 'python'));
         candidates.push(path.join(projectRoot, '.venv', 'bin', 'python'));
         candidates.push(path.join(projectRoot, 'env', 'bin', 'python'));
         candidates.push(path.join(__dirname, 'venv', 'bin', 'python'));
         candidates.push(path.join(__dirname, '.venv', 'bin', 'python'));
+        // System Python fallbacks
+        candidates.push('python3');
+        candidates.push('python');
     }
+
     for (const p of candidates) {
-        try { if (fs.existsSync(p)) return p; } catch (e) { /* ignore */ }
+        try {
+            if (path.isAbsolute(p) && fs.existsSync(p)) {
+                console.log(`Using Python executable: ${p}`);
+                return p;
+            } else if (!path.isAbsolute(p)) {
+                // For system commands, we'll try them and let spawn handle resolution
+                console.log(`Will try system Python: ${p}`);
+                return p;
+            }
+        } catch (e) { /* ignore */ }
     }
-    // Fallback to environment variable or system python (prefer python3)
-    return process.env.PYTHON || 'python3';
+
+    // Final fallback
+    const fallback = process.env.PYTHON || 'python';
+    console.log(`Using fallback Python: ${fallback}`);
+    return fallback;
 }
 const PYTHON_EXEC = resolvePythonExecutable();
 let SerialPort;
@@ -142,6 +165,10 @@ app.use('/device', express.static(path.join(__dirname, 'public', 'device')));
 // Ensure uploads folder exists
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+// Ensure data folder exists (for saved devices)
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+const devicesFile = path.join(dataDir, 'devices.json');
 
 // Multer setup for firmware uploads
 const storage = multer.diskStorage({
@@ -163,23 +190,36 @@ app.all('/device/*', async (req, res) => {
         const host = req.query.host || req.body?.host;
         if (!host) return res.status(400).json({ success: false, error: 'no host specified' });
 
-        const devicePath = req.path.replace(/^\/device/, '');
-        const url = `http://${host}${devicePath}${req.url.includes('?') ? '' : ''}`; // req.url keeps query
+        // Extract path after /device and forward remaining query params except 'host'
+        const devicePath = req.path.replace(/^\/device/, '') || '/';
+        const query = { ...req.query };
+        delete query.host;
+        const qs = new URLSearchParams(query).toString();
+        const url = `http://${host}${devicePath}${qs ? `?${qs}` : ''}`;
 
         // Build axios options
         const opts = {
             method: req.method,
             url,
             headers: { ...req.headers },
+            // Use stream by default to support binary and text
             responseType: 'stream',
-            validateStatus: () => true
+            validateStatus: () => true,
+            timeout: 15000
         };
 
-        // Remove host/connection headers that would confuse the device
+        // Remove hop-by-hop headers that might confuse the device
         delete opts.headers.host;
+        delete opts.headers.connection;
+        delete opts.headers['content-length'];
 
         if (req.method !== 'GET' && req.method !== 'HEAD') {
-            opts.data = req.body && Object.keys(req.body).length ? req.body : req;
+            // If body is JSON/object, send as-is; otherwise pipe the request stream
+            if (req.is('application/json') && req.body && Object.keys(req.body).length) {
+                opts.data = req.body;
+            } else {
+                opts.data = req;
+            }
         }
 
         const resp = await axios(opts);
@@ -190,7 +230,12 @@ app.all('/device/*', async (req, res) => {
         });
 
         res.status(resp.status);
-        resp.data.pipe(res);
+        if (resp.data && resp.data.pipe) {
+            resp.data.pipe(res);
+        } else {
+            // In case responseType changed upstream
+            res.send(resp.data);
+        }
     } catch (err) {
         console.error('Device proxy error:', err.message || err);
         res.status(500).json({ success: false, error: err.message || String(err) });
@@ -298,6 +343,34 @@ app.get('/api/config', (req, res) => {
     res.json(currentConfig);
 });
 
+// Saved devices (name/ip/com) persistence
+app.get('/api/devices', (req, res) => {
+    try {
+        let devices = [];
+        let selectedId = null;
+        if (fs.existsSync(devicesFile)) {
+            const j = JSON.parse(fs.readFileSync(devicesFile, 'utf8'));
+            devices = Array.isArray(j.devices) ? j.devices : [];
+            selectedId = j.selectedId || null;
+        }
+        res.json({ success: true, devices, selectedId });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message, devices: [], selectedId: null });
+    }
+});
+
+app.post('/api/devices', (req, res) => {
+    try {
+        const { devices, selectedId } = req.body || {};
+        if (!Array.isArray(devices)) return res.status(400).json({ success: false, error: 'devices array required' });
+        const payload = { devices, selectedId: selectedId || null };
+        fs.writeFileSync(devicesFile, JSON.stringify(payload, null, 2), 'utf8');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Make home and dashboard paths serve the same UI file
 app.get(['/dashboard', '/home'], (req, res) => {
     try {
@@ -320,12 +393,50 @@ app.post('/api/config', (req, res) => {
 
 app.get('/api/com-ports', async (req, res) => {
     try {
-        const ports = await listSystemSerialPorts();
-        // Normalize for client (path, manufacturer)
-        const normalized = ports.map(p => ({ path: p.path || p.comName || p.vendorId || '', manufacturer: p.manufacturer || '' }));
-        res.json(normalized.length ? normalized : await getComPorts());
+        let ports = [];
+
+        // Try to get system serial ports first
+        if (serialAvailable) {
+            try {
+                const systemPorts = await listSystemSerialPorts();
+                ports = systemPorts.map(p => ({
+                    path: p.path || p.comName || p.vendorId || '',
+                    manufacturer: p.manufacturer || p.friendlyName || ''
+                }));
+            } catch (err) {
+                console.warn('Failed to list system serial ports:', err.message);
+            }
+        }
+
+        // If no ports found, try the Windows PowerShell method or provide fallbacks
+        if (ports.length === 0) {
+            try {
+                const fallbackPorts = await getComPorts();
+                ports = Array.isArray(fallbackPorts) ? fallbackPorts.map(p => ({
+                    path: p,
+                    manufacturer: ''
+                })) : [];
+            } catch (err) {
+                console.warn('Failed to get fallback COM ports:', err.message);
+                // Final fallback for common ports
+                ports = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({
+                    path: p,
+                    manufacturer: 'Fallback'
+                }));
+            }
+        }
+
+        appendLog('api', `com-ports returned ${ports.length} ports`);
+        res.json(ports);
     } catch (error) {
-        res.json(['COM10']); // Fallback
+        console.error('COM ports API error:', error);
+        appendLog('api', `com-ports error: ${error.message}`);
+        // Return fallback ports on any error
+        const fallbackPorts = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({
+            path: p,
+            manufacturer: 'Fallback'
+        }));
+        res.json(fallbackPorts);
     }
 });
 
@@ -1570,7 +1681,16 @@ io.on('connection', (socket) => {
 
     function startAndStreamProcess(socket, command, args = [], options = {}) {
         try {
-            const proc = spawn(command, args, Object.assign({ cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }, options));
+            const workingDir = path.join(__dirname, '..');
+            const spawnOptions = Object.assign({
+                cwd: workingDir,
+                stdio: ['pipe', 'pipe', 'pipe'],
+                shell: os.platform() === 'win32' // Use shell on Windows for better command resolution
+            }, options);
+
+            appendLog('process', `Starting: ${command} ${args.join(' ')} in ${workingDir}`);
+
+            const proc = spawn(command, args, spawnOptions);
 
             // keep reference
             socketProcesses[socket.id] = proc;
@@ -1582,33 +1702,39 @@ io.on('connection', (socket) => {
                 const text = data.toString();
                 socket.emit('output', { type: 'stdout', data: text });
                 io.emit('process-output', { processId: socket.id, type: 'stdout', data: text });
+                appendLog('process-out', text.replace(/\r?\n/g, '\\n'));
             });
 
             proc.stderr.on('data', (data) => {
                 const text = data.toString();
                 socket.emit('output', { type: 'stderr', data: text });
                 io.emit('process-output', { processId: socket.id, type: 'stderr', data: text });
+                appendLog('process-err', text.replace(/\r?\n/g, '\\n'));
             });
 
             proc.on('close', (code) => {
                 delete socketProcesses[socket.id];
-                socket.emit('process_complete', { success: code === 0, code });
+                const success = code === 0;
+                socket.emit('process_complete', { success, code });
                 io.emit('process-finished', { processId: socket.id, exitCode: code });
+                appendLog('process', `Finished: ${command} with code ${code}`);
             });
 
             proc.on('error', (err) => {
                 delete socketProcesses[socket.id];
                 const msg = err && err.message ? err.message : String(err);
-                socket.emit('output', { type: 'stderr', data: msg });
+                socket.emit('output', { type: 'stderr', data: `Process error: ${msg}\n` });
                 socket.emit('process_complete', { success: false, error: msg });
                 io.emit('process-error', { processId: socket.id, error: msg });
+                appendLog('process', `Error: ${command} - ${msg}`);
             });
 
             return proc;
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
-            socket.emit('output', { type: 'stderr', data: msg });
+            socket.emit('output', { type: 'stderr', data: `Failed to start process: ${msg}\n` });
             socket.emit('process_complete', { success: false, error: msg });
+            appendLog('process', `Start error: ${command} - ${msg}`);
             return null;
         }
     }
@@ -1624,15 +1750,47 @@ io.on('connection', (socket) => {
 
         // Resolve script path relative to project root when it looks like a file
         const ext = path.extname(script).toLowerCase();
+        let command, finalArgs;
 
         if (ext === '.py') {
-            const scriptPath = path.isAbsolute(script) ? script : path.join(__dirname, '..', script);
-            startAndStreamProcess(socket, PYTHON_EXEC, [scriptPath, ...args]);
+            // Handle Python scripts
+            let scriptPath;
+            if (path.isAbsolute(script)) {
+                scriptPath = script;
+            } else {
+                // Try multiple possible locations for the script
+                const possiblePaths = [
+                    path.join(__dirname, '..', script),
+                    path.join(__dirname, script),
+                    script  // Current directory relative
+                ];
+
+                scriptPath = possiblePaths.find(p => {
+                    try {
+                        return fs.existsSync(p);
+                    } catch (e) {
+                        return false;
+                    }
+                });
+
+                if (!scriptPath) {
+                    socket.emit('output', { type: 'stderr', data: `Python script not found: ${script}\nTried: ${possiblePaths.join(', ')}\n` });
+                    socket.emit('process_complete', { success: false, error: `Script not found: ${script}` });
+                    return;
+                }
+            }
+
+            command = PYTHON_EXEC;
+            finalArgs = [scriptPath, ...args];
+            socket.emit('output', { type: 'stdout', data: `Executing: ${command} ${finalArgs.join(' ')}\n` });
         } else {
             // treat as command (e.g., 'pio' or node script)
-            const cmd = script;
-            startAndStreamProcess(socket, cmd, args);
+            command = script;
+            finalArgs = args;
+            socket.emit('output', { type: 'stdout', data: `Executing: ${command} ${finalArgs.join(' ')}\n` });
         }
+
+        startAndStreamProcess(socket, command, finalArgs);
     });
 
     socket.on('run_command', (data) => {

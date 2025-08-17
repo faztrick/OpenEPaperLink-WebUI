@@ -25,15 +25,16 @@
 #endif
 #endif
 
-class DynStorage {
-   public:
+class DynStorage
+{
+public:
     DynStorage();
     void begin();
     void end();
     void listFiles();
     uint64_t freeSpace();
 
-   private:
+private:
     bool isInited;
 };
 
@@ -41,9 +42,7 @@ extern SemaphoreHandle_t fsMutex;
 extern DynStorage Storage;
 extern fs::FS *contentFS;
 #ifndef SD_CARD_ONLY
-extern void copyFile(File in, File out);
+extern void copyFile(fs::File in, fs::File out);
 #endif
 
 #endif
-
-

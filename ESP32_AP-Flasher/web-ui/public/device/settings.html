@@ -509,6 +509,13 @@
 	</div>
 
 	<script>
+		// Provide a safe no-op fallback for initSetupPage in case the setup module isn't included
+		if (typeof window.initSetupPage !== 'function') {
+			window.initSetupPage = function () {
+				// no-op: placeholder so settings page can call initSetupPage safely
+				return;
+			};
+		}
 		// Application initialization with proper script loading wait
 		document.addEventListener('DOMContentLoaded', function() {
 			// Wait for essential classes to be loaded

@@ -1,52 +1,94 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Simple Flasher — OpenEPaperLink</title>
-  <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:16px;background:#f7f9fc}
-    .controls{display:flex;gap:8px;margin-bottom:8px}
-    select,input{padding:8px;font-size:14px}
-    button{padding:8px 12px}
-    #console{white-space:pre-wrap;background:#0b1220;color:#e6f1ff;padding:12px;height:50vh;overflow:auto;border-radius:6px}
-  </style>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="styles.css" rel="stylesheet">
 </head>
+
 <body>
-  <h2>Simple Flasher</h2>
-  <nav style="margin-bottom:12px">
-    <a href="index.html">Dashboard</a> | <a href="flash.html">Simple Flasher</a> | <a href="files.html">File Manager</a> | <a href="development.html">Development</a> | <a href="settings.html">Settings</a> | <a href="ai.html">AI</a>
-  </nav>
-  <div class="controls">
-    <select id="env">
-      <option value="OutdoorAP">OutdoorAP</option>
-      <option value="IndoorAP">IndoorAP</option>
-      <option value="Debug">Debug</option>
-    </select>
-    <input id="host" placeholder="Device host (optional)" style="padding:8px;font-size:14px;width:180px" />
-    <select id="port">
-      <option>COM10</option>
-    </select>
-    <select id="baud">
-      <option value="115200">115200</option>
-      <option value="921600" selected>921600</option>
-    </select>
-    <button id="buildUpload">Build + Upload</button>
-    <button id="monitor">Serial Monitor</button>
-    <button id="clear">Clear</button>
-  </div>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <i class="fas fa-microchip"></i>
+          <h1>Simple Flasher</h1>
+        </div>
+        <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
+          <div class="status-item">
+            <span id="api-status-dot" class="status-dot disconnected"></span>
+            <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
+          </div>
+        </div>
+      </div>
+    </header>
 
-  <div style="margin-bottom:8px">
-    <input type="file" id="firmware-file" accept=".bin">
-    <button id="upload-firmware">Upload Firmware</button>
-    <button id="trigger-ota">Trigger OTA</button>
-    <button id="preset-realtek">Realtek Preset</button>
-    <label style="margin-left:12px"><input type="checkbox" id="smoke-test"> Smoke-test mode</label>
-  </div>
+    <nav class="top-nav" role="navigation" aria-label="Main Navigation">
+      <div class="container">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="flash.html" class="nav-link active">Simple Flasher</a>
+        <a href="files.html" class="nav-link">File Manager</a>
+        <a href="development.html" class="nav-link">Development</a>
+        <a href="settings.html" class="nav-link">Settings</a>
+        <a href="ai.html" class="nav-link">AI</a>
+      </div>
+    </nav>
 
-  <div id="console"></div>
+    <div class="main-container container">
+      <aside class="sidebar">
+        <div class="project-info">
+          <h3><i class="fas fa-project-diagram"></i> Flash</h3>
+          <div class="info-item">
+            <span class="label">Preset:</span>
+            <span class="value" id="current-env">OutdoorAP</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <div class="build-panel">
+          <h2><i class="fas fa-bolt"></i> Simple Flasher</h2>
+          <div class="controls" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <select id="env">
+              <option value="OutdoorAP">OutdoorAP</option>
+              <option value="IndoorAP">IndoorAP</option>
+              <option value="Debug">Debug</option>
+            </select>
+            <input id="host" placeholder="Device host (optional)" style="padding:8px;font-size:14px;width:180px" />
+            <select id="port">
+              <option>COM10</option>
+            </select>
+            <select id="baud">
+              <option value="115200">115200</option>
+              <option value="921600" selected>921600</option>
+            </select>
+            <button id="buildUpload" class="btn btn-primary">Build + Upload</button>
+            <button id="monitor" class="btn">Serial Monitor</button>
+            <button id="clear" class="btn">Clear</button>
+          </div>
+
+          <div style="margin-bottom:8px">
+            <input type="file" id="firmware-file" accept=".bin">
+            <button id="upload-firmware" class="btn">Upload Firmware</button>
+            <button id="trigger-ota" class="btn">Trigger OTA</button>
+            <button id="preset-realtek" class="btn">Realtek Preset</button>
+            <label style="margin-left:12px"><input type="checkbox" id="smoke-test"> Smoke-test mode</label>
+          </div>
+
+          <div id="console" class="console" style="white-space:pre-wrap;background:#0b1220;color:#e6f1ff;padding:12px;height:50vh;overflow:auto;border-radius:6px;font-family:monospace"></div>
+        </div>
+      </main>
+    </div>
+
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="flash.js"></script>
 </body>
+
 </html>

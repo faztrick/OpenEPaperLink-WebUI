@@ -1,3 +1,6 @@
+// Ensure this header is included only once
+#pragma once
+
 #include <Arduino.h>
 
 extern struct espSetChannelPower curChannel;
@@ -11,7 +14,8 @@ extern struct espSetChannelPower curChannel;
 #define AP_STATE_COMING_ONLINE 6
 #define AP_STATE_NORADIO 7
 
-struct APInfoS {
+struct APInfoS
+{
     volatile bool isOnline = false;
     volatile uint8_t state = AP_STATE_OFFLINE;
     uint8_t type;
@@ -21,7 +25,7 @@ struct APInfoS {
     uint8_t power;
     uint8_t pendingBuffer;
     uint8_t nop;
-    int rssi = -70; // Default RSSI value for diagnostics
+    int rssi = -70;      // Default RSSI value for diagnostics
     uint32_t uptime = 0; // Uptime in seconds
 #ifdef HAS_SUBGHZ
     bool hasSubGhz = false;
@@ -31,7 +35,8 @@ struct APInfoS {
 
 extern struct APInfoS apInfo;
 
-enum ApSerialState {
+enum ApSerialState
+{
     SERIAL_STATE_NONE,
     SERIAL_STATE_INITIALIZED,
     SERIAL_STATE_STARTING,
@@ -42,14 +47,14 @@ enum ApSerialState {
 
 extern volatile ApSerialState gSerialTaskState;
 
-void APTask(void* parameter);
+void APTask(void *parameter);
 
-bool sendCancelPending(struct pendingData* pending);
-bool sendDataAvail(struct pendingData* pending);
+bool sendCancelPending(struct pendingData *pending);
+bool sendDataAvail(struct pendingData *pending);
 bool sendPing();
 void APEnterEarlyReset();
-bool sendChannelPower(struct espSetChannelPower* scp);
-void rxSerialTask2(void* parameter);
+bool sendChannelPower(struct espSetChannelPower *scp);
+void rxSerialTask2(void *parameter);
 void APTagReset();
 bool bringAPOnline(uint8_t newState = AP_STATE_ONLINE);
 void setAPstate(bool isOnline, uint8_t state);

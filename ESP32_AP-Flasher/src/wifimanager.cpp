@@ -45,10 +45,11 @@ static bool eth_ip_ok = false;
 static long eth_timeout = 0;
 #endif
 
-WifiManager::WifiManager() {
+WifiManager::WifiManager()
+{
     _reconnectIntervalCheck = 5000;
     _retryIntervalCheck = 5 * 60000;
-    _connectionTimeout = 20000;  // Increased timeout for ESP32-S3
+    _connectionTimeout = 20000; // Increased timeout for ESP32-S3
 
     _nextReconnectCheck = 0;
     _connected = false;
@@ -64,7 +65,8 @@ WifiManager::WifiManager() {
     wifiStatus = NOINIT;
 
     WiFi.onEvent(WiFiEvent);
-    WiFiEventId_t eventID = WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    WiFiEventId_t eventID = WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info)
+                                         {
         Serial.printf("WiFi lost connection. Reason: %d - ", info.wifi_sta_disconnected.reason);
         // Print human-readable disconnect reason
         switch (info.wifi_sta_disconnected.reason) {
@@ -107,36 +109,43 @@ WifiManager::WifiManager() {
             default:
                 Serial.printf("Unknown reason: %d\n", info.wifi_sta_disconnected.reason);
                 break;
-        }
-    },
+        } },
                                          WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 }
 
-void WifiManager::setScanVerbose(bool v) {
+void WifiManager::setScanVerbose(bool v)
+{
     _scanVerbose = v;
 }
 
-bool WifiManager::scanVerbose() const {
+bool WifiManager::scanVerbose() const
+{
     return _scanVerbose;
 }
 
-void WifiManager::terminalLog(String text) {
+void WifiManager::terminalLog(String text)
+{
     Serial.println(text);
 #ifdef HAS_TFT
     TFTLog(text);
 #endif
 }
 
-void WifiManager::poll() {
+void WifiManager::poll()
+{
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
 
-    if (eth_connected) {
+    if (eth_connected)
+    {
         wifiStatus = ETHERNET;
-        if (!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000) {
+        if (!eth_ip_ok && eth_timeout != 0 && millis() - eth_timeout > 2000)
+        {
             eth_timeout = 0;
             eth_connected = false;
         }
-    } else if (!eth_connected && wifiStatus == ETHERNET) {
+    }
+    else if (!eth_connected && wifiStatus == ETHERNET)
+    {
         wifiStatus = NOINIT;
         _APstarted = false;
         WiFi.mode(WIFI_STA);
@@ -146,23 +155,29 @@ void WifiManager::poll() {
 #endif
 
     // Optimized WiFi reconnection logic
-    if (wifiStatus == AP && millis() > _nextReconnectCheck && !_ssid.isEmpty()) {
-        if (apClients == 0) {
+    if (wifiStatus == AP && millis() > _nextReconnectCheck && !_ssid.isEmpty())
+    {
+        if (apClients == 0)
+        {
             terminalLog("Attempting to reconnect to WiFi (no AP clients).");
             logLine("Attempting to reconnect to WiFi.");
             _APstarted = false;
             wifiStatus = NOINIT;
             connectToWifi();
-        } else {
+        }
+        else
+        {
             // Extend retry interval when clients are connected
             _nextReconnectCheck = millis() + _retryIntervalCheck;
         }
     }
 
     // Enhanced connection monitoring
-    if (wifiStatus == CONNECTED && millis() > _nextReconnectCheck) {
+    if (wifiStatus == CONNECTED && millis() > _nextReconnectCheck)
+    {
         wl_status_t wifiStatus = WiFi.status();
-        if (wifiStatus != WL_CONNECTED) {
+        if (wifiStatus != WL_CONNECTED)
+        {
             _connected = false;
             Serial.printf("WiFi connection lost (status: %d). Attempting to reconnect.\n", wifiStatus);
             terminalLog("WiFi connection lost. Attempting to reconnect.");
@@ -172,11 +187,14 @@ void WifiManager::poll() {
             WiFi.reconnect();
             _connected = waitForConnection();
 
-            if (!_connected) {
+            if (!_connected)
+            {
                 Serial.println("Reconnect failed, trying full connection process");
                 connectToWifi();
             }
-        } else {
+        }
+        else
+        {
             _nextReconnectCheck = millis() + _reconnectIntervalCheck;
         }
     }
@@ -184,21 +202,26 @@ void WifiManager::poll() {
 #ifndef HAS_USB
 
 #ifdef ETHERNET_CLK_MODE
-    if (!(ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_IN || ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_OUT)) {
+    if (!(ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_IN || ETHERNET_CLK_MODE == ETH_CLOCK_GPIO0_OUT))
+    {
 #endif
         // Handle GPIO0 reset functionality
-        if (digitalRead(0) == LOW) {
+        if (digitalRead(0) == LOW)
+        {
             Serial.println("GPIO0 LOW detected");
             unsigned long starttime = millis();
-            while (digitalRead(0) == LOW && millis() - starttime < 5000) {
-                vTaskDelay(pdMS_TO_TICKS(10));  // Small delay to prevent tight loop
+            while (digitalRead(0) == LOW && millis() - starttime < 5000)
+            {
+                vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent tight loop
             }
-            if (digitalRead(0) == LOW) {
+            if (digitalRead(0) == LOW)
+            {
                 Serial.println("Resetting WiFi settings...");
 
                 // Clear WiFi settings from NVS
                 Preferences preferences;
-                if (preferences.begin("wifi", false)) {
+                if (preferences.begin("wifi", false))
+                {
                     preferences.putString("ssid", "");
                     preferences.putString("pw", "");
                     preferences.putString("ip", "");
@@ -207,23 +230,31 @@ void WifiManager::poll() {
                     preferences.putString("dns", "");
                     preferences.end();
                     Serial.println("✅ WiFi settings cleared from NVS");
-                } else {
+                }
+                else
+                {
                     Serial.println("❌ Failed to clear WiFi settings from NVS");
                 }
 
                 // Clear ESP32 WiFi config
                 wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
                 esp_err_t ret = esp_wifi_init(&cfg);
-                if (ret == ESP_OK || ret == ESP_ERR_WIFI_NOT_INIT) {
+                if (ret == ESP_OK || ret == ESP_ERR_WIFI_NOT_INIT)
+                {
                     vTaskDelay(pdMS_TO_TICKS(2000));
 
                     ret = esp_wifi_restore();
-                    if (ret != ESP_OK) {
+                    if (ret != ESP_OK)
+                    {
                         Serial.printf("WiFi restore failed: %s\n", esp_err_to_name(ret));
-                    } else {
+                    }
+                    else
+                    {
                         Serial.println("✅ WiFi configurations cleared!");
                     }
-                } else {
+                }
+                else
+                {
                     Serial.printf("WiFi init failed: %s\n", esp_err_to_name(ret));
                 }
 
@@ -240,9 +271,11 @@ void WifiManager::poll() {
     pollSerial();
 }
 
-void WifiManager::initEth() {
+void WifiManager::initEth()
+{
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
-    if (!eth_init) {
+    if (!eth_init)
+    {
         eth_init = true;
         ETH.begin(
             ETH_PHY_ADDR,
@@ -256,14 +289,16 @@ void WifiManager::initEth() {
 #endif
 }
 
-bool WifiManager::connectToWifi() {
+bool WifiManager::connectToWifi()
+{
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
     if (wifiStatus == ETHERNET || eth_connected)
         return true;
 #endif
 
     Preferences preferences;
-    if (!preferences.begin("wifi", false)) {
+    if (!preferences.begin("wifi", false))
+    {
         Serial.println("ERROR: Failed to open NVS wifi namespace");
         startManagementServer();
         return false;
@@ -275,7 +310,8 @@ bool WifiManager::connectToWifi() {
     // ESP32-S3 specific debug information
     Serial.printf("NVS WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
 
-    if (_ssid.isEmpty()) {
+    if (_ssid.isEmpty())
+    {
         terminalLog("No connection info saved");
         logLine("No connection information saved");
         preferences.end();
@@ -288,20 +324,50 @@ bool WifiManager::connectToWifi() {
     String mask = preferences.getString("mask", "");
     String gw = preferences.getString("gw", "");
     String dns = preferences.getString("dns", "");
-    preferences.end();  // Close preferences properly
+    preferences.end(); // Close preferences properly
 
     // Configure static IP if available
-    if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0) {
+    if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0)
+    {
         IPAddress staticIP, subnetMask, gatewayIP, dnsIP;
-        if (staticIP.fromString(ip) && subnetMask.fromString(mask) && gatewayIP.fromString(gw)) {
-            if (dns.length() > 0 && dnsIP.fromString(dns)) {
+        if (staticIP.fromString(ip) && subnetMask.fromString(mask) && gatewayIP.fromString(gw))
+        {
+            if (dns.length() > 0 && dnsIP.fromString(dns))
+            {
                 WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
-            } else {
-                WiFi.config(staticIP, gatewayIP, subnetMask);
+                terminalLog("Setting static IP with DNS: " + ip + ", DNS: " + dns);
             }
-            terminalLog("Setting static IP: " + ip);
-        } else {
+            else
+            {
+                // Use OpenDNS as fallback when no DNS is configured for static IP
+                IPAddress openDNS(208, 67, 222, 222); // OpenDNS primary
+                WiFi.config(staticIP, gatewayIP, subnetMask, openDNS);
+                terminalLog("Setting static IP with OpenDNS fallback: " + ip);
+            }
+        }
+        else
+        {
             Serial.println("WARNING: Invalid static IP configuration, using DHCP");
+        }
+    }
+    else
+    {
+        // For DHCP, set DNS if specified, otherwise use OpenDNS as fallback
+        if (dns.length() > 0)
+        {
+            IPAddress dnsIP;
+            if (dnsIP.fromString(dns))
+            {
+                WiFi.config(IPAddress(), IPAddress(), IPAddress(), dnsIP); // Set only DNS for DHCP
+                terminalLog("Setting DNS for DHCP: " + dns);
+            }
+        }
+        else
+        {
+            // Set OpenDNS as fallback for public access
+            IPAddress openDNS(208, 67, 222, 222); // OpenDNS primary
+            WiFi.config(IPAddress(), IPAddress(), IPAddress(), openDNS);
+            terminalLog("Setting OpenDNS fallback for public access");
         }
     }
 
@@ -309,13 +375,15 @@ bool WifiManager::connectToWifi() {
     return _connected;
 }
 
-bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfull) {
+bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfull)
+{
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
     if (wifiStatus == ETHERNET)
         return true;
 #endif
 
-    if (ssid.isEmpty()) {
+    if (ssid.isEmpty())
+    {
         Serial.println("ERROR: Empty SSID provided");
         return false;
     }
@@ -328,41 +396,46 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
 
     // Proper WiFi disconnect and reset sequence
     WiFi.disconnect(true, true);
-    vTaskDelay(pdMS_TO_TICKS(500));  // Allow time for disconnect
+    vTaskDelay(pdMS_TO_TICKS(500)); // Allow time for disconnect
     WiFi.mode(WIFI_MODE_NULL);
     vTaskDelay(pdMS_TO_TICKS(200));
 
     // Set hostname before connecting
     String hostname = buildHostname(WIFI_IF_STA);
-    if (!WiFi.setHostname(hostname.c_str())) {
+    if (!WiFi.setHostname(hostname.c_str()))
+    {
         Serial.printf("WARNING: Failed to set hostname: %s\n", hostname.c_str());
     }
 
     WiFi.mode(WIFI_STA);
 
     // ESP32-S3 Performance optimizations
-    esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving for faster connection
-    if (ret != ESP_OK) {
+    esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE); // Disable power saving for faster connection
+    if (ret != ESP_OK)
+    {
         Serial.printf("WARNING: Failed to set power save mode: %s\n", esp_err_to_name(ret));
     }
 
-    ret = WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
-    if (!ret) {
+    ret = WiFi.setTxPower(WIFI_POWER_19_5dBm); // Optimal power for ESP32-S3
+    if (!ret)
+    {
         Serial.println("WARNING: Failed to set TX power");
     }
 
     // Initialize WiFi with optimized configuration
     wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
-    wifi_init_cfg.nvs_enable = 1;  // Enable NVS storage
+    wifi_init_cfg.nvs_enable = 1; // Enable NVS storage
     ret = esp_wifi_init(&wifi_init_cfg);
-    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) {
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT)
+    {
         Serial.printf("ERROR: WiFi init failed: %s\n", esp_err_to_name(ret));
         return false;
     }
 
     // Set WiFi storage to flash for persistence
     ret = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         Serial.printf("WARNING: Failed to set WiFi storage: %s\n", esp_err_to_name(ret));
     }
 
@@ -380,25 +453,27 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
 
     // Optimized scan and connection settings
-    wifi_config.sta.scan_method = WIFI_FAST_SCAN;             // Fast scan method
-    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;  // Connect to strongest signal
-    wifi_config.sta.threshold.rssi = -127;                    // Accept any signal strength
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;      // Accept any auth mode initially
-    wifi_config.sta.pmf_cfg.capable = true;                   // Enable PMF capability
-    wifi_config.sta.pmf_cfg.required = false;                 // But don't require it
+    wifi_config.sta.scan_method = WIFI_FAST_SCAN;            // Fast scan method
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL; // Connect to strongest signal
+    wifi_config.sta.threshold.rssi = -127;                   // Accept any signal strength
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;     // Accept any auth mode initially
+    wifi_config.sta.pmf_cfg.capable = true;                  // Enable PMF capability
+    wifi_config.sta.pmf_cfg.required = false;                // But don't require it
 
     terminalLog("Connecting to WiFi with optimized settings...");
     WiFi.persistent(savewhensuccessfull);
 
     // Apply configuration and connect
     ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         Serial.printf("ERROR: Failed to set WiFi config: %s\n", esp_err_to_name(ret));
         return false;
     }
 
     ret = esp_wifi_connect();
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         Serial.printf("ERROR: WiFi connect failed: %s\n", esp_err_to_name(ret));
         return false;
     }
@@ -407,7 +482,8 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     return _connected;
 }
 
-bool WifiManager::waitForConnection() {
+bool WifiManager::waitForConnection()
+{
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
     if (wifiStatus == ETHERNET)
         return true;
@@ -417,28 +493,31 @@ bool WifiManager::waitForConnection() {
     wifiStatus = WAIT_CONNECTING;
     wl_status_t lastStatus = WL_IDLE_STATUS;
 
-    while (WiFi.status() != WL_CONNECTED) {
-        if (millis() > timeout) {
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        if (millis() > timeout)
+        {
             wl_status_t currentStatus = WiFi.status();
             Serial.printf("WiFi connection timeout. Final status: %d\n", currentStatus);
 
             // Provide more detailed error information
-            switch (currentStatus) {
-                case WL_NO_SSID_AVAIL:
-                    terminalLog("!WiFi Error: SSID not found");
-                    break;
-                case WL_CONNECT_FAILED:
-                    terminalLog("!WiFi Error: Connection failed (wrong password?)");
-                    break;
-                case WL_CONNECTION_LOST:
-                    terminalLog("!WiFi Error: Connection lost during handshake");
-                    break;
-                case WL_DISCONNECTED:
-                    terminalLog("!WiFi Error: Disconnected");
-                    break;
-                default:
-                    terminalLog("!Unable to connect to WiFi - timeout");
-                    break;
+            switch (currentStatus)
+            {
+            case WL_NO_SSID_AVAIL:
+                terminalLog("!WiFi Error: SSID not found");
+                break;
+            case WL_CONNECT_FAILED:
+                terminalLog("!WiFi Error: Connection failed (wrong password?)");
+                break;
+            case WL_CONNECTION_LOST:
+                terminalLog("!WiFi Error: Connection lost during handshake");
+                break;
+            case WL_DISCONNECTED:
+                terminalLog("!WiFi Error: Disconnected");
+                break;
+            default:
+                terminalLog("!Unable to connect to WiFi - timeout");
+                break;
             }
 
             logLine("Unable to connect to WiFi");
@@ -448,7 +527,8 @@ bool WifiManager::waitForConnection() {
 
         // Log status changes for debugging
         wl_status_t currentStatus = WiFi.status();
-        if (currentStatus != lastStatus) {
+        if (currentStatus != lastStatus)
+        {
             Serial.printf("WiFi status changed: %d -> %d\n", lastStatus, currentStatus);
             lastStatus = currentStatus;
         }
@@ -457,15 +537,19 @@ bool WifiManager::waitForConnection() {
     }
 
     // Save credentials if requested
-    if (_savewhensuccessfull) {
+    if (_savewhensuccessfull)
+    {
         Preferences preferences;
-        if (preferences.begin("wifi", false)) {
+        if (preferences.begin("wifi", false))
+        {
             Serial.printf("Saving WiFi credentials - SSID: '%s'\n", _ssid.c_str());
             preferences.putString("ssid", _ssid);
-            preferences.putString("pw", _pass);  // Use "pw" key for consistency
+            preferences.putString("pw", _pass); // Use "pw" key for consistency
             preferences.end();
             Serial.println("✅ WiFi credentials saved to NVS");
-        } else {
+        }
+        else
+        {
             Serial.println("❌ ERROR: Failed to save WiFi credentials to NVS");
         }
         _savewhensuccessfull = false;
@@ -485,8 +569,10 @@ bool WifiManager::waitForConnection() {
     return true;
 }
 
-void WifiManager::startManagementServer() {
-    if (!_APstarted && wifiStatus != ETHERNET) {
+void WifiManager::startManagementServer()
+{
+    if (!_APstarted && wifiStatus != ETHERNET)
+    {
         terminalLog("Starting config AP, ssid: OpenEPaperLink");
         logLine("Starting configuration AP, ssid OpenEPaperLink");
 
@@ -495,15 +581,17 @@ void WifiManager::startManagementServer() {
         vTaskDelay(pdMS_TO_TICKS(200));
 
         // Optimized WiFi settings for ESP32-S3 AP mode
-        WiFi.mode(WIFI_AP_STA);  // Use dual mode to allow scanning while in AP mode
+        WiFi.mode(WIFI_AP_STA); // Use dual mode to allow scanning while in AP mode
 
         // Configure WiFi performance settings
-        esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving for better performance
-        if (ret != ESP_OK) {
+        esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE); // Disable power saving for better performance
+        if (ret != ESP_OK)
+        {
             Serial.printf("WARNING: Failed to set AP power save mode: %s\n", esp_err_to_name(ret));
         }
 
-        if (!WiFi.setTxPower(WIFI_POWER_19_5dBm)) {  // Set optimal power for ESP32-S3
+        if (!WiFi.setTxPower(WIFI_POWER_19_5dBm))
+        { // Set optimal power for ESP32-S3
             Serial.println("WARNING: Failed to set AP TX power");
         }
 
@@ -515,22 +603,25 @@ void WifiManager::startManagementServer() {
         scanConf.channel = 0;
         scanConf.show_hidden = true;
         scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-        scanConf.scan_time.active.min = 100;  // Faster scan timing
+        scanConf.scan_time.active.min = 100; // Faster scan timing
         scanConf.scan_time.active.max = 300;
 
         // Start AP with optimized settings
-        if (!WiFi.softAP("OpenEPaperLink", "", 1, false, 8)) {  // Allow up to 8 connections
+        if (!WiFi.softAP("OpenEPaperLink", "", 1, false, 8))
+        { // Allow up to 8 connections
             Serial.println("ERROR: Failed to start WiFi AP");
             return;
         }
 
-        if (!WiFi.softAPsetHostname("OpenEPaperLink")) {
+        if (!WiFi.softAPsetHostname("OpenEPaperLink"))
+        {
             Serial.println("WARNING: Failed to set AP hostname");
         }
 
         // Set optimal bandwidth for AP mode
         ret = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             Serial.printf("WARNING: Failed to set AP bandwidth: %s\n", esp_err_to_name(ret));
         }
 
@@ -544,7 +635,8 @@ void WifiManager::startManagementServer() {
     }
 }
 
-String WifiManager::buildHostname(wifi_interface_t interface) {
+String WifiManager::buildHostname(wifi_interface_t interface)
+{
     char hostname[32] = "OpenEpaperLink-";
     uint8_t mac[6];
     esp_wifi_get_mac(interface, mac);
@@ -554,18 +646,22 @@ String WifiManager::buildHostname(wifi_interface_t interface) {
     // Use safe string concatenation with bounds checking
     size_t currentLen = strlen(hostname);
     size_t remaining = sizeof(hostname) - currentLen - 1;
-    if (strlen(lastTwoBytes) <= remaining) {
+    if (strlen(lastTwoBytes) <= remaining)
+    {
         strncat(hostname, lastTwoBytes, remaining);
     }
 
-    if (config.alias[0] != '\0') {
+    if (config.alias[0] != '\0')
+    {
         // Reset hostname to use alias instead
         memset(hostname, 0, sizeof(hostname));
         int len = strlen(config.alias);
         int j = 0;
-        for (int i = 0; i < len && j < (int)(sizeof(hostname) - 1); i++) {
+        for (int i = 0; i < len && j < (int)(sizeof(hostname) - 1); i++)
+        {
             char c = config.alias[i];
-            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')
+            {
                 hostname[j] = c;
                 j++;
             }
@@ -575,22 +671,29 @@ String WifiManager::buildHostname(wifi_interface_t interface) {
     return String(hostname);
 }
 
-IPAddress WifiManager::localIP() {
-    if (wifiStatus == ETHERNET) {
+IPAddress WifiManager::localIP()
+{
+    if (wifiStatus == ETHERNET)
+    {
         return ETH.localIP();
-    } else {
+    }
+    else
+    {
         return WiFi.localIP();
     }
 }
 
-String WifiManager::WiFi_SSID() {
+String WifiManager::WiFi_SSID()
+{
     wifi_config_t conf;
     esp_wifi_get_config(WIFI_IF_STA, &conf);
     return String(reinterpret_cast<const char *>(conf.sta.ssid));
 }
 
-String WifiManager::WiFi_psk() {
-    if (WiFiGenericClass::getMode() == WIFI_MODE_NULL) {
+String WifiManager::WiFi_psk()
+{
+    if (WiFiGenericClass::getMode() == WIFI_MODE_NULL)
+    {
         return String();
     }
     wifi_config_t conf;
@@ -598,106 +701,118 @@ String WifiManager::WiFi_psk() {
     return String(reinterpret_cast<char *>(conf.sta.password));
 }
 
-void WifiManager::pollSerial() {
-    while (Serial.available() > 0) {
+void WifiManager::pollSerial()
+{
+    while (Serial.available() > 0)
+    {
         char receivedChar = Serial.read();
 
-        if (parse_improv_serial_byte(x_position, receivedChar, x_buffer, onCommandCallback, onErrorCallback)) {
+        if (parse_improv_serial_byte(x_position, receivedChar, x_buffer, onCommandCallback, onErrorCallback))
+        {
             x_buffer[x_position++] = receivedChar;
-            if (x_position > 100) {
+            if (x_position > 100)
+            {
                 x_position = 0;
                 Serial.println("buffer full!");
             }
-        } else {
+        }
+        else
+        {
             x_position = 0;
         }
     }
 }
 
-void WifiManager::WiFiEvent(WiFiEvent_t event) {
+void WifiManager::WiFiEvent(WiFiEvent_t event)
+{
     Serial.printf("[WiFi-event %d] ", event);
     String eventname = "";
 
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-            eventname = "Connected to access point";
-            break;
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            // eventname = "Disconnected from WiFi access point";
-            break;
-        case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
-            eventname = "Authentication mode of access point has changed";
-            break;
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            eventname = "Obtained IP address: " + String(WiFi.localIP().toString().c_str());
-            init_udp();
-            break;
-        case ARDUINO_EVENT_WIFI_STA_LOST_IP:
-            eventname = "Lost IP address and IP address is reset to 0";
-            break;
+    switch (event)
+    {
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+        eventname = "Connected to access point";
+        break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+        // eventname = "Disconnected from WiFi access point";
+        break;
+    case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
+        eventname = "Authentication mode of access point has changed";
+        break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+        eventname = "Obtained IP address: " + String(WiFi.localIP().toString().c_str());
+        init_udp();
+        break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+        eventname = "Lost IP address and IP address is reset to 0";
+        break;
 
-        case ARDUINO_EVENT_WIFI_AP_START:
-            // eventname = "WiFi access point started";
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STOP:
-            // eventname = "WiFi access point stopped";
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
-            apClients++;
-            // eventname = "Client connected";
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
-            apClients--;
-            // eventname = "Client disconnected";
-            break;
-        case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
-            // eventname = "Assigned IP address to client";
-            break;
+    case ARDUINO_EVENT_WIFI_AP_START:
+        // eventname = "WiFi access point started";
+        break;
+    case ARDUINO_EVENT_WIFI_AP_STOP:
+        // eventname = "WiFi access point stopped";
+        break;
+    case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+        apClients++;
+        // eventname = "Client connected";
+        break;
+    case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+        apClients--;
+        // eventname = "Client disconnected";
+        break;
+    case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
+        // eventname = "Assigned IP address to client";
+        break;
 
 #if defined(ETHERNET_PHY_POWER) && defined(ETHERNET_PHY_MDC) && defined(ETHERNET_PHY_MDIO) && defined(ETHERNET_PHY_TYPE) && defined(ETHERNET_CLK_MODE)
 
-        case ARDUINO_EVENT_ETH_START:
-            eventname = "ETH Started";
-            // set eth hostname here
-            ETH.setHostname(buildHostname(WIFI_IF_STA).c_str());
-            eth_timeout = 0;
-            break;
-        case ARDUINO_EVENT_ETH_CONNECTED:
-            eventname = "ETH Connected";
-            WiFi.mode(WIFI_MODE_NULL);
-            WiFi.disconnect();
-            eth_connected = true;
-            eth_timeout = millis();
-            break;
-        case ARDUINO_EVENT_ETH_GOT_IP:
-            if (ETH.fullDuplex()) {
-                eventname = "ETH MAC: " + ETH.macAddress() + ", IPv4: " + ETH.localIP().toString() + ", FULL_DUPLEX, " + ETH.linkSpeed() + "Mbps";
-            } else {
-                eventname = "ETH MAC: " + ETH.macAddress() + ", IPv4: " + ETH.localIP().toString() + ", " + ETH.linkSpeed() + "Mbps";
-            }
-            eth_ip_ok = true;
-            init_udp();
-            eth_timeout = 0;
-            break;
-        case ARDUINO_EVENT_ETH_DISCONNECTED:
-            eventname = "ETH Disconnected";
-            eth_connected = false;
-            eth_ip_ok = false;
-            eth_timeout = 0;
-            break;
-        case ARDUINO_EVENT_ETH_STOP:
-            eventname = "ETH Stopped";
-            eth_connected = false;
-            eth_ip_ok = false;
-            eth_timeout = 0;
-            break;
+    case ARDUINO_EVENT_ETH_START:
+        eventname = "ETH Started";
+        // set eth hostname here
+        ETH.setHostname(buildHostname(WIFI_IF_STA).c_str());
+        eth_timeout = 0;
+        break;
+    case ARDUINO_EVENT_ETH_CONNECTED:
+        eventname = "ETH Connected";
+        WiFi.mode(WIFI_MODE_NULL);
+        WiFi.disconnect();
+        eth_connected = true;
+        eth_timeout = millis();
+        break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+        if (ETH.fullDuplex())
+        {
+            eventname = "ETH MAC: " + ETH.macAddress() + ", IPv4: " + ETH.localIP().toString() + ", FULL_DUPLEX, " + ETH.linkSpeed() + "Mbps";
+        }
+        else
+        {
+            eventname = "ETH MAC: " + ETH.macAddress() + ", IPv4: " + ETH.localIP().toString() + ", " + ETH.linkSpeed() + "Mbps";
+        }
+        eth_ip_ok = true;
+        init_udp();
+        eth_timeout = 0;
+        break;
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+        eventname = "ETH Disconnected";
+        eth_connected = false;
+        eth_ip_ok = false;
+        eth_timeout = 0;
+        break;
+    case ARDUINO_EVENT_ETH_STOP:
+        eventname = "ETH Stopped";
+        eth_connected = false;
+        eth_ip_ok = false;
+        eth_timeout = 0;
+        break;
 
 #endif
 
-        default:
-            break;
+    default:
+        break;
     }
-    if (eventname) terminalLog(eventname);
+    if (eventname)
+        terminalLog(eventname);
     // logLine("WiFi event [" + String(event) + "]: " + eventname);
 }
 
@@ -717,88 +832,105 @@ void WifiManager::WiFiEvent(WiFiEvent_t event) {
 #define BUILD_VERSION custom
 #endif
 
-std::vector<std::string> getLocalUrl() {
+std::vector<std::string> getLocalUrl()
+{
     return {String("http://" + WiFi.localIP().toString()).c_str()};
 }
 
-void onErrorCallback(improv::Error err) {
+void onErrorCallback(improv::Error err)
+{
 }
 
-bool onCommandCallback(improv::ImprovCommand cmd) {
-    switch (cmd.command) {
-        case improv::Command::GET_CURRENT_STATE: {
-            if ((WiFi.status() == WL_CONNECTED)) {
-                set_state(improv::State::STATE_PROVISIONED);
-                std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_CURRENT_STATE, getLocalUrl(), false);
-                send_response(data);
-            } else {
-                set_state(improv::State::STATE_AUTHORIZED);
-            }
-            break;
-        }
-
-        case improv::Command::WIFI_SETTINGS: {
-            if (cmd.ssid.length() == 0) {
-                set_error(improv::Error::ERROR_INVALID_RPC);
-                break;
-            }
-
-            set_state(improv::STATE_PROVISIONING);
-
-            ws.enable(false);
-            refreshAllPending();
-            saveDB("/current/tagDB.json");
-            ws.closeAll();
-            delay(100);
-            if (wm.connectToWifi(String(cmd.ssid.c_str()), String(cmd.password.c_str()), true)) {
-                Preferences preferences;
-                preferences.begin("wifi", false);
-                preferences.putString("ssid", cmd.ssid.c_str());
-                preferences.putString("pw", cmd.password.c_str());
-                preferences.end();
-                ws.enable(true);
-
-                set_state(improv::STATE_PROVISIONED);
-                std::vector<uint8_t> data = improv::build_rpc_response(improv::WIFI_SETTINGS, getLocalUrl(), false);
-                send_response(data);
-            } else {
-                set_state(improv::STATE_STOPPED);
-                set_error(improv::Error::ERROR_UNABLE_TO_CONNECT);
-            }
-
-            break;
-        }
-
-        case improv::Command::GET_DEVICE_INFO: {
-            std::vector<std::string> infos = {
-                // Firmware name
-                "OpenEPaperLink",
-                // Firmware version
-                STR(BUILD_VERSION),
-                // Hardware chip/variant
-                STR(BUILD_ENV_NAME),
-                // Device name
-                "Access Point"};
-            std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_DEVICE_INFO, infos, false);
+bool onCommandCallback(improv::ImprovCommand cmd)
+{
+    switch (cmd.command)
+    {
+    case improv::Command::GET_CURRENT_STATE:
+    {
+        if ((WiFi.status() == WL_CONNECTED))
+        {
+            set_state(improv::State::STATE_PROVISIONED);
+            std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_CURRENT_STATE, getLocalUrl(), false);
             send_response(data);
+        }
+        else
+        {
+            set_state(improv::State::STATE_AUTHORIZED);
+        }
+        break;
+    }
+
+    case improv::Command::WIFI_SETTINGS:
+    {
+        if (cmd.ssid.length() == 0)
+        {
+            set_error(improv::Error::ERROR_INVALID_RPC);
             break;
         }
 
-        case improv::Command::GET_WIFI_NETWORKS: {
-            getAvailableWifiNetworks();
-            break;
+        set_state(improv::STATE_PROVISIONING);
+
+        ws.enable(false);
+        refreshAllPending();
+        saveDB("/current/tagDB.json");
+        ws.closeAll();
+        delay(100);
+        if (wm.connectToWifi(String(cmd.ssid.c_str()), String(cmd.password.c_str()), true))
+        {
+            Preferences preferences;
+            preferences.begin("wifi", false);
+            preferences.putString("ssid", cmd.ssid.c_str());
+            preferences.putString("pw", cmd.password.c_str());
+            preferences.end();
+            ws.enable(true);
+
+            set_state(improv::STATE_PROVISIONED);
+            std::vector<uint8_t> data = improv::build_rpc_response(improv::WIFI_SETTINGS, getLocalUrl(), false);
+            send_response(data);
+        }
+        else
+        {
+            set_state(improv::STATE_STOPPED);
+            set_error(improv::Error::ERROR_UNABLE_TO_CONNECT);
         }
 
-        default: {
-            set_error(improv::ERROR_UNKNOWN_RPC);
-            return false;
-        }
+        break;
+    }
+
+    case improv::Command::GET_DEVICE_INFO:
+    {
+        std::vector<std::string> infos = {
+            // Firmware name
+            "OpenEPaperLink",
+            // Firmware version
+            STR(BUILD_VERSION),
+            // Hardware chip/variant
+            STR(BUILD_ENV_NAME),
+            // Device name
+            "Access Point"};
+        std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_DEVICE_INFO, infos, false);
+        send_response(data);
+        break;
+    }
+
+    case improv::Command::GET_WIFI_NETWORKS:
+    {
+        getAvailableWifiNetworks();
+        break;
+    }
+
+    default:
+    {
+        set_error(improv::ERROR_UNKNOWN_RPC);
+        return false;
+    }
     }
 
     return true;
 }
 
-void getAvailableWifiNetworks() {
+void getAvailableWifiNetworks()
+{
     // Clear previous scan results
     WiFi.scanDelete();
 
@@ -810,13 +942,15 @@ void getAvailableWifiNetworks() {
     scanConf.channel = 0;
     scanConf.show_hidden = true;
     scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-    scanConf.scan_time.active.min = 100;  // Fast scan
+    scanConf.scan_time.active.min = 100; // Fast scan
     scanConf.scan_time.active.max = 200;
 
     // Start optimized scan with timeout protection
-    esp_err_t ret = esp_wifi_scan_start(&scanConf, true);  // blocking scan for Improv
-    if (ret != ESP_OK) {
-        if (wm.scanVerbose()) Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
+    esp_err_t ret = esp_wifi_scan_start(&scanConf, true); // blocking scan for Improv
+    if (ret != ESP_OK)
+    {
+        if (wm.scanVerbose())
+            Serial.printf("ERROR: WiFi scan failed: %s\n", esp_err_to_name(ret));
         // Send empty response on scan failure
         std::vector<uint8_t> data = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
         send_response(data);
@@ -824,9 +958,11 @@ void getAvailableWifiNetworks() {
     }
 
     int networkNum = WiFi.scanComplete();
-    if (networkNum < 0) {
+    if (networkNum < 0)
+    {
         // scanComplete returns negative on error
-        if (wm.scanVerbose()) Serial.printf("WiFi scan failed (scanComplete returned %d)\n", networkNum);
+        if (wm.scanVerbose())
+            Serial.printf("WiFi scan failed (scanComplete returned %d)\n", networkNum);
         // Send final empty response to indicate scan completion/error
         std::vector<uint8_t> finalDataErr = improv::build_rpc_response(improv::GET_WIFI_NETWORKS, std::vector<std::string>{}, false);
         send_response(finalDataErr);
@@ -834,31 +970,40 @@ void getAvailableWifiNetworks() {
         return;
     }
 
-    if (wm.scanVerbose()) Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
+    if (wm.scanVerbose())
+        Serial.printf("WiFi scan completed: %d networks found\n", networkNum);
 
-    if (networkNum > 0) {
+    if (networkNum > 0)
+    {
         // Create vector for sorting by signal strength with better memory management
         std::vector<std::pair<int, int>> networks;
-        networks.reserve(std::min(networkNum, 30));  // Reserve memory to prevent reallocations
+        networks.reserve(std::min(networkNum, 30)); // Reserve memory to prevent reallocations
 
-        for (int i = 0; i < networkNum; i++) {
+        for (int i = 0; i < networkNum; i++)
+        {
             String ssid = WiFi.SSID(i);
-            if (ssid.length() > 0 && ssid.length() <= 32) {  // Valid SSID length check
+            if (ssid.length() > 0 && ssid.length() <= 32)
+            { // Valid SSID length check
                 networks.push_back(std::make_pair(i, WiFi.RSSI(i)));
-            } else {
-                if (wm.scanVerbose()) Serial.printf("Skipping network %d with invalid SSID (len=%d)\n", i, ssid.length());
+            }
+            else
+            {
+                if (wm.scanVerbose())
+                    Serial.printf("Skipping network %d with invalid SSID (len=%d)\n", i, ssid.length());
             }
         }
 
         // Sort by signal strength (strongest first)
         std::sort(networks.begin(), networks.end(),
-                  [](const std::pair<int, int> &a, const std::pair<int, int> &b) {
+                  [](const std::pair<int, int> &a, const std::pair<int, int> &b)
+                  {
                       return a.second > b.second;
                   });
 
         // Send sorted results with memory-efficient processing
         int maxNetworks = std::min((int)networks.size(), 30);
-        for (int idx = 0; idx < maxNetworks; idx++) {
+        for (int idx = 0; idx < maxNetworks; idx++)
+        {
             int id = networks[idx].first;
 
             // Get network info with bounds checking
@@ -867,13 +1012,16 @@ void getAvailableWifiNetworks() {
             wifi_auth_mode_t authMode = WiFi.encryptionType(id);
             int8_t channel = WiFi.channel(id);
 
-            if (ssid.length() == 0) {
-                if (wm.scanVerbose()) Serial.printf("Skipping empty SSID at scan index %d\n", id);
-                continue;  // Skip invalid entries
+            if (ssid.length() == 0)
+            {
+                if (wm.scanVerbose())
+                    Serial.printf("Skipping empty SSID at scan index %d\n", id);
+                continue; // Skip invalid entries
             }
 
             const char *authStr = (authMode == WIFI_AUTH_OPEN) ? "OPEN" : "SECURED";
-            if (wm.scanVerbose()) Serial.printf("Network: '%s' RSSI: %d Auth: %s Channel: %d\n", ssid.c_str(), rssi, authStr, channel);
+            if (wm.scanVerbose())
+                Serial.printf("Network: '%s' RSSI: %d Auth: %s Channel: %d\n", ssid.c_str(), rssi, authStr, channel);
 
             // Build response efficiently (SSID, RSSI, Auth required)
             std::vector<uint8_t> data = improv::build_rpc_response(
@@ -885,8 +1033,11 @@ void getAvailableWifiNetworks() {
             // Small delay to prevent overwhelming the serial interface
             vTaskDelay(pdMS_TO_TICKS(1));
         }
-    } else {
-        if (wm.scanVerbose()) Serial.println("No WiFi networks found during scan");
+    }
+    else
+    {
+        if (wm.scanVerbose())
+            Serial.println("No WiFi networks found during scan");
     }
 
     // Send final empty response to indicate scan completion
@@ -897,7 +1048,8 @@ void getAvailableWifiNetworks() {
     WiFi.scanDelete();
 }
 
-void set_state(improv::State state) {
+void set_state(improv::State state)
+{
     std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
     data.resize(11);
     data[6] = improv::IMPROV_SERIAL_VERSION;
@@ -913,7 +1065,8 @@ void set_state(improv::State state) {
     Serial.write(data.data(), data.size());
 }
 
-void send_response(std::vector<uint8_t> &response) {
+void send_response(std::vector<uint8_t> &response)
+{
     std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
     data.resize(9);
     data[6] = improv::IMPROV_SERIAL_VERSION;
@@ -929,7 +1082,8 @@ void send_response(std::vector<uint8_t> &response) {
     Serial.write(data.data(), data.size());
 }
 
-void set_error(improv::Error error) {
+void set_error(improv::Error error)
+{
     std::vector<uint8_t> data = {'I', 'M', 'P', 'R', 'O', 'V'};
     data.resize(11);
     data[6] = improv::IMPROV_SERIAL_VERSION;
@@ -947,144 +1101,164 @@ void set_error(improv::Error error) {
 
 // **** improv ****
 
-namespace improv {
+namespace improv
+{
 
-ImprovCommand parse_improv_data(const std::vector<uint8_t> &data, bool check_checksum) {
-    return parse_improv_data(data.data(), data.size(), check_checksum);
-}
+    ImprovCommand parse_improv_data(const std::vector<uint8_t> &data, bool check_checksum)
+    {
+        return parse_improv_data(data.data(), data.size(), check_checksum);
+    }
 
-ImprovCommand parse_improv_data(const uint8_t *data, size_t length, bool check_checksum) {
-    ImprovCommand improv_command;
-    Command command = (Command)data[0];
-    uint8_t data_length = data[1];
+    ImprovCommand parse_improv_data(const uint8_t *data, size_t length, bool check_checksum)
+    {
+        ImprovCommand improv_command;
+        Command command = (Command)data[0];
+        uint8_t data_length = data[1];
 
-    if (data_length != length - 2 - check_checksum) {
-        improv_command.command = UNKNOWN;
+        if (data_length != length - 2 - check_checksum)
+        {
+            improv_command.command = UNKNOWN;
+            return improv_command;
+        }
+
+        if (check_checksum)
+        {
+            uint8_t checksum = data[length - 1];
+
+            uint32_t calculated_checksum = 0;
+            for (uint8_t i = 0; i < length - 1; i++)
+            {
+                calculated_checksum += data[i];
+            }
+
+            if ((uint8_t)calculated_checksum != checksum)
+            {
+                improv_command.command = BAD_CHECKSUM;
+                return improv_command;
+            }
+        }
+
+        if (command == WIFI_SETTINGS)
+        {
+            uint8_t ssid_length = data[2];
+            uint8_t ssid_start = 3;
+            size_t ssid_end = ssid_start + ssid_length;
+
+            uint8_t pass_length = data[ssid_end];
+            size_t pass_start = ssid_end + 1;
+            size_t pass_end = pass_start + pass_length;
+
+            std::string ssid(data + ssid_start, data + ssid_end);
+            std::string password(data + pass_start, data + pass_end);
+            return {.command = command, .ssid = ssid, .password = password};
+        }
+
+        improv_command.command = command;
         return improv_command;
     }
 
-    if (check_checksum) {
-        uint8_t checksum = data[length - 1];
+    bool parse_improv_serial_byte(size_t position, uint8_t byte, const uint8_t *buffer,
+                                  std::function<bool(ImprovCommand)> &&callback, std::function<void(Error)> &&on_error)
+    {
+        if (position == 0)
+            return byte == 'I';
+        if (position == 1)
+            return byte == 'M';
+        if (position == 2)
+            return byte == 'P';
+        if (position == 3)
+            return byte == 'R';
+        if (position == 4)
+            return byte == 'O';
+        if (position == 5)
+            return byte == 'V';
 
-        uint32_t calculated_checksum = 0;
-        for (uint8_t i = 0; i < length - 1; i++) {
-            calculated_checksum += data[i];
+        if (position == 6)
+            return byte == IMPROV_SERIAL_VERSION;
+
+        if (position <= 8)
+            return true;
+
+        uint8_t type = buffer[7];
+        uint8_t data_len = buffer[8];
+
+        if (position <= 8 + data_len)
+            return true;
+
+        if (position == 8 + data_len + 1)
+        {
+            uint8_t checksum = 0x00;
+            for (size_t i = 0; i < position; i++)
+                checksum += buffer[i];
+
+            if (checksum != byte)
+            {
+                on_error(ERROR_INVALID_RPC);
+                return false;
+            }
+
+            if (type == TYPE_RPC)
+            {
+                auto command = parse_improv_data(&buffer[9], data_len, false);
+                return callback(command);
+            }
         }
 
-        if ((uint8_t)calculated_checksum != checksum) {
-            improv_command.command = BAD_CHECKSUM;
-            return improv_command;
+        return false;
+    }
+
+    std::vector<uint8_t> build_rpc_response(Command command, const std::vector<std::string> &datum, bool add_checksum)
+    {
+        std::vector<uint8_t> out;
+        uint32_t length = 0;
+        out.push_back(command);
+        for (const auto &str : datum)
+        {
+            uint8_t len = str.length();
+            length += len + 1;
+            out.push_back(len);
+            out.insert(out.end(), str.begin(), str.end());
         }
-    }
+        out.insert(out.begin() + 1, length);
 
-    if (command == WIFI_SETTINGS) {
-        uint8_t ssid_length = data[2];
-        uint8_t ssid_start = 3;
-        size_t ssid_end = ssid_start + ssid_length;
+        if (add_checksum)
+        {
+            uint32_t calculated_checksum = 0;
 
-        uint8_t pass_length = data[ssid_end];
-        size_t pass_start = ssid_end + 1;
-        size_t pass_end = pass_start + pass_length;
-
-        std::string ssid(data + ssid_start, data + ssid_end);
-        std::string password(data + pass_start, data + pass_end);
-        return {.command = command, .ssid = ssid, .password = password};
-    }
-
-    improv_command.command = command;
-    return improv_command;
-}
-
-bool parse_improv_serial_byte(size_t position, uint8_t byte, const uint8_t *buffer,
-                              std::function<bool(ImprovCommand)> &&callback, std::function<void(Error)> &&on_error) {
-    if (position == 0)
-        return byte == 'I';
-    if (position == 1)
-        return byte == 'M';
-    if (position == 2)
-        return byte == 'P';
-    if (position == 3)
-        return byte == 'R';
-    if (position == 4)
-        return byte == 'O';
-    if (position == 5)
-        return byte == 'V';
-
-    if (position == 6)
-        return byte == IMPROV_SERIAL_VERSION;
-
-    if (position <= 8)
-        return true;
-
-    uint8_t type = buffer[7];
-    uint8_t data_len = buffer[8];
-
-    if (position <= 8 + data_len)
-        return true;
-
-    if (position == 8 + data_len + 1) {
-        uint8_t checksum = 0x00;
-        for (size_t i = 0; i < position; i++)
-            checksum += buffer[i];
-
-        if (checksum != byte) {
-            on_error(ERROR_INVALID_RPC);
-            return false;
+            for (uint8_t byte : out)
+            {
+                calculated_checksum += byte;
+            }
+            out.push_back(calculated_checksum);
         }
+        return out;
+    }
 
-        if (type == TYPE_RPC) {
-            auto command = parse_improv_data(&buffer[9], data_len, false);
-            return callback(command);
+    std::vector<uint8_t> build_rpc_response(Command command, const std::vector<String> &datum, bool add_checksum)
+    {
+        std::vector<uint8_t> out;
+        uint32_t length = 0;
+        out.push_back(command);
+        for (const auto &str : datum)
+        {
+            uint8_t len = str.length();
+            length += len;
+            out.push_back(len);
+            out.insert(out.end(), str.begin(), str.end());
         }
-    }
+        out.insert(out.begin() + 1, length);
 
-    return false;
-}
+        if (add_checksum)
+        {
+            uint32_t calculated_checksum = 0;
 
-std::vector<uint8_t> build_rpc_response(Command command, const std::vector<std::string> &datum, bool add_checksum) {
-    std::vector<uint8_t> out;
-    uint32_t length = 0;
-    out.push_back(command);
-    for (const auto &str : datum) {
-        uint8_t len = str.length();
-        length += len + 1;
-        out.push_back(len);
-        out.insert(out.end(), str.begin(), str.end());
-    }
-    out.insert(out.begin() + 1, length);
-
-    if (add_checksum) {
-        uint32_t calculated_checksum = 0;
-
-        for (uint8_t byte : out) {
-            calculated_checksum += byte;
+            for (uint8_t byte : out)
+            {
+                calculated_checksum += byte;
+            }
+            out.push_back(calculated_checksum);
         }
-        out.push_back(calculated_checksum);
+        return out;
     }
-    return out;
-}
 
-std::vector<uint8_t> build_rpc_response(Command command, const std::vector<String> &datum, bool add_checksum) {
-    std::vector<uint8_t> out;
-    uint32_t length = 0;
-    out.push_back(command);
-    for (const auto &str : datum) {
-        uint8_t len = str.length();
-        length += len;
-        out.push_back(len);
-        out.insert(out.end(), str.begin(), str.end());
-    }
-    out.insert(out.begin() + 1, length);
-
-    if (add_checksum) {
-        uint32_t calculated_checksum = 0;
-
-        for (uint8_t byte : out) {
-            calculated_checksum += byte;
-        }
-        out.push_back(calculated_checksum);
-    }
-    return out;
-}
-
-}  // namespace improv
+} // namespace improv

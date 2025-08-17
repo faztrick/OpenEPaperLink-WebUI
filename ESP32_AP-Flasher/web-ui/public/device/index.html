@@ -233,6 +233,9 @@
 						<button class="action-btn" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()" title="AI Assistant">
 							<span class="material-symbols-outlined">smart_toy</span>
 						</button>
+						<button class="action-btn" id="ping-device-btn" title="Ping Device">
+							<span class="material-symbols-outlined">network_check</span>
+						</button>
 					</div>
 				</div>
 			</div>
@@ -1625,6 +1628,23 @@
 			if (scanBtn) scanBtn.addEventListener('click', scanWifiNetworksFromDashboard);
 			const ledOffBtn = document.getElementById('led-off-btn');
 			if (ledOffBtn) ledOffBtn.addEventListener('click', sendLedOff);
+
+			// Ping device quick action
+			const pingBtn = document.getElementById('ping-device-btn');
+			if (pingBtn) pingBtn.addEventListener('click', async function () {
+				pingBtn.classList.add('loading');
+				try {
+					const resp = await fetch('/api/ping');
+					if (!resp.ok) throw new Error('Ping failed: ' + resp.status);
+					const data = await resp.json();
+					showToast('Ping OK — tags:' + (data.tagCount || 0) + ' free:' + (Math.round((data.freeHeap||0)/1024)) + 'KB');
+				} catch (err) {
+					console.error('Ping error', err);
+					showToast('Ping failed');
+				} finally {
+					pingBtn.classList.remove('loading');
+				}
+			});
 		});
 	</script>
 

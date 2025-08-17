@@ -7,6 +7,16 @@
 #include <ESPAsyncWebServer.h>
 #include "c6_module.h"
 
+// Project globals referenced by web handlers
+#include "storage.h"
+#include "serialap.h"
+#include "module_manager.h"
+#include "tag_db.h"
+#include "newproto.h"
+
+// Ensure Async JSON handler type is visible
+#include <AsyncJson.h>
+
 // Forward declarations
 struct APlist;
 
@@ -16,8 +26,8 @@ void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index
 void doJsonUpload(AsyncWebServerRequest *request);
 void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 
-// Enhanced Module Management API
-void setupModuleManagementAPI(AsyncWebServer &server);
+// (moved) Module management API setup is provided by ModuleManager
+// Use: moduleManager.setupModuleManagementAPI(server);
 
 // Missing function declarations for OTA handlers
 void handleSysinfoRequest(AsyncWebServerRequest *request);
@@ -27,6 +37,10 @@ void handleUpdateC6(AsyncWebServerRequest *request);
 void handleUpdateActions(AsyncWebServerRequest *request);
 void handleUpdateOTA(AsyncWebServerRequest *request);
 void handleLittleFSUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
+
+// Common wifi and tag handlers referenced by web registrations
+void handleGetWifiConfig(AsyncWebServerRequest *request);
+void handleTagCommand(AsyncWebServerRequest *request);
 
 // WebSocket functions
 void wsLog(const String &text);
@@ -40,5 +54,13 @@ uint8_t wsClientCount();
 
 extern AsyncWebSocket ws;
 extern SemaphoreHandle_t wsMutex;
+
+// Common globals used across web handlers
+extern AsyncWebServer server;
+extern fs::FS *contentFS;
+extern SemaphoreHandle_t fsMutex;
+extern uint32_t lastssidscan;
+extern std::vector<tagRecord *> tagDB;
+extern std::vector<PendingItem> pendingQueue;
 
 #endif // WEB_H
