@@ -1,7 +1,7 @@
 #include "module_manager.h"
 
 #include <ArduinoJson.h>
-#include <Preferences.h>
+#include "storage.h"
 
 // Global module manager instance
 ModuleManager moduleManager;
@@ -11,8 +11,10 @@ ModuleManager moduleManager;
 
 bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
                                    bool autoStart,
-                                   const std::vector<String>& dependencies) {
-    if (!module) {
+                                   const std::vector<String> &dependencies)
+{
+    if (!module)
+    {
         Serial.println("[MODULE_MANAGER] Cannot register null module");
         return false;
     }
@@ -20,7 +22,8 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
     ModuleInfo info = module->getInfo();
 
     // Check for duplicate module names
-    if (findModule(info.name) != modules.end()) {
+    if (findModule(info.name) != modules.end())
+    {
         Serial.printf("[MODULE_MANAGER] Module '%s' already registered\n", info.name.c_str());
         return false;
     }
@@ -39,8 +42,10 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
     return true;
 }
 
-bool ModuleManager::initializeAll() {
-    if (initialized) {
+bool ModuleManager::initializeAll()
+{
+    if (initialized)
+    {
         Serial.println("[MODULE_MANAGER] Already initialized");
         return true;
     }
@@ -49,7 +54,8 @@ bool ModuleManager::initializeAll() {
     Serial.println("[MODULE_MANAGER] Initializing all modules...");
 
     // Resolve dependencies first
-    if (!resolveDependencies()) {
+    if (!resolveDependencies())
+    {
         Serial.println("[MODULE_MANAGER] Dependency resolution failed");
         return false;
     }
@@ -57,8 +63,10 @@ bool ModuleManager::initializeAll() {
     bool allSuccess = true;
 
     // Initialize modules in dependency order
-    for (auto& regModule : modules) {
-        if (regModule.info.state == ModuleState::UNINITIALIZED) {
+    for (auto &regModule : modules)
+    {
+        if (regModule.info.state == ModuleState::UNINITIALIZED)
+        {
             Serial.printf("[MODULE_MANAGER] Initializing module '%s'\n",
                           regModule.info.name.c_str());
 
@@ -68,12 +76,15 @@ bool ModuleManager::initializeAll() {
             bool success = regModule.instance->initialize();
             regModule.info.initTime = millis() - initStart;
 
-            if (success) {
+            if (success)
+            {
                 regModule.info.state = ModuleState::INITIALIZED;
                 regModule.info.lastActivity = millis();
                 Serial.printf("[MODULE_MANAGER] Module '%s' initialized in %dms\n",
                               regModule.info.name.c_str(), regModule.info.initTime);
-            } else {
+            }
+            else
+            {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = "Initialization failed";
                 Serial.printf("[MODULE_MANAGER] Module '%s' initialization failed\n",
@@ -83,19 +94,24 @@ bool ModuleManager::initializeAll() {
         }
     }
 
-    if (allSuccess) {
+    if (allSuccess)
+    {
         initialized = true;
         Serial.printf("[MODULE_MANAGER] All modules initialized successfully in %dms\n",
                       millis() - startTime);
-    } else {
+    }
+    else
+    {
         Serial.println("[MODULE_MANAGER] Some modules failed to initialize");
     }
 
     return allSuccess;
 }
 
-bool ModuleManager::startAll() {
-    if (!initialized) {
+bool ModuleManager::startAll()
+{
+    if (!initialized)
+    {
         Serial.println("[MODULE_MANAGER] Must initialize before starting");
         return false;
     }
@@ -104,18 +120,23 @@ bool ModuleManager::startAll() {
 
     bool allSuccess = true;
 
-    for (auto& regModule : modules) {
-        if (regModule.autoStart && regModule.info.state == ModuleState::INITIALIZED) {
+    for (auto &regModule : modules)
+    {
+        if (regModule.autoStart && regModule.info.state == ModuleState::INITIALIZED)
+        {
             Serial.printf("[MODULE_MANAGER] Starting module '%s'\n",
                           regModule.info.name.c_str());
 
             bool success = regModule.instance->start();
-            if (success) {
+            if (success)
+            {
                 regModule.info.state = ModuleState::ACTIVE;
                 regModule.info.lastActivity = millis();
                 Serial.printf("[MODULE_MANAGER] Module '%s' started successfully\n",
                               regModule.info.name.c_str());
-            } else {
+            }
+            else
+            {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = "Start failed";
                 Serial.printf("[MODULE_MANAGER] Module '%s' start failed\n",
@@ -128,14 +149,17 @@ bool ModuleManager::startAll() {
     return allSuccess;
 }
 
-bool ModuleManager::startModule(const String& name) {
+bool ModuleManager::startModule(const String &name)
+{
     auto it = findModule(name);
-    if (it == modules.end()) {
+    if (it == modules.end())
+    {
         Serial.printf("[MODULE_MANAGER] Module '%s' not found\n", name.c_str());
         return false;
     }
 
-    if (it->info.state != ModuleState::INITIALIZED && it->info.state != ModuleState::SUSPENDED) {
+    if (it->info.state != ModuleState::INITIALIZED && it->info.state != ModuleState::SUSPENDED)
+    {
         Serial.printf("[MODULE_MANAGER] Module '%s' not in startable state (current: %d)\n",
                       name.c_str(), static_cast<int>(it->info.state));
         return false;
@@ -144,12 +168,15 @@ bool ModuleManager::startModule(const String& name) {
     Serial.printf("[MODULE_MANAGER] Starting module '%s'\n", name.c_str());
 
     bool success = it->instance->start();
-    if (success) {
+    if (success)
+    {
         it->info.state = ModuleState::ACTIVE;
         it->info.lastActivity = millis();
         it->info.errorMessage = "";
         logModuleEvent(name, "STARTED");
-    } else {
+    }
+    else
+    {
         it->info.state = ModuleState::ERROR;
         it->info.errorMessage = "Manual start failed";
         logModuleEvent(name, "START_FAILED");
@@ -158,23 +185,29 @@ bool ModuleManager::startModule(const String& name) {
     return success;
 }
 
-bool ModuleManager::stopModule(const String& name) {
+bool ModuleManager::stopModule(const String &name)
+{
     auto it = findModule(name);
-    if (it == modules.end()) {
+    if (it == modules.end())
+    {
         return false;
     }
 
-    if (it->info.state != ModuleState::ACTIVE) {
+    if (it->info.state != ModuleState::ACTIVE)
+    {
         return false;
     }
 
     Serial.printf("[MODULE_MANAGER] Stopping module '%s'\n", name.c_str());
 
     bool success = it->instance->stop();
-    if (success) {
+    if (success)
+    {
         it->info.state = ModuleState::INITIALIZED;
         logModuleEvent(name, "STOPPED");
-    } else {
+    }
+    else
+    {
         it->info.state = ModuleState::ERROR;
         it->info.errorMessage = "Stop failed";
         logModuleEvent(name, "STOP_FAILED");
@@ -183,16 +216,20 @@ bool ModuleManager::stopModule(const String& name) {
     return success;
 }
 
-bool ModuleManager::restartModule(const String& name) {
+bool ModuleManager::restartModule(const String &name)
+{
     return stopModule(name) && startModule(name);
 }
 
-void ModuleManager::registerAllWebHandlers(AsyncWebServer& server) {
+void ModuleManager::registerAllWebHandlers(AsyncWebServer &server)
+{
     Serial.println("[MODULE_MANAGER] Registering web handlers for all modules...");
 
-    for (auto& regModule : modules) {
+    for (auto &regModule : modules)
+    {
         if (regModule.info.capabilities.hasWebHandlers &&
-            regModule.info.state == ModuleState::ACTIVE) {
+            regModule.info.state == ModuleState::ACTIVE)
+        {
             Serial.printf("[MODULE_MANAGER] Registering web handlers for '%s'\n",
                           regModule.info.name.c_str());
 
@@ -204,9 +241,11 @@ void ModuleManager::registerAllWebHandlers(AsyncWebServer& server) {
     setupModuleManagementAPI(server);
 }
 
-void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
+void ModuleManager::setupModuleManagementAPI(AsyncWebServer &server)
+{
     // Module list endpoint
-    server.on("/api/modules", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules", HTTP_GET, [this](AsyncWebServerRequest *request)
+              {
         JsonDocument doc;
         JsonArray moduleArray = doc["modules"].to<JsonArray>();
 
@@ -239,11 +278,11 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
 
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
     // Module control endpoint
-    server.on("/api/modules/control", HTTP_POST, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules/control", HTTP_POST, [this](AsyncWebServerRequest *request)
+              {
         if (!request->hasParam("module", true) || !request->hasParam("action", true)) {
             request->send(400, "application/json",
                           "{\"success\":false,\"error\":\"Missing module or action parameter\"}");
@@ -279,11 +318,11 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
 
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
     // Module status endpoint
-    server.on("/api/modules/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules/status", HTTP_GET, [this](AsyncWebServerRequest *request)
+              {
         String moduleName = "";
         if (request->hasParam("module")) {
             moduleName = request->getParam("module")->value();
@@ -319,24 +358,25 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
         }
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
     // Module configuration (autoStart) - get current persisted config
-    server.on("/api/modules/config", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules/config", HTTP_GET, [this](AsyncWebServerRequest *request)
+              {
         String cfg = getSystemConfig();
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         response->print(cfg);
-        request->send(response);
-    });
+        request->send(response); });
 
     // Module configuration save (accepts JSON body)
-    server.on("/api/modules/config", HTTP_POST, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules/config", HTTP_POST, [this](AsyncWebServerRequest *request)
+              {
         // onRequest callback required by AsyncWebServer signature; body handled in the next parameter
         // send an interim response if no body is provided
         if (request->contentLength() == 0) {
             request->send(400, "application/json", "{\"success\":false,\"error\":\"Empty body\"}");
-        } }, nullptr, [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        } }, nullptr, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
         static String body = "";
         if (index == 0) body = "";
         for (size_t i = 0; i < len; i++) body += (char)data[i];
@@ -351,7 +391,8 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
         } });
 
     // Toggle autoStart for a single module - POST /api/modules/autoStart
-    server.on("/api/modules/autoStart", HTTP_POST, [this](AsyncWebServerRequest* request) {
+    server.on("/api/modules/autoStart", HTTP_POST, [this](AsyncWebServerRequest *request)
+              {
         if (!request->hasParam("module", true) || !request->hasParam("autoStart", true)) {
             request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
             return;
@@ -374,19 +415,18 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
             request->send(200, "application/json", "{\"success\":true}");
         } else {
             request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to persist config\"}");
-        }
-    });
+        } });
 
     // Clear persisted module config (factory reset for module prefs) - POST /api/modules/clearConfig
-    server.on("/api/modules/clearConfig", HTTP_POST, [this](AsyncWebServerRequest* request) {
-        Preferences prefs;
-        if (!prefs.begin("modules", false)) {
-            request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to open NVS namespace\"}");
-            return;
+    server.on("/api/modules/clearConfig", HTTP_POST, [this](AsyncWebServerRequest *request)
+              {
+        // Remove JSON file holding module config (no NVS used)
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        bool removed = false;
+        if (contentFS) {
+            removed = contentFS->remove("/current/modules_config.json");
         }
-
-        prefs.remove("modules_config");
-        prefs.end();
+        xSemaphoreGive(fsMutex);
 
         // Apply sensible in-memory defaults now so the change takes effect without reboot
         const char* defaults = "{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"C6Module\",\"autoStart\":true}]}";
@@ -394,28 +434,33 @@ void ModuleManager::setupModuleManagementAPI(AsyncWebServer& server) {
 
         JsonDocument doc;
         doc["success"] = true;
-        doc["message"] = "Module config cleared from NVS and defaults applied in-memory";
+        doc["message"] = removed ? "Module config file removed and defaults applied" : "Module config defaults applied (file missing)";
 
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 }
 
-void ModuleManager::updateAll() {
-    for (auto& regModule : modules) {
-        if (regModule.info.state == ModuleState::ACTIVE) {
+void ModuleManager::updateAll()
+{
+    for (auto &regModule : modules)
+    {
+        if (regModule.info.state == ModuleState::ACTIVE)
+        {
             regModule.instance->update();
             updateModuleActivity(regModule.info.name);
         }
     }
 }
 
-std::vector<String> ModuleManager::getUnhealthyModules() const {
+std::vector<String> ModuleManager::getUnhealthyModules() const
+{
     std::vector<String> unhealthy;
 
-    for (const auto& regModule : modules) {
-        if (!regModule.instance->isHealthy() || regModule.info.state == ModuleState::ERROR) {
+    for (const auto &regModule : modules)
+    {
+        if (!regModule.instance->isHealthy() || regModule.info.state == ModuleState::ERROR)
+        {
             unhealthy.push_back(regModule.info.name);
         }
     }
@@ -423,7 +468,8 @@ std::vector<String> ModuleManager::getUnhealthyModules() const {
     return unhealthy;
 }
 
-String ModuleManager::getDiagnostics() const {
+String ModuleManager::getDiagnostics() const
+{
     JsonDocument doc;
 
     doc["uptime"] = getUptime();
@@ -431,7 +477,8 @@ String ModuleManager::getDiagnostics() const {
     doc["activeModules"] = getActiveModuleCount();
 
     JsonArray moduleStates = doc["moduleStates"].to<JsonArray>();
-    for (const auto& regModule : modules) {
+    for (const auto &regModule : modules)
+    {
         JsonObject moduleObj = moduleStates.add<JsonObject>();
         moduleObj["name"] = regModule.info.name;
         moduleObj["state"] = static_cast<int>(regModule.info.state);
@@ -446,115 +493,147 @@ String ModuleManager::getDiagnostics() const {
 
 // Private helper methods
 std::vector<ModuleManager::RegisteredModule>::iterator
-ModuleManager::findModule(const String& name) {
+ModuleManager::findModule(const String &name)
+{
     return std::find_if(modules.begin(), modules.end(),
-                        [&name](const RegisteredModule& module) {
+                        [&name](const RegisteredModule &module)
+                        {
                             return module.info.name == name;
                         });
 }
 
 std::vector<ModuleManager::RegisteredModule>::const_iterator
-ModuleManager::findModule(const String& name) const {
+ModuleManager::findModule(const String &name) const
+{
     return std::find_if(modules.cbegin(), modules.cend(),
-                        [&name](const RegisteredModule& module) {
+                        [&name](const RegisteredModule &module)
+                        {
                             return module.info.name == name;
                         });
 }
 
-bool ModuleManager::resolveDependencies() {
+bool ModuleManager::resolveDependencies()
+{
     // Simple dependency resolution - just ensure dependencies are initialized first
     // This could be enhanced with proper topological sorting
 
     bool changed = true;
     int iterations = 0;
-    const int maxIterations = modules.size() * 2;  // Prevent infinite loops
+    const int maxIterations = modules.size() * 2; // Prevent infinite loops
 
-    while (changed && iterations < maxIterations) {
+    while (changed && iterations < maxIterations)
+    {
         changed = false;
         iterations++;
 
-        for (size_t i = 0; i < modules.size(); i++) {
-            for (const String& dep : modules[i].dependencies) {
+        for (size_t i = 0; i < modules.size(); i++)
+        {
+            for (const String &dep : modules[i].dependencies)
+            {
                 auto depIt = findModule(dep);
-                if (depIt != modules.end()) {
+                if (depIt != modules.end())
+                {
                     // Find dependency index
                     size_t depIndex = std::distance(modules.begin(), depIt);
 
                     // If dependency comes after this module, swap them
-                    if (depIndex > i) {
+                    if (depIndex > i)
+                    {
                         std::swap(modules[i], modules[depIndex]);
                         changed = true;
                         break;
                     }
-                } else {
+                }
+                else
+                {
                     Serial.printf("[MODULE_MANAGER] Warning: Module '%s' depends on unknown module '%s'\n",
                                   modules[i].info.name.c_str(), dep.c_str());
                 }
             }
-            if (changed) break;
+            if (changed)
+                break;
         }
     }
 
-    if (iterations >= maxIterations) {
+    if (iterations >= maxIterations)
+    {
         Serial.println("[MODULE_MANAGER] Warning: Dependency resolution may have circular dependencies");
     }
 
     return true;
 }
 
-void ModuleManager::updateModuleActivity(const String& name) {
+void ModuleManager::updateModuleActivity(const String &name)
+{
     auto it = findModule(name);
-    if (it != modules.end()) {
+    if (it != modules.end())
+    {
         it->info.lastActivity = millis();
     }
 }
 
-void ModuleManager::logModuleEvent(const String& name, const String& event, const String& details) {
-    if (details.length() > 0) {
+void ModuleManager::logModuleEvent(const String &name, const String &event, const String &details)
+{
+    if (details.length() > 0)
+    {
         Serial.printf("[MODULE:%s] %s - %s\n", name.c_str(), event.c_str(), details.c_str());
-    } else {
+    }
+    else
+    {
         Serial.printf("[MODULE:%s] %s\n", name.c_str(), event.c_str());
     }
 }
 
-uint32_t ModuleManager::getUptime() const {
+uint32_t ModuleManager::getUptime() const
+{
     return initialized ? (millis() - startTime) : 0;
 }
 
-size_t ModuleManager::getModuleCount() const {
+size_t ModuleManager::getModuleCount() const
+{
     return modules.size();
 }
 
-size_t ModuleManager::getActiveModuleCount() const {
+size_t ModuleManager::getActiveModuleCount() const
+{
     size_t count = 0;
-    for (const auto& regModule : modules) {
-        if (regModule.info.state == ModuleState::ACTIVE) {
+    for (const auto &regModule : modules)
+    {
+        if (regModule.info.state == ModuleState::ACTIVE)
+        {
             count++;
         }
     }
     return count;
 }
 
-ModuleInterface* ModuleManager::getModuleInstance(const String& name) const {
+ModuleInterface *ModuleManager::getModuleInstance(const String &name) const
+{
     auto it = findModule(name);
-    if (it != modules.end()) {
+    if (it != modules.end())
+    {
         return it->instance.get();
     }
     return nullptr;
 }
 
-bool ModuleManager::isSystemHealthy() const {
-    for (const auto& regModule : modules) {
-        if (!regModule.instance->isHealthy()) {
+bool ModuleManager::isSystemHealthy() const
+{
+    for (const auto &regModule : modules)
+    {
+        if (!regModule.instance->isHealthy())
+        {
             return false;
         }
     }
     return true;
 }
 
-ModuleInfo ModuleManager::getModuleInfo(const String& name) const {
+ModuleInfo ModuleManager::getModuleInfo(const String &name) const
+{
     auto it = findModule(name);
-    if (it != modules.end()) {
+    if (it != modules.end())
+    {
         return it->info;
     }
 
@@ -571,9 +650,11 @@ ModuleInfo ModuleManager::getModuleInfo(const String& name) const {
     return emptyInfo;
 }
 
-bool ModuleManager::isModuleHealthy(const String& name) const {
+bool ModuleManager::isModuleHealthy(const String &name) const
+{
     auto it = findModule(name);
-    if (it != modules.end()) {
+    if (it != modules.end())
+    {
         return it->instance->isHealthy() && it->info.state != ModuleState::ERROR;
     }
     return false;
@@ -583,11 +664,13 @@ bool ModuleManager::isModuleHealthy(const String& name) const {
 // System configuration methods
 // -----------------------------
 
-String ModuleManager::getSystemConfig() const {
+String ModuleManager::getSystemConfig() const
+{
     JsonDocument doc;
     JsonArray modulesArr = doc["modules"].to<JsonArray>();
 
-    for (const auto& m : modules) {
+    for (const auto &m : modules)
+    {
         JsonObject mo = modulesArr.add<JsonObject>();
         mo["name"] = m.info.name;
         mo["autoStart"] = m.autoStart;
@@ -598,24 +681,31 @@ String ModuleManager::getSystemConfig() const {
     return out;
 }
 
-bool ModuleManager::setSystemConfig(const String& config) {
+bool ModuleManager::setSystemConfig(const String &config)
+{
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, config);
-    if (err) {
+    if (err)
+    {
         Serial.printf("[MODULE_MANAGER] Invalid system config JSON: %s\n", err.c_str());
         return false;
     }
 
-    if (!doc["modules"].is<JsonArray>()) return false;
+    if (!doc["modules"].is<JsonArray>())
+        return false;
 
     JsonArray arr = doc["modules"].to<JsonArray>();
-    for (JsonVariant v : arr) {
-        if (v["name"].isNull()) continue;
+    for (JsonVariant v : arr)
+    {
+        if (v["name"].isNull())
+            continue;
         String name = v["name"].as<String>();
-        if (v["autoStart"].isNull()) continue;
+        if (v["autoStart"].isNull())
+            continue;
         bool autoStart = v["autoStart"].as<bool>();
         auto it = findModule(name);
-        if (it != modules.end()) {
+        if (it != modules.end())
+        {
             it->autoStart = autoStart;
         }
     }
@@ -623,38 +713,41 @@ bool ModuleManager::setSystemConfig(const String& config) {
     return true;
 }
 
-bool ModuleManager::saveConfig() const {
-    Preferences prefs;
-    if (!prefs.begin("modules", false)) {
-        Serial.println("[MODULE_MANAGER] Failed to open NVS namespace 'modules' for saving");
+bool ModuleManager::saveConfig() const
+{
+    if (!contentFS)
         return false;
-    }
-
     JsonDocument doc;
     JsonArray modulesArr = doc["modules"].to<JsonArray>();
-    for (const auto& m : modules) {
+    for (const auto &m : modules)
+    {
         JsonObject mo = modulesArr.add<JsonObject>();
         mo["name"] = m.info.name;
         mo["autoStart"] = m.autoStart;
     }
-
-    String out;
-    serializeJson(doc, out);
-    prefs.putString("modules_config", out);
-    prefs.end();
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File w = contentFS->open("/current/modules_config.json", "w");
+    if (!w)
+    {
+        xSemaphoreGive(fsMutex);
+        return false;
+    }
+    serializeJson(doc, w);
+    w.close();
+    xSemaphoreGive(fsMutex);
     return true;
 }
 
-bool ModuleManager::loadConfig() {
-    Preferences prefs;
-    if (!prefs.begin("modules", true)) {
-        Serial.println("[MODULE_MANAGER] Failed to open NVS namespace 'modules' for loading");
+bool ModuleManager::loadConfig()
+{
+    if (!contentFS)
         return false;
-    }
-
-    String json = prefs.getString("modules_config", "");
-    prefs.end();
-    if (json.length() == 0) return false;
-
+    File r = contentFS->open("/current/modules_config.json", "r");
+    if (!r)
+        return false;
+    String json = r.readString();
+    r.close();
+    if (json.length() == 0)
+        return false;
     return setSystemConfig(json);
 }

@@ -3,7 +3,8 @@
 #include "web.h"        // ws helpers and globals
 
 #include <WiFiUdp.h>
-#include <Preferences.h>
+#include <ArduinoJson.h>
+#include "storage.h"
 
 // Define the global websocket if not already defined elsewhere
 AsyncWebSocket ws("/ws");
@@ -17,30 +18,45 @@ static bool g_logUdpBegun = false;
 
 static void loadLogUdpPrefs()
 {
-  Preferences p;
-  if (p.begin("logcfg", true))
+  if (!contentFS)
+    return;
+  File r = contentFS->open("/current/apconfig.json", "r");
+  if (!r)
+    return;
+  JsonDocument cfg;
+  if (deserializeJson(cfg, r) == DeserializationError::Ok)
   {
-    String ip = p.getString("ip", "");
-    g_logPort = p.getUShort("port", 0);
-    g_logUdpEnabled = p.getBool("enabled", false);
-    p.end();
+    String ip = cfg["logcfg"]["ip"].as<String>();
+    g_logPort = cfg["logcfg"]["port"].as<uint16_t>();
+    g_logUdpEnabled = cfg["logcfg"]["enabled"].as<bool>();
     if (ip.length() > 0)
-    {
       g_logIp.fromString(ip);
-    }
   }
+  r.close();
 }
 
 static void saveLogUdpPrefs()
 {
-  Preferences p;
-  if (p.begin("logcfg", false))
+  if (!contentFS)
+    return;
+  JsonDocument cfg;
+  File r = contentFS->open("/current/apconfig.json", "r");
+  if (r)
   {
-    p.putString("ip", g_logIp.toString());
-    p.putUShort("port", g_logPort);
-    p.putBool("enabled", g_logUdpEnabled);
-    p.end();
+    deserializeJson(cfg, r);
+    r.close();
   }
+  cfg["logcfg"]["ip"] = g_logIp.toString();
+  cfg["logcfg"]["port"] = g_logPort;
+  cfg["logcfg"]["enabled"] = g_logUdpEnabled;
+  xSemaphoreTake(fsMutex, portMAX_DELAY);
+  File w = contentFS->open("/current/apconfig.json", "w");
+  if (w)
+  {
+    serializeJson(cfg, w);
+    w.close();
+  }
+  xSemaphoreGive(fsMutex);
 }
 
 // Strong log helpers override the weak defaults in web_stubs.cpp

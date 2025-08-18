@@ -22,7 +22,7 @@
 #include "wifimanager.h"
 
 #include <ETH.h>
-#include <Preferences.h>
+#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
@@ -33,6 +33,7 @@
 #include "tag_db.h"
 #include "oepl_udp.h"
 #include "web.h"
+#include "storage.h"
 
 uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
@@ -218,22 +219,23 @@ void WifiManager::poll()
             {
                 Serial.println("Resetting WiFi settings...");
 
-                // Clear WiFi settings from NVS
-                Preferences preferences;
-                if (preferences.begin("wifi", false))
+                // Clear WiFi settings stored in filesystem
+                if (contentFS)
                 {
-                    preferences.putString("ssid", "");
-                    preferences.putString("pw", "");
-                    preferences.putString("ip", "");
-                    preferences.putString("mask", "");
-                    preferences.putString("gw", "");
-                    preferences.putString("dns", "");
-                    preferences.end();
-                    Serial.println("✅ WiFi settings cleared from NVS");
-                }
-                else
-                {
-                    Serial.println("❌ Failed to clear WiFi settings from NVS");
+                    xSemaphoreTake(fsMutex, portMAX_DELAY);
+                    fs::File f = contentFS->open("/current/apconfig.json", "w");
+                    if (f)
+                    {
+                        const char *empty = "{\"ssid\":\"\",\"password\":\"\",\"ip\":\"\",\"mask\":\"\",\"gw\":\"\",\"dns\":\"\"}";
+                        f.print(empty);
+                        f.close();
+                        Serial.println("✅ WiFi settings cleared from file");
+                    }
+                    else
+                    {
+                        Serial.println("❌ Failed to open apconfig.json for clearing");
+                    }
+                    xSemaphoreGive(fsMutex);
                 }
 
                 // Clear ESP32 WiFi config
@@ -296,35 +298,55 @@ bool WifiManager::connectToWifi()
         return true;
 #endif
 
-    Preferences preferences;
-    if (!preferences.begin("wifi", false))
+    // Load WiFi settings from filesystem
+    _ssid = WiFi_SSID();
+    _pass = WiFi_psk();
+    if (contentFS)
     {
-        Serial.println("ERROR: Failed to open NVS wifi namespace");
-        startManagementServer();
-        return false;
+        fs::File f = contentFS->open("/current/apconfig.json", "r");
+        if (f)
+        {
+            JsonDocument cfg;
+            if (deserializeJson(cfg, f) == DeserializationError::Ok)
+            {
+                if (cfg.containsKey("ssid"))
+                    _ssid = cfg["ssid"].as<String>();
+                if (cfg.containsKey("password"))
+                    _pass = cfg["password"].as<String>();
+            }
+            f.close();
+        }
     }
-
-    _ssid = preferences.getString("ssid", WiFi_SSID());
-    _pass = preferences.getString("pw", WiFi_psk());
-
-    // ESP32-S3 specific debug information
-    Serial.printf("NVS WiFi Config - SSID: '%s', Password length: %d\n", _ssid.c_str(), _pass.length());
 
     if (_ssid.isEmpty())
     {
         terminalLog("No connection info saved");
         logLine("No connection information saved");
-        preferences.end();
         startManagementServer();
         return false;
     }
     terminalLog("ssid: " + String(_ssid));
 
-    String ip = preferences.getString("ip", "");
-    String mask = preferences.getString("mask", "");
-    String gw = preferences.getString("gw", "");
-    String dns = preferences.getString("dns", "");
-    preferences.end(); // Close preferences properly
+    String ip = "";
+    String mask = "";
+    String gw = "";
+    String dns = "";
+    if (contentFS)
+    {
+        fs::File f = contentFS->open("/current/apconfig.json", "r");
+        if (f)
+        {
+            JsonDocument cfg;
+            if (deserializeJson(cfg, f) == DeserializationError::Ok)
+            {
+                ip = cfg["ip"].as<String>();
+                mask = cfg["mask"].as<String>();
+                gw = cfg["gw"].as<String>();
+                dns = cfg["dns"].as<String>();
+            }
+            f.close();
+        }
+    }
 
     // Configure static IP if available
     if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0)
@@ -424,7 +446,7 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
 
     // Initialize WiFi with optimized configuration
     wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
-    wifi_init_cfg.nvs_enable = 1; // Enable NVS storage
+    wifi_init_cfg.nvs_enable = 0; // Disable NVS storage
     ret = esp_wifi_init(&wifi_init_cfg);
     if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT)
     {
@@ -432,8 +454,8 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
         return false;
     }
 
-    // Set WiFi storage to flash for persistence
-    ret = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+    // Use RAM storage only; persistence handled via filesystem
+    ret = esp_wifi_set_storage(WIFI_STORAGE_RAM);
     if (ret != ESP_OK)
     {
         Serial.printf("WARNING: Failed to set WiFi storage: %s\n", esp_err_to_name(ret));
@@ -461,7 +483,7 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     wifi_config.sta.pmf_cfg.required = false;                // But don't require it
 
     terminalLog("Connecting to WiFi with optimized settings...");
-    WiFi.persistent(savewhensuccessfull);
+    WiFi.persistent(false);
 
     // Apply configuration and connect
     ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
@@ -539,25 +561,33 @@ bool WifiManager::waitForConnection()
     // Save credentials if requested
     if (_savewhensuccessfull)
     {
-        Preferences preferences;
-        if (preferences.begin("wifi", false))
+        if (contentFS)
         {
-            Serial.printf("Saving WiFi credentials - SSID: '%s'\n", _ssid.c_str());
-            preferences.putString("ssid", _ssid);
-            preferences.putString("pw", _pass); // Use "pw" key for consistency
-            preferences.end();
-            Serial.println("✅ WiFi credentials saved to NVS");
-        }
-        else
-        {
-            Serial.println("❌ ERROR: Failed to save WiFi credentials to NVS");
+            JsonDocument cfg;
+            fs::File r = contentFS->open("/current/apconfig.json", "r");
+            if (r)
+            {
+                deserializeJson(cfg, r);
+                r.close();
+            }
+            cfg["ssid"] = _ssid;
+            cfg["password"] = _pass;
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            fs::File w = contentFS->open("/current/apconfig.json", "w");
+            if (w)
+            {
+                serializeJson(cfg, w);
+                w.close();
+            }
+            xSemaphoreGive(fsMutex);
+            Serial.println("✅ WiFi credentials saved to filesystem");
         }
         _savewhensuccessfull = false;
     }
 
     // Configure WiFi for optimal performance
     WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
+    WiFi.persistent(false);
 
     IPAddress IP = WiFi.localIP();
     terminalLog("✅ Connected! IP: " + IP.toString());
@@ -742,6 +772,8 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
         eventname = "Obtained IP address: " + String(WiFi.localIP().toString().c_str());
         init_udp();
+        // Start web server when IP is ready (safe to call multiple times)
+        ensure_webserver_started();
         break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
         eventname = "Lost IP address and IP address is reset to 0";
@@ -749,6 +781,8 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
 
     case ARDUINO_EVENT_WIFI_AP_START:
         // eventname = "WiFi access point started";
+        // In AP mode, netif is up; ensure web server is started
+        ensure_webserver_started();
         break;
     case ARDUINO_EVENT_WIFI_AP_STOP:
         // eventname = "WiFi access point stopped";
@@ -779,6 +813,8 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
         WiFi.disconnect();
         eth_connected = true;
         eth_timeout = millis();
+        // Start web server when ETH is connected
+        ensure_webserver_started();
         break;
     case ARDUINO_EVENT_ETH_GOT_IP:
         if (ETH.fullDuplex())
@@ -792,6 +828,7 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
         eth_ip_ok = true;
         init_udp();
         eth_timeout = 0;
+        ensure_webserver_started();
         break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
         eventname = "ETH Disconnected";
@@ -877,11 +914,26 @@ bool onCommandCallback(improv::ImprovCommand cmd)
         delay(100);
         if (wm.connectToWifi(String(cmd.ssid.c_str()), String(cmd.password.c_str()), true))
         {
-            Preferences preferences;
-            preferences.begin("wifi", false);
-            preferences.putString("ssid", cmd.ssid.c_str());
-            preferences.putString("pw", cmd.password.c_str());
-            preferences.end();
+            if (contentFS)
+            {
+                JsonDocument cfg;
+                fs::File r = contentFS->open("/current/apconfig.json", "r");
+                if (r)
+                {
+                    deserializeJson(cfg, r);
+                    r.close();
+                }
+                cfg["ssid"] = cmd.ssid.c_str();
+                cfg["password"] = cmd.password.c_str();
+                xSemaphoreTake(fsMutex, portMAX_DELAY);
+                fs::File w = contentFS->open("/current/apconfig.json", "w");
+                if (w)
+                {
+                    serializeJson(cfg, w);
+                    w.close();
+                }
+                xSemaphoreGive(fsMutex);
+            }
             ws.enable(true);
 
             set_state(improv::STATE_PROVISIONED);

@@ -1,6 +1,6 @@
 #include "web.h"
 #include <ArduinoJson.h>
-#include <Preferences.h>
+#include "storage.h"
 #include <FS.h>
 #include <vector>
 #include <algorithm>
@@ -327,7 +327,8 @@ void init_web()
                       // Parse very small JSON: { lines: [..], count: N }
                       JsonDocument resp;
                       DeserializationError derr = deserializeJson(resp, payload);
-                      if (!derr && resp.containsKey("lines"))
+                      // ArduinoJson deprecation: containsKey is deprecated; use key access + is<>()
+                      if (!derr && resp["lines"].is<JsonArray>())
                       {
                           JsonArray arr = resp["lines"].as<JsonArray>();
                           int printed = 0;
@@ -972,11 +973,6 @@ void init_web()
     // OpenDNS configuration endpoint
     server.on("/set_opendns", HTTP_POST, [](AsyncWebServerRequest *request)
               {
-        Preferences preferences;
-        if (!preferences.begin("wifi", false)) {
-            request->send(500, "application/json", "{\"error\":\"Failed to access WiFi settings\"}");
-            return;
-        }
 
         // Set OpenDNS servers (208.67.222.222 is OpenDNS primary, 208.67.220.220 is secondary)
         String openDNS = "208.67.222.222";
@@ -1000,8 +996,16 @@ void init_web()
             }
         }
 
-        preferences.putString("dns", openDNS);
-        preferences.end();
+        if (contentFS) {
+            JsonDocument cfg;
+            File r = contentFS->open("/current/apconfig.json", "r");
+            if (r) { deserializeJson(cfg, r); r.close(); }
+            cfg["dns"] = openDNS;
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            File w = contentFS->open("/current/apconfig.json", "w");
+            if (w) { serializeJson(cfg, w); w.close(); }
+            xSemaphoreGive(fsMutex);
+        }
 
         JsonDocument doc;
         doc["success"] = true;
@@ -1018,12 +1022,11 @@ void init_web()
     // Get current DNS configuration
     server.on("/get_dns_config", HTTP_GET, [](AsyncWebServerRequest *request)
               {
-        Preferences preferences;
         JsonDocument doc;
-
-        if (preferences.begin("wifi", true)) {
-            String currentDNS = preferences.getString("dns", "");
-            preferences.end();
+        String currentDNS = "";
+        if (contentFS) {
+            File r = contentFS->open("/current/apconfig.json", "r");
+            if (r) { JsonDocument cfg; if (deserializeJson(cfg, r) == DeserializationError::Ok) currentDNS = cfg["dns"].as<String>(); r.close(); }
 
             doc["success"] = true;
             doc["dns"] = currentDNS;
@@ -1049,7 +1052,7 @@ void init_web()
             }
         } else {
             doc["success"] = false;
-            doc["error"] = "Failed to read DNS configuration";
+            doc["error"] = "Storage not available";
         }
 
         String response;
@@ -1076,13 +1079,11 @@ void init_web()
         serializeJson(jsonObj, debugData);
         Serial.println("Received WiFi config: " + debugData);
 
-        // Initialize NVS with error handling
-        Preferences preferences;
-        if (!preferences.begin("wifi", false)) {
-            Serial.println("ERROR: Failed to initialize NVS storage");
-            request->send(500, "application/json", "{\"error\":\"Storage initialization failed\"}");
-            return;
-        }
+    // Load existing config from filesystem
+    JsonDocument cfg;
+    if (!contentFS) { request->send(500, "application/json", "{\"error\":\"Storage unavailable\"}"); return; }
+    File r = contentFS->open("/current/apconfig.json", "r");
+    if (r) { deserializeJson(cfg, r); r.close(); }
 
         // Save configuration with validation
         const char *keys[] = {"ssid", "pw", "ip", "mask", "gw", "dns"};
@@ -1094,16 +1095,13 @@ void init_web()
             if (!jsonObj[key].isNull()) {
                 String value = jsonObj[key].as<String>();
                 Serial.printf("Saving %s: %s\n", key.c_str(), value.c_str());
-
-                size_t written = preferences.putString(key.c_str(), value);
-                if (written == 0 && !value.isEmpty()) {
-                    Serial.printf("WARNING: Failed to write %s\n", key.c_str());
-                    saveSuccess = false;
-                }
+                cfg[key] = value;
             }
         }
-
-        preferences.end();
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File w = contentFS->open("/current/apconfig.json", "w");
+        if (w) { serializeJson(cfg, w); w.close(); }
+        xSemaphoreGive(fsMutex);
 
         if (!saveSuccess) {
             Serial.println("ERROR: Some settings failed to save");
@@ -1122,10 +1120,16 @@ void init_web()
             config.runStatus = RUNSTATUS_STOP;
             vTaskDelay(pdMS_TO_TICKS(2000));
 
-            preferences.begin("wifi", false);
-            preferences.putString("ssid", "");
-            preferences.putString("pw", "");
-            preferences.end();
+            // Clear stored credentials in filesystem
+            if (contentFS) {
+                cfg.clear();
+                cfg["ssid"] = "";
+                cfg["password"] = "";
+                xSemaphoreTake(fsMutex, portMAX_DELAY);
+                File w2 = contentFS->open("/current/apconfig.json", "w");
+                if (w2) { serializeJson(cfg, w2); w2.close(); }
+                xSemaphoreGive(fsMutex);
+            }
 
             destroyDB();
             cleanupCurrent();
@@ -2409,18 +2413,9 @@ void init_web()
     Serial.println("[WEB] Enhanced module system initialization complete");
 #endif
 
-    // Ensure TCP/IP (lwIP) is initialized before AsyncTCP starts listening.
-    // On ESP-IDF v5 + Arduino core v3, starting AsyncWebServer before WiFi/ETH
-    // has initialized lwIP can trigger a FreeRTOS assert inside xQueueGenericSend
-    // (from sys_mutex_unlock). Forcing WIFI_MODE_NULL brings up the TCP/IP stack
-    // without joining an AP and avoids that crash.
-    if (WiFi.getMode() == WIFI_OFF)
-    {
-        WiFi.mode(WIFI_MODE_NULL);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    server.begin();
+    // Mark routes registered; starting the server will be handled by
+    // ensure_webserver_started() as soon as the TCP/IP stack is ready.
+    // ensure_webserver_started();
 }
 
 #define UPLOAD_BUFFER_SIZE 16384 // Reduced from 32768 for better memory management
@@ -2667,6 +2662,32 @@ void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index
 
         delete uploadInfo;
         request->_tempObject = nullptr;
+    }
+}
+
+// Start AsyncWebServer once lwIP/esp_netif is initialized; safe to call repeatedly.
+void ensure_webserver_started()
+{
+    static bool started = false;
+    if (started)
+        return;
+
+    // If WiFi is completely OFF, force bringing up the network stack without joining.
+    if (WiFi.getMode() == WIFI_OFF)
+    {
+        WiFi.mode(WIFI_MODE_NULL);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // If WiFi or ETH is in a mode that implies netif is up, start immediately.
+    wifi_mode_t m = WiFi.getMode();
+    bool net_ready = (m == WIFI_STA || m == WIFI_AP || m == WIFI_AP_STA || m == WIFI_MODE_NULL);
+
+    if (net_ready)
+    {
+        server.begin();
+        started = true;
+        Serial.println("[WEB] AsyncWebServer started");
     }
 }
 

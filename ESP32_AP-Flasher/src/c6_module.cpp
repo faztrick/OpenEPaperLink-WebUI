@@ -31,33 +31,37 @@ public:
     {
         Serial.println("[C6_MODULE] Initializing C6 module support...");
 
-        // Initialize preferences namespace for C6 module
-        Preferences preferences;
-        preferences.begin("c6_module", false);
+        // Initialize C6 module defaults in JSON config if missing
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File f = contentFS->open("/current/c6_config.json", "r");
+        JsonDocument doc;
+        if (f)
+        {
+            DeserializationError err = deserializeJson(doc, f);
+            f.close();
+            if (err)
+                doc.clear();
+        }
+        if (doc.isNull())
+            doc.to<JsonObject>();
+        if (doc["channel"].isNull())
+            doc["channel"] = 20;
+        if (doc["txPower"].isNull())
+            doc["txPower"] = 10;
+        if (doc["panId"].isNull())
+            doc["panId"] = "0x1234";
+        if (doc["sleepMode"].isNull())
+            doc["sleepMode"] = "none";
+        if (doc["wakeInterval"].isNull())
+            doc["wakeInterval"] = 60;
 
-        // Set default values if not already set
-        if (!preferences.isKey("channel"))
+        File w = contentFS->open("/current/c6_config.json", "w");
+        if (w)
         {
-            preferences.putInt("channel", 20);
+            serializeJson(doc, w);
+            w.close();
         }
-        if (!preferences.isKey("txPower"))
-        {
-            preferences.putInt("txPower", 10);
-        }
-        if (!preferences.isKey("panId"))
-        {
-            preferences.putString("panId", "0x1234");
-        }
-        if (!preferences.isKey("sleepMode"))
-        {
-            preferences.putString("sleepMode", "none");
-        }
-        if (!preferences.isKey("wakeInterval"))
-        {
-            preferences.putInt("wakeInterval", 60);
-        }
-
-        preferences.end();
+        xSemaphoreGive(fsMutex);
 
         isInitialized = true;
         Serial.println("[C6_MODULE] Initialization complete");
@@ -243,16 +247,30 @@ public:
     {
         JsonDocument doc;
 
-        Preferences preferences;
-        preferences.begin("c6_module", true);
-        doc["txPower"] = preferences.getInt("txPower", 10);
-        doc["panId"] = preferences.getString("panId", "0x1234");
-        doc["sleepMode"] = preferences.getString("sleepMode", "none");
-        doc["wakeInterval"] = preferences.getInt("wakeInterval", 60);
-        doc["autoReconnect"] = preferences.getBool("autoReconnect", true);
-        doc["healthCheckInterval"] = preferences.getInt("healthCheckInterval", 10);
-
-        preferences.end();
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File r = contentFS->open("/current/c6_config.json", "r");
+        if (r)
+        {
+            DeserializationError err = deserializeJson(doc, r);
+            r.close();
+            if (err)
+            {
+                doc.clear();
+            }
+        }
+        if (doc["txPower"].isNull())
+            doc["txPower"] = 10;
+        if (doc["panId"].isNull())
+            doc["panId"] = "0x1234";
+        if (doc["sleepMode"].isNull())
+            doc["sleepMode"] = "none";
+        if (doc["wakeInterval"].isNull())
+            doc["wakeInterval"] = 60;
+        if (doc["autoReconnect"].isNull())
+            doc["autoReconnect"] = true;
+        if (doc["healthCheckInterval"].isNull())
+            doc["healthCheckInterval"] = 10;
+        xSemaphoreGive(fsMutex);
 
         String config;
         serializeJson(doc, config);
@@ -270,24 +288,30 @@ public:
             return false;
         }
 
-        Preferences preferences;
-        preferences.begin("c6_module", false);
-
-        // reuse parsed document 'doc'
-        if (!doc["txPower"].isNull())
-            preferences.putInt("txPower", doc["txPower"]);
-        if (!doc["panId"].isNull())
-            preferences.putString("panId", doc["panId"].as<String>());
-        if (!doc["sleepMode"].isNull())
-            preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-        if (!doc["wakeInterval"].isNull())
-            preferences.putInt("wakeInterval", doc["wakeInterval"]);
-        if (!doc["autoReconnect"].isNull())
-            preferences.putBool("autoReconnect", doc["autoReconnect"]);
-        if (!doc["healthCheckInterval"].isNull())
-            preferences.putInt("healthCheckInterval", doc["healthCheckInterval"]);
-
-        preferences.end();
+        // merge and persist
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File r = contentFS->open("/current/c6_config.json", "r");
+        JsonDocument existing;
+        if (r)
+        {
+            auto err = deserializeJson(existing, r);
+            r.close();
+            if (err)
+                existing.clear();
+        }
+        if (existing.isNull())
+            existing.to<JsonObject>();
+        for (JsonPair kv : doc.as<JsonObject>())
+        {
+            existing[kv.key()] = kv.value();
+        }
+        File w = contentFS->open("/current/c6_config.json", "w");
+        if (w)
+        {
+            serializeJson(existing, w);
+            w.close();
+        }
+        xSemaphoreGive(fsMutex);
 
         // Apply new settings if module is running
         if (isStarted)
@@ -541,17 +565,26 @@ void handleGetC6Settings(AsyncWebServerRequest *request)
 {
     JsonDocument doc;
 
-    // Get current C6 module settings from preferences or defaults
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-
-    doc["channel"] = preferences.getInt("channel", 20);
-    doc["txPower"] = preferences.getInt("txPower", 10);
-    doc["panId"] = preferences.getString("panId", "0x1234");
-    doc["sleepMode"] = preferences.getString("sleepMode", "none");
-    doc["wakeInterval"] = preferences.getInt("wakeInterval", 60);
-
-    preferences.end();
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File r = contentFS->open("/current/c6_config.json", "r");
+    if (r)
+    {
+        auto err = deserializeJson(doc, r);
+        r.close();
+        if (err)
+            doc.clear();
+    }
+    if (doc["channel"].isNull())
+        doc["channel"] = 20;
+    if (doc["txPower"].isNull())
+        doc["txPower"] = 10;
+    if (doc["panId"].isNull())
+        doc["panId"] = "0x1234";
+    if (doc["sleepMode"].isNull())
+        doc["sleepMode"] = "none";
+    if (doc["wakeInterval"].isNull())
+        doc["wakeInterval"] = 60;
+    xSemaphoreGive(fsMutex);
 
     AsyncResponseStream *response = request->beginResponseStream("application/json");
     serializeJson(doc, *response);
@@ -579,21 +612,30 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
 
         if (!error)
         {
-            Preferences preferences;
-            preferences.begin("c6_module", false);
-
-            if (!doc["channel"].isNull())
-                preferences.putInt("channel", doc["channel"]);
-            if (!doc["txPower"].isNull())
-                preferences.putInt("txPower", doc["txPower"]);
-            if (!doc["panId"].isNull())
-                preferences.putString("panId", doc["panId"].as<String>());
-            if (!doc["sleepMode"].isNull())
-                preferences.putString("sleepMode", doc["sleepMode"].as<String>());
-            if (!doc["wakeInterval"].isNull())
-                preferences.putInt("wakeInterval", doc["wakeInterval"]);
-
-            preferences.end();
+            // merge and persist
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            File r2 = contentFS->open("/current/c6_config.json", "r");
+            JsonDocument existing;
+            if (r2)
+            {
+                auto err2 = deserializeJson(existing, r2);
+                r2.close();
+                if (err2)
+                    existing.clear();
+            }
+            if (existing.isNull())
+                existing.to<JsonObject>();
+            for (JsonPair kv : doc.as<JsonObject>())
+            {
+                existing[kv.key()] = kv.value();
+            }
+            File w2 = contentFS->open("/current/c6_config.json", "w");
+            if (w2)
+            {
+                serializeJson(existing, w2);
+                w2.close();
+            }
+            xSemaphoreGive(fsMutex);
 
             // Apply settings to C6 module
             applyC6Settings();
@@ -611,10 +653,21 @@ void handleSaveC6SettingsBody(AsyncWebServerRequest *request, uint8_t *data, siz
 
 void handleResetC6Settings(AsyncWebServerRequest *request)
 {
-    Preferences preferences;
-    preferences.begin("c6_module", false);
-    preferences.clear();
-    preferences.end();
+    // Reset to defaults by overwriting config file
+    JsonDocument doc;
+    doc["channel"] = 20;
+    doc["txPower"] = 10;
+    doc["panId"] = "0x1234";
+    doc["sleepMode"] = "none";
+    doc["wakeInterval"] = 60;
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File w = contentFS->open("/current/c6_config.json", "w");
+    if (w)
+    {
+        serializeJson(doc, w);
+        w.close();
+    }
+    xSemaphoreGive(fsMutex);
 
     wsSerial("C6 module settings reset to defaults");
     request->send(200, "application/json", "{\"success\":true}");
@@ -679,19 +732,29 @@ void handleBackupC6Config(AsyncWebServerRequest *request)
 {
     JsonDocument doc;
 
-    // Collect all C6 configuration data
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-
-    doc["channel"] = preferences.getInt("channel", 20);
-    doc["txPower"] = preferences.getInt("txPower", 10);
-    doc["panId"] = preferences.getString("panId", "0x1234");
-    doc["sleepMode"] = preferences.getString("sleepMode", "none");
-    doc["wakeInterval"] = preferences.getInt("wakeInterval", 60);
+    // Collect all C6 configuration data from JSON
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File r = contentFS->open("/current/c6_config.json", "r");
+    if (r)
+    {
+        auto err = deserializeJson(doc, r);
+        r.close();
+        if (err)
+            doc.clear();
+    }
+    if (doc["channel"].isNull())
+        doc["channel"] = 20;
+    if (doc["txPower"].isNull())
+        doc["txPower"] = 10;
+    if (doc["panId"].isNull())
+        doc["panId"] = "0x1234";
+    if (doc["sleepMode"].isNull())
+        doc["sleepMode"] = "none";
+    if (doc["wakeInterval"].isNull())
+        doc["wakeInterval"] = 60;
     doc["backupDate"] = millis();
     doc["firmwareVersion"] = apInfo.version;
-
-    preferences.end();
+    xSemaphoreGive(fsMutex);
 
     AsyncResponseStream *response = request->beginResponseStream("application/json");
     response->addHeader("Content-Disposition", "attachment; filename=c6_config_backup.json");
@@ -703,11 +766,21 @@ void handleResetC6Config(AsyncWebServerRequest *request)
 {
     if (request->hasParam("confirm") && request->getParam("confirm")->value() == "true")
     {
-        // Reset all C6 configuration
-        Preferences preferences;
-        preferences.begin("c6_module", false);
-        preferences.clear();
-        preferences.end();
+        // Reset all C6 configuration by writing defaults
+        JsonDocument doc;
+        doc["channel"] = 20;
+        doc["txPower"] = 10;
+        doc["panId"] = "0x1234";
+        doc["sleepMode"] = "none";
+        doc["wakeInterval"] = 60;
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File w = contentFS->open("/current/c6_config.json", "w");
+        if (w)
+        {
+            serializeJson(doc, w);
+            w.close();
+        }
+        xSemaphoreGive(fsMutex);
 
         // Reset C6 module to factory defaults
         bool success = factoryResetC6Module();
@@ -929,13 +1002,17 @@ void handleFlashC6OTA(AsyncWebServerRequest *request)
 void applyC6Settings()
 {
     // Apply current settings to the C6 module
-    Preferences preferences;
-    preferences.begin("c6_module", true);
-
-    int channel = preferences.getInt("channel", 20);
-    int txPower = preferences.getInt("txPower", 10);
-
-    preferences.end();
+    JsonDocument doc;
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File r = contentFS->open("/current/c6_config.json", "r");
+    if (r)
+    {
+        auto err = deserializeJson(doc, r);
+        r.close();
+    }
+    xSemaphoreGive(fsMutex);
+    int channel = doc["channel"].isNull() ? 20 : (int)doc["channel"].as<int>();
+    int txPower = doc["txPower"].isNull() ? 10 : (int)doc["txPower"].as<int>();
 
     // Send configuration commands to C6 module
     sendC6Command("SET_CHANNEL", channel);

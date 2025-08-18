@@ -22,6 +22,8 @@ struct APlist;
 
 // Core web functions
 void init_web();
+// Start AsyncWebServer safely once TCP/IP is ready; safe to call multiple times.
+void ensure_webserver_started();
 void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 void doJsonUpload(AsyncWebServerRequest *request);
 void dotagDBUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);

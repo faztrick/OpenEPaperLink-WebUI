@@ -8,6 +8,7 @@ param(
     [string]$Environment = "OutdoorAP",
     [string]$ComPort = "COM10",
     [int]$BaudRate = 921600,
+    [string]$FlashSize = "detect",
     [switch]$SkipBuild,
     [switch]$SkipUpload,
     [switch]$Monitor,

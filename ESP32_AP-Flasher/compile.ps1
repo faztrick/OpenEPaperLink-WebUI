@@ -8,13 +8,13 @@ param(
     [string]$Environment = "OutdoorAP",
     [string]$ComPort = "COM10",
     [int]$BaudRate = 921600,
-    [ValidateSet('esp32s3','esp32c6','esp32c3')]
+    [ValidateSet('esp32s3', 'esp32c6', 'esp32c3')]
     [string]$Chip = 'esp32s3',
-    [ValidateSet('qio','dio','dout','qout')]
+    [ValidateSet('qio', 'dio', 'dout', 'qout', 'opi')]
     [string]$FlashMode = 'qio',
-    [ValidateSet('80m','40m')]
+    [ValidateSet('80m', '40m')]
     [string]$FlashFreq = '80m',
-    [ValidateSet('32MB','16MB','detect')]
+    [ValidateSet('32MB', '16MB', 'detect')]
     [string]$FlashSize = 'detect',
     [switch]$DetectFlash,
     [switch]$DetectOnly,
@@ -54,7 +54,8 @@ function Write-ColorOutput {
 # Ensure script runs from its own directory so relative paths work
 try {
     Set-Location -Path $PSScriptRoot
-} catch {}
+}
+catch {}
 
 # Optimize job count
 if ($Jobs -eq 0) {
@@ -94,6 +95,9 @@ if ($FilesystemOnly) {
 }
 if ($FastBuild) {
     Write-ColorOutput "Mode: Fast Build (With Caching)" "Info"
+}
+if ($FlashMode -eq 'opi') {
+    Write-ColorOutput "Mode: Octal (OPI) flash selected - will use default boot flash mode/freq (no override)" "Info"
 }
 Write-ColorOutput "========================================" "Info"
 
@@ -168,6 +172,122 @@ function Resolve-EsptoolInvoker {
     return $null
 }
 
+# Run an external process with a timeout, capturing stdout+stderr
+function Start-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [int]$TimeoutSec = 30
+    )
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.Arguments = ($Arguments -join ' ')
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+    $timedOut = -not $proc.WaitForExit($TimeoutSec * 1000)
+    if ($timedOut) {
+        try { $proc.Kill() } catch {}
+    }
+    $output = ''
+    try { $output = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd() } catch {}
+    return [PSCustomObject]@{ ExitCode = if ($timedOut) { 258 } else { $proc.ExitCode }; TimedOut = $timedOut; Output = $output }
+}
+
+# Invoke esptool with timeout via resolved invoker (python -m esptool or esptool.py)
+function Invoke-Esptool {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Args,
+        [int]$TimeoutSec = 30,
+        [switch]$AutoInstall
+    )
+    $esptoolInvoker = Resolve-EsptoolInvoker
+    if (-not $esptoolInvoker -and $AutoInstall) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
+    if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
+
+    if ($esptoolInvoker[0] -eq 'esptool.py') {
+        return Start-ProcessWithTimeout -FilePath 'esptool.py' -Arguments $Args -TimeoutSec $TimeoutSec
+    }
+    else {
+        $python = $esptoolInvoker[0]
+        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $Args
+        return Start-ProcessWithTimeout -FilePath $python -Arguments $moduleArgs -TimeoutSec $TimeoutSec
+    }
+}
+
+# For S3 + OPI path: retry esptool on common failure modes with lower baud/alternate reset
+function Invoke-EsptoolWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$BaseArgs,
+        [int]$InitialBaud = 921600,
+        [string]$ComPort = 'COM10',
+        [int]$TimeoutSec = 30,
+        [switch]$IsOpi,
+        [switch]$AutoInstall
+    )
+    # Helper to clone args and change -b and --before/--after quickly
+    function With-Args {
+        param([string[]]$src, [int]$baud, [string]$before, [string]$after)
+        $dst = @()
+        for ($i = 0; $i -lt $src.Count; $i++) {
+            if ($src[$i] -eq '-b') { $dst += '-b'; $dst += "$baud"; $i++ ; continue }
+            if ($src[$i] -eq '--before' -and $before) { $dst += '--before'; $dst += $before; $i++; continue }
+            if ($src[$i] -eq '--after' -and $after) { $dst += '--after'; $dst += $after; $i++; continue }
+            $dst += $src[$i]
+        }
+        return , $dst
+    }
+    function Add-NoStub {
+        param([string[]]$src)
+        # Insert --no-stub before subcommand (write-flash/erase-flash/erase_region)
+        $dst = @()
+        $inserted = $false
+        for ($i = 0; $i -lt $src.Count; $i++) {
+            if (-not $inserted -and ($src[$i] -in @('write-flash', 'erase-flash', 'erase_region', 'read_flash'))) {
+                $dst += '--no-stub'
+                $inserted = $true
+            }
+            $dst += $src[$i]
+        }
+        if (-not $inserted) { $dst += '--no-stub' }
+        return , $dst
+    }
+
+    $attempts = @()
+    # Attempt 1: as-is
+    $attempts += [PSCustomObject]@{ Args = $BaseArgs; Label = "primary"; Baud = $InitialBaud }
+    # Attempt 2: lower baud 460800, keep resets
+    $attempts += [PSCustomObject]@{ Args = (With-Args -src $BaseArgs -baud 460800 -before $null -after $null); Label = "fallback-460800"; Baud = 460800 }
+    # Attempt 3: lower baud 115200, change before to no-reset
+    $attempts += [PSCustomObject]@{ Args = (With-Args -src $BaseArgs -baud 115200 -before 'no-reset' -after $null); Label = "fallback-115200-nr"; Baud = 115200 }
+    # Attempt 4: 115200, default-reset, --no-stub (helps when stub upload fails)
+    $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'default-reset' -after $null)); Label = "fallback-115200-nostub"; Baud = 115200 }
+    # Attempt 5: 115200, no-reset both sides, --no-stub
+    $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'no-reset' -after 'no-reset')); Label = "fallback-115200-nr-nostub"; Baud = 115200 }
+
+    foreach ($att in $attempts) {
+        Write-ColorOutput "  ├─ esptool attempt [$($att.Label)] @ $($att.Baud) on $ComPort..." "Progress"
+        $res = Invoke-Esptool -Args $att.Args -TimeoutSec $TimeoutSec -AutoInstall:$AutoInstall
+        if ($res.TimedOut) {
+            Write-ColorOutput "  ├─ esptool timed out after ${TimeoutSec}s ([$($att.Label)])" "Warning"
+        }
+        if ($res.ExitCode -eq 0 -and -not $res.TimedOut) { return $res }
+        # Print last 10 lines of output to aid debugging
+        if ($res.Output) {
+            $lines = $res.Output -split "\r?\n"
+            $tail = ($lines | Select-Object -Last 12) -join [Environment]::NewLine
+            Write-ColorOutput ("  ├─ esptool output (last lines) [${($att.Label)}]:`n" + $tail) "Warning"
+        }
+
+        # For OPI we sometimes need a short pause between retries
+        if ($IsOpi) { Start-Sleep -Seconds 2 }
+    }
+    return $res
+}
+
 # Probe flash information (size and IDs) using esptool
 function Get-FlashInfo {
     param(
@@ -181,34 +301,8 @@ function Get-FlashInfo {
 
     $args = @('--chip', $Chip, '-p', $Port, '-b', $Baud, 'flash_id')
     $output = ""
-    if ($esptoolInvoker[0] -eq 'esptool.py') {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = 'esptool.py'
-        $psi.Arguments = ($args -join ' ')
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.UseShellExecute = $false
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        [void]$proc.Start()
-        $output = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-    }
-    else {
-        $python = $esptoolInvoker[0]
-        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $args
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $python
-        $psi.Arguments = ($moduleArgs -join ' ')
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.UseShellExecute = $false
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        [void]$proc.Start()
-        $output = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-    }
+    $res = Invoke-Esptool -Args $args -TimeoutSec 20 -AutoInstall:$AutoInstallEsptool
+    $output = $res.Output
 
     $size = $null
     $manu = $null
@@ -240,7 +334,8 @@ function Get-PartitionCsvPathForEnv {
                 if (Test-Path $p) { return $p }
             }
         }
-    } catch {}
+    }
+    catch {}
     return $null
 }
 
@@ -251,14 +346,16 @@ function Get-SpiffsOffsetFromCsv {
         $lines = Get-Content $CsvPath -ErrorAction Stop | Where-Object { -not ($_.Trim().StartsWith('#')) -and $_.Trim() -ne '' }
         foreach ($l in $lines) {
             $parts = $l.Split(',').ForEach({ $_.Trim() })
-            if ($parts.Length -ge 5 -and $parts[0] -eq 'spiffs') {
+            # Accept either 'spiffs' or 'littlefs' as the filesystem partition label
+            if ($parts.Length -ge 5 -and ($parts[0].ToLower() -eq 'spiffs' -or $parts[0].ToLower() -eq 'littlefs')) {
                 $offset = $parts[3]
                 # Ensure 0x prefix
                 if ($offset -notmatch '^0x') { $offset = ('0x{0:X}' -f [int]$offset) }
                 return $offset
             }
         }
-    } catch {}
+    }
+    catch {}
     return $null
 }
 
@@ -347,6 +444,20 @@ if (-not $SkipBuild) {
     }
 
     # Step 2: Build firmware or filesystem only (with optimizations)
+    # Seed LittleFS with a default tagDB if missing, to avoid first-boot failures
+    try {
+        $fsCurrentDir = Join-Path $PSScriptRoot 'data\\current'
+        $defaultTagDb = Join-Path $PSScriptRoot 'final_tagdb.json'
+        if (Test-Path $defaultTagDb) {
+            if (-not (Test-Path $fsCurrentDir)) { New-Item -ItemType Directory -Path $fsCurrentDir -Force | Out-Null }
+            $destTagDb = Join-Path $fsCurrentDir 'tagDB.json'
+            $destTagDbBak = Join-Path $fsCurrentDir 'tagDB.json.bak'
+            if (-not (Test-Path $destTagDb)) { Copy-Item $defaultTagDb $destTagDb -Force }
+            if (-not (Test-Path $destTagDbBak)) { Copy-Item $defaultTagDb $destTagDbBak -Force }
+            Write-ColorOutput "FS Seed: Ensured default tagDB.json present in data/current" "Info"
+        }
+    }
+    catch { Write-ColorOutput "FS Seed failed (continuing): $_" "Warning" }
     if ($FilesystemOnly) {
         Write-ColorOutput "BUILD Building filesystem only for $Environment..." "Progress"
         $buildTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -522,22 +633,29 @@ try {
         freq      = $FlashFreq
         size      = $FlashSize
         addresses = @{
-            "0x0000"   = "bootloader.bin"
-            "0x8000"   = "partitions.bin"
-            "0xe000"   = "boot_app0.bin"
-            "0x10000"  = "firmware.bin"
+            "0x0000"      = "bootloader.bin"
+            "0x8000"      = "partitions.bin"
+            "0xe000"      = "boot_app0.bin"
+            "0x10000"     = "firmware.bin"
             $spiffsOffset = "littlefs.bin"
         }
     }
 
     # Build merge command
     $mergeArgs = @(
-        "--chip", $flashConfig.chip
-        "merge-bin"
+        "--chip", $flashConfig.chip,
+        "merge-bin",
         "-o", "merged-firmware.bin"
-        "--flash-mode", $flashConfig.mode
-        "--flash-freq", $flashConfig.freq
-    "--flash-size", $flashConfig.size
+    )
+
+    # For OPI octal flash, do not override flash mode/freq; use defaults embedded in images/bootloader
+    if ($flashConfig.mode -and $flashConfig.mode -ne 'opi') {
+        $mergeArgs += @("--flash-mode", $flashConfig.mode)
+        if ($flashConfig.freq) { $mergeArgs += @("--flash-freq", $flashConfig.freq) }
+    }
+
+    $mergeArgs += @(
+        "--flash-size", $flashConfig.size
     )
 
     foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
@@ -598,19 +716,10 @@ if (-not $SkipUpload) {
                 "--chip", $flashConfig.chip,
                 "erase-flash"
             )
-            $esptoolInvoker = Resolve-EsptoolInvoker
-            if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
-            if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
-            if ($esptoolInvoker[0] -eq 'esptool.py') {
-                $ecmd = @('esptool.py') + $eraseAllArgs
-                $proc = Start-Process -FilePath $ecmd[0] -ArgumentList $ecmd[1..($ecmd.Length - 1)] -NoNewWindow -Wait -PassThru
-            } else {
-                $python = $esptoolInvoker[0]
-                $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $eraseAllArgs
-                $proc = Start-Process -FilePath $python -ArgumentList $moduleArgs -NoNewWindow -Wait -PassThru
-            }
-            if ($proc.ExitCode -ne 0) { throw "Chip erase failed" }
-        } catch {
+            $res = Invoke-EsptoolWithRetry -BaseArgs $eraseAllArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 30 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            if ($res.ExitCode -ne 0) { throw "Chip erase failed (code $($res.ExitCode))" }
+        }
+        catch {
             Write-ColorOutput "❌ Full erase failed: $_" "Warning"
         }
     }
@@ -632,6 +741,8 @@ if (-not $SkipUpload) {
             if (-not (Test-Path $littlefsPath)) {
                 throw "Filesystem binary not found: $littlefsPath"
             }
+            # Use absolute path for esptool
+            try { $littlefsPath = (Resolve-Path -Path $littlefsPath).Path } catch {}
 
             Write-ColorOutput "  ├─ Connecting to device..." "Progress"
             Write-ColorOutput "  ├─ Erasing filesystem partition..." "Progress"
@@ -647,49 +758,29 @@ if (-not $SkipUpload) {
                 $filesystemAddress
                 "0x6F0000"  # Size of filesystem partition (7MB)
             )
-
-            $esptoolInvoker = Resolve-EsptoolInvoker
-            if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
-            if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
-            if ($esptoolInvoker[0] -eq 'esptool.py') {
-                $eraseCmd = @('esptool.py') + $eraseArgs
-                $proc = Start-Process -FilePath $eraseCmd[0] -ArgumentList $eraseCmd[1..($eraseCmd.Length - 1)] -NoNewWindow -Wait -PassThru
-            }
-            else {
-                $python = $esptoolInvoker[0]
-                $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $eraseArgs
-                $proc = Start-Process -FilePath $python -ArgumentList $moduleArgs -NoNewWindow -Wait -PassThru
-            }
-            if ($proc.ExitCode -ne 0) { throw "Filesystem erase failed" }
+            $resErase = Invoke-EsptoolWithRetry -BaseArgs $eraseArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 40 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            if ($resErase.ExitCode -ne 0) { throw "Filesystem erase failed (code $($resErase.ExitCode))" }
 
             Write-ColorOutput "  ├─ Uploading filesystem..." "Progress"
 
             # Upload filesystem
             $uploadArgs = @(
-                "-p", $ComPort
-                "-b", $BaudRate
-                "--before", "no-reset"
-                "--after", "hard-reset"
-                "--chip", $flashConfig.chip
+                "-p", $ComPort,
+                "-b", $BaudRate,
+                "--before", "no-reset",
+                "--after", "hard-reset",
+                "--chip", $flashConfig.chip,
                 "write-flash"
-                "--flash-mode", $flashConfig.mode
-                "--flash-size", "detect"
-                $filesystemAddress, $littlefsPath
             )
 
-            $esptoolInvoker = Resolve-EsptoolInvoker
-            if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
-            if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
-            if ($esptoolInvoker[0] -eq 'esptool.py') {
-                $uploadCmd = @('esptool.py') + $uploadArgs
-                $proc = Start-Process -FilePath $uploadCmd[0] -ArgumentList $uploadCmd[1..($uploadCmd.Length - 1)] -NoNewWindow -Wait -PassThru
+            # For OPI octal flash, avoid overriding flash mode
+            if ($flashConfig.mode -and $flashConfig.mode -ne 'opi') {
+                $uploadArgs += @("--flash-mode", $flashConfig.mode)
             }
-            else {
-                $python = $esptoolInvoker[0]
-                $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
-                $proc = Start-Process -FilePath $python -ArgumentList $moduleArgs -NoNewWindow -Wait -PassThru
-            }
-            if ($proc.ExitCode -ne 0) { throw "Filesystem upload failed" }
+            $uploadArgs += @("--flash-size", "detect", $filesystemAddress, $littlefsPath)
+
+            $resFs = Invoke-EsptoolWithRetry -BaseArgs $uploadArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 180 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            if ($resFs.ExitCode -ne 0) { throw "Filesystem upload failed (code $($resFs.ExitCode))" }
 
             $uploadTimer.Stop()
             Write-ColorOutput "✅ Filesystem erase and upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
@@ -740,38 +831,35 @@ if (-not $SkipUpload) {
                     "--after", "hard-reset",
                     "--chip", $flashConfig.chip,
                     "write-flash",
-                    "0x0000", (Join-Path $outputDir 'merged-firmware.bin')
+                    "0x0000", (Resolve-Path -Path (Join-Path $outputDir 'merged-firmware.bin')).Path
                 )
-            } else {
+            }
+            else {
                 $uploadArgs = @(
                     "-p", $ComPort,
                     "-b", $BaudRate,
                     "--before", "default-reset",
                     "--after", "hard-reset",
                     "--chip", $flashConfig.chip,
-                    "write-flash",
-                    "--flash-mode", $flashConfig.mode,
-                    "--flash-size", ($FlashSize -ne 'detect' ? $FlashSize : 'detect')
+                    "write-flash"
                 )
+                # For OPI octal flash, do not override flash mode
+                if ($flashConfig.mode -and $flashConfig.mode -ne 'opi') {
+                    $uploadArgs += @("--flash-mode", $flashConfig.mode)
+                }
+                $uploadArgs += @("--flash-size", ($FlashSize -ne 'detect' ? $FlashSize : 'detect'))
                 foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
                     $filePath = Join-Path $outputDir $addr.Value
-                    if (Test-Path $filePath) { $uploadArgs += $addr.Key, $filePath }
+                    if (Test-Path $filePath) {
+                        try { $filePath = (Resolve-Path -Path $filePath).Path } catch {}
+                        $uploadArgs += $addr.Key, $filePath
+                    }
                 }
             }
 
             Write-ColorOutput "  ├─ Connecting to device..." "Progress"
-            $esptoolInvoker = Resolve-EsptoolInvoker
-            if (-not $esptoolInvoker -and $AutoInstallEsptool) { $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing }
-            if (-not $esptoolInvoker) { throw "esptool not found. Install it with 'pip install esptool' or enable -AutoInstallEsptool." }
-            if ($esptoolInvoker[0] -eq 'esptool.py') {
-                $uploadCmd = @('esptool.py') + $uploadArgs
-                $proc = Start-Process -FilePath $uploadCmd[0] -ArgumentList $uploadCmd[1..($uploadCmd.Length - 1)] -NoNewWindow -Wait -PassThru
-            }
-            else {
-                $python = $esptoolInvoker[0]
-                $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
-                $proc = Start-Process -FilePath $python -ArgumentList $moduleArgs -NoNewWindow -Wait -PassThru
-            }
+            $resFw = Invoke-EsptoolWithRetry -BaseArgs $uploadArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 240 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            if ($resFw.ExitCode -ne 0) { throw "Upload failed (code $($resFw.ExitCode))" }
 
             $uploadTimer.Stop()
             Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
