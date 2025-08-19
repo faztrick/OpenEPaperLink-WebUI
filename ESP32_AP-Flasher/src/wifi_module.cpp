@@ -17,6 +17,7 @@ bool WiFiModule::initialize()
     isInitialized = true;
     lastStatusCheck = millis();
     lastError = "";
+    apStarted = false;
     Serial.println("[WIFI_MODULE] WiFi module initialized successfully");
     return true;
 }
@@ -29,7 +30,7 @@ bool WiFiModule::start()
         return false;
     }
     Serial.println("[WIFI_MODULE] Starting WiFi module...");
-    // Load credentials from filesystem JSON
+    // Load credentials from filesystem JSON (single) and prepare WiFiMulti (multiple)
     String ssid = "";
     String password = "";
     if (contentFS)
@@ -41,38 +42,78 @@ bool WiFiModule::start()
             DeserializationError err = deserializeJson(cfg, f);
             if (!err)
             {
-                ssid = cfg["ssid"].as<String>();
-                password = cfg["password"].as<String>();
+                if (cfg["ssid"].is<String>())
+                    ssid = cfg["ssid"].as<String>();
+                if (cfg["password"].is<String>())
+                    password = cfg["password"].as<String>();
             }
             f.close();
         }
     }
 
-    if (ssid.isEmpty())
+    // Load additional saved networks (if any)
+    savedNetworkCount = 0;
+    loadSavedNetworks();
+    useWiFiMulti = (savedNetworkCount > 0);
+
+    if (ssid.isEmpty() && !useWiFiMulti)
     {
         Serial.println("[WIFI_MODULE] No WiFi credentials configured, starting in AP mode");
-        WiFi.softAP("ESP32-AP-Flasher", "password123");
+        WiFi.mode(WIFI_AP);
+        // Open AP (no password)
+        WiFi.softAP("ESP32-AP-Flasher", "");
+        apStarted = true;
     }
     else
     {
-        Serial.printf("[WIFI_MODULE] Connecting to WiFi: %s\n", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
+        WiFi.mode(WIFI_STA);
+        wl_status_t status = WL_DISCONNECTED;
         int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 20)
+        Serial.println("[WIFI_MODULE] Connecting to WiFi...");
+
+        if (useWiFiMulti)
         {
-            delay(500);
-            attempts++;
-            Serial.print(".");
+            // If single ssid/password present, include it as well
+            if (!ssid.isEmpty())
+            {
+                wifiMulti.addAP(ssid.c_str(), password.c_str());
+            }
+            while (status != WL_CONNECTED && attempts < 20)
+            {
+                status = static_cast<wl_status_t>(wifiMulti.run());
+                if (status == WL_CONNECTED)
+                    break;
+                delay(500);
+                attempts++;
+                Serial.print(".");
+            }
         }
-        if (WiFi.status() == WL_CONNECTED)
+        else
+        {
+            Serial.printf("[WIFI_MODULE] Connecting to WiFi: %s\n", ssid.c_str());
+            WiFi.begin(ssid.c_str(), password.c_str());
+            while (WiFi.status() != WL_CONNECTED && attempts < 20)
+            {
+                delay(500);
+                attempts++;
+                Serial.print(".");
+            }
+            status = WiFi.status();
+        }
+
+        if (status == WL_CONNECTED)
         {
             Serial.printf("\n[WIFI_MODULE] Connected to WiFi. IP: %s\n", WiFi.localIP().toString().c_str());
             optimizeWiFiSettings();
+            apStarted = false;
         }
         else
         {
             Serial.println("\n[WIFI_MODULE] Failed to connect to WiFi, starting AP mode");
-            WiFi.softAP("ESP32-AP-Flasher", "password123");
+            WiFi.mode(WIFI_AP_STA);
+            // Open AP (no password)
+            WiFi.softAP("ESP32-AP-Flasher", "");
+            apStarted = true;
         }
     }
     isStarted = true;
@@ -86,6 +127,7 @@ bool WiFiModule::stop()
     Serial.println("[WIFI_MODULE] Stopping WiFi module...");
     WiFi.disconnect(true);
     WiFi.softAPdisconnect(true);
+    apStarted = false;
     isStarted = false;
     lastError = "";
     return true;
@@ -98,6 +140,7 @@ bool WiFiModule::cleanup()
         stop();
     WiFi.mode(WIFI_OFF);
     isInitialized = false;
+    apStarted = false;
     lastError = "";
     return true;
 }
@@ -148,7 +191,7 @@ bool WiFiModule::isHealthy() const
         return false;
     }
 
-    // Check WiFi connection status
+    // Check WiFi connection status or AP client presence
     if (WiFi.status() != WL_CONNECTED && WiFi.softAPgetStationNum() == 0)
     {
         return false; // Neither STA nor AP mode has connections
@@ -181,6 +224,8 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         doc["apMode"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
         doc["apClients"] = WiFi.softAPgetStationNum();
         doc["reconnectAttempts"] = reconnectAttempts;
+    doc["useWiFiMulti"] = useWiFiMulti;
+    doc["savedNetworkCount"] = savedNetworkCount;
         doc["lastScan"] = lastScanTime;
         doc["healthy"] = isHealthy();
         doc["error"] = lastError;
@@ -203,35 +248,60 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response); });
 
-    // WiFi connection endpoint
+    // WiFi connection endpoint (supports single or multiple networks)
     server.on("/api/wifi/connect", HTTP_POST, [this](AsyncWebServerRequest *request)
               {
-        if (!request->hasParam("ssid", true)) {
+        // If body contains JSON with networks array, prefer that (but Async callbacks here don't give body easily). Fallback to form params.
+        // We support repeated fields as ssid1/password1, ssid2/password2 ... or a single ssid/password.
+    JsonDocument cfg;
+    // Ensure networks is a JSON array
+    JsonArray networksArr = cfg["networks"].to<JsonArray>();
+
+    int count = 0;
+        // Gather up to 5 entries
+        for (int i = 1; i <= 5; ++i) {
+            String ks = (i == 1) ? "ssid" : String("ssid") + String(i);
+            String kp = (i == 1) ? "password" : String("password") + String(i);
+            if (request->hasParam(ks, true)) {
+                String ssid = request->getParam(ks, true)->value();
+                String pwd = request->hasParam(kp, true) ? request->getParam(kp, true)->value() : "";
+                JsonObject n = networksArr.add<JsonObject>();
+                n["ssid"] = ssid;
+                n["password"] = pwd;
+                count++;
+            }
+        }
+
+        if (count == 0) {
             request->send(400, "application/json", "{\"error\":\"Missing SSID\"}");
             return;
         }
 
-        String ssid = request->getParam("ssid", true)->value();
-        String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
-
-        // Save credentials to filesystem for persistence
+        // Persist networks to config
         if (contentFS) {
-            JsonDocument cfg;
-            cfg["ssid"] = ssid;
-            cfg["password"] = password;
             xSemaphoreTake(fsMutex, portMAX_DELAY);
             File f = contentFS->open("/current/apconfig.json", "w");
             if (f) { serializeJson(cfg, f); f.close(); }
             xSemaphoreGive(fsMutex);
         }
 
-        // Attempt connection
-        WiFi.begin(ssid.c_str(), password.c_str());
+        // Seed WiFiMulti and try first connection quickly
+        wifiMulti = WiFiMulti();
+        savedNetworkCount = 0;
+        for (JsonObject n : cfg["networks"].as<JsonArray>()) {
+            wifiMulti.addAP(n["ssid"].as<const char*>(), n["password"].as<const char*>());
+            savedNetworkCount++;
+        }
+        useWiFiMulti = (savedNetworkCount > 0);
+        if (useWiFiMulti) {
+            WiFi.mode(WIFI_STA);
+            wifiMulti.run();
+        }
 
         JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "WiFi connection initiated";
-        doc["ssid"] = ssid;
+        doc["savedNetworks"] = savedNetworkCount;
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
@@ -278,11 +348,27 @@ void WiFiModule::update()
     {
         checkConnectionStatus();
     }
-    if (WiFi.status() != WL_CONNECTED && reconnectAttempts < 5)
+    // If connected, consider stopping AP if it's idle (no clients)
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        stopFallbackAPIfIdle();
+        return;
+    }
+
+    // Not connected: try to reconnect a few times
+    if (reconnectAttempts < 5)
     {
         if (now - lastStatusCheck > 10000)
         {
             attemptReconnection();
+        }
+    }
+    else
+    {
+        // After several failed attempts, ensure fallback AP is running
+        if (!apStarted)
+        {
+            startFallbackAP();
         }
     }
 }
@@ -301,9 +387,9 @@ String WiFiModule::getConfig() const
             {
                 doc["ssid"] = cfg["ssid"].as<String>();
                 doc["hostname"] = cfg["hostname"].as<String>();
-                doc["autoReconnect"] = cfg.containsKey("autoReconnect") ? cfg["autoReconnect"].as<bool>() : true;
-                doc["powerSave"] = cfg.containsKey("powerSave") ? cfg["powerSave"].as<bool>() : false;
-                doc["channel"] = cfg.containsKey("channel") ? cfg["channel"].as<int>() : 0;
+                doc["autoReconnect"] = cfg["autoReconnect"].is<bool>() ? cfg["autoReconnect"].as<bool>() : true;
+                doc["powerSave"] = cfg["powerSave"].is<bool>() ? cfg["powerSave"].as<bool>() : false;
+                doc["channel"] = cfg["channel"].is<int>() ? cfg["channel"].as<int>() : 0;
             }
             f.close();
         }
@@ -338,13 +424,13 @@ bool WiFiModule::setConfig(const String &config)
                 r.close();
             }
         }
-        if (doc.containsKey("autoReconnect"))
+        if (doc["autoReconnect"].is<bool>())
             cfg["autoReconnect"] = doc["autoReconnect"].as<bool>();
-        if (doc.containsKey("powerSave"))
+        if (doc["powerSave"].is<bool>())
             cfg["powerSave"] = doc["powerSave"].as<bool>();
-        if (doc.containsKey("channel"))
+        if (doc["channel"].is<int>())
             cfg["channel"] = doc["channel"].as<int>();
-        if (doc.containsKey("hostname"))
+        if (doc["hostname"].is<String>())
             cfg["hostname"] = doc["hostname"].as<String>();
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         File w = contentFS->open("/current/apconfig.json", "w");
@@ -419,6 +505,11 @@ void WiFiModule::checkConnectionStatus()
             lastError = "WiFi connection lost";
             Serial.println("[WIFI_MODULE] WiFi connection lost");
         }
+        // If we're not connected and we've failed several attempts, ensure AP is running
+        if (reconnectAttempts >= 5 && !apStarted)
+        {
+            startFallbackAP();
+        }
     }
     else
     {
@@ -428,6 +519,8 @@ void WiFiModule::checkConnectionStatus()
             Serial.println("[WIFI_MODULE] WiFi connection restored");
             reconnectAttempts = 0;
         }
+        // Connected: stop AP if it's idle (no clients)
+        stopFallbackAPIfIdle();
     }
 }
 
@@ -443,7 +536,19 @@ void WiFiModule::handleDisconnection()
 bool WiFiModule::attemptReconnection()
 {
     Serial.printf("[WIFI_MODULE] Attempting WiFi reconnection (attempt %d)\n", reconnectAttempts + 1);
-    WiFi.reconnect();
+    if (useWiFiMulti)
+    {
+        wl_status_t s = static_cast<wl_status_t>(wifiMulti.run());
+        if (s != WL_CONNECTED)
+        {
+            // brief wait to avoid tight loop
+            delay(250);
+        }
+    }
+    else
+    {
+        WiFi.reconnect();
+    }
     reconnectAttempts++;
     lastStatusCheck = millis();
     return WiFi.status() == WL_CONNECTED;
@@ -462,8 +567,8 @@ void WiFiModule::optimizeWiFiSettings()
             JsonDocument cfg;
             if (deserializeJson(cfg, f) == DeserializationError::Ok)
             {
-                powerSave = cfg.containsKey("powerSave") ? cfg["powerSave"].as<bool>() : false;
-                if (cfg.containsKey("hostname"))
+                powerSave = cfg["powerSave"].is<bool>() ? cfg["powerSave"].as<bool>() : false;
+                if (cfg["hostname"].is<String>())
                     hostname = cfg["hostname"].as<String>();
             }
             f.close();
@@ -472,6 +577,107 @@ void WiFiModule::optimizeWiFiSettings()
     WiFi.setSleep(powerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
     WiFi.setHostname(hostname.c_str());
     Serial.println("[WIFI_MODULE] WiFi optimization complete");
+}
+
+void WiFiModule::loadSavedNetworks()
+{
+    if (!contentFS)
+        return;
+
+    xSemaphoreTake(fsMutex, portMAX_DELAY);
+    File f = contentFS->open("/current/apconfig.json", "r");
+    if (!f)
+    {
+        xSemaphoreGive(fsMutex);
+        return;
+    }
+    JsonDocument cfg;
+    DeserializationError err = deserializeJson(cfg, f);
+    f.close();
+    xSemaphoreGive(fsMutex);
+    if (err)
+        return;
+
+    // Support formats:
+    // 1) { "networks": [ {"ssid":"A","password":"p"}, ... ] }
+    // 2) { "wifi": {"networks": [ ... ] } }
+    // 3) Single fields already handled in start(); also consider additional ssid2/password2 pairs if present
+    JsonArray arr;
+    if (cfg["networks"].is<JsonArray>())
+    {
+        arr = cfg["networks"].as<JsonArray>();
+    }
+    else if (cfg["wifi"]["networks"].is<JsonArray>())
+    {
+        arr = cfg["wifi"]["networks"].as<JsonArray>();
+    }
+
+    if (!arr.isNull())
+    {
+        for (JsonObject net : arr)
+        {
+            if (net["ssid"].is<String>())
+            {
+                const char *s = net["ssid"];
+                const char *p = net["password"].is<String>() ? net["password"].as<const char *>() : "";
+                wifiMulti.addAP(s, p);
+                savedNetworkCount++;
+            }
+        }
+    }
+
+    // Backward-compat: optional ssid2/password2, ssid3/password3 ... (up to 5)
+    for (int i = 2; i <= 5; ++i)
+    {
+        String keySsid = String("ssid") + String(i);
+        String keyPwd = String("password") + String(i);
+        if (cfg[keySsid].is<String>())
+        {
+            const char *s = cfg[keySsid];
+            const char *p = cfg[keyPwd].is<String>() ? cfg[keyPwd].as<const char *>() : "";
+            wifiMulti.addAP(s, p);
+            savedNetworkCount++;
+        }
+    }
+}
+
+void WiFiModule::startFallbackAP()
+{
+    Serial.println("[WIFI_MODULE] Starting fallback AP due to connection issues...");
+    // Keep STA active to allow reconnect attempts while AP is up
+    if (WiFi.getMode() != WIFI_AP_STA)
+    {
+        WiFi.mode(WIFI_AP_STA);
+    }
+    // Start or reconfigure AP; if already up this is idempotent
+    if (WiFi.softAPgetStationNum() == 0)
+    {
+        // Open AP (no password)
+        WiFi.softAP("ESP32-AP-Flasher", "");
+    }
+    apStarted = true;
+    ModuleManager::getInstance().broadcastEvent("wifi_ap_started", "");
+    Serial.printf("[WIFI_MODULE] Fallback AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+}
+
+void WiFiModule::stopFallbackAPIfIdle()
+{
+    if (!apStarted)
+        return;
+
+    // Only stop AP if no clients are connected
+    if (WiFi.softAPgetStationNum() == 0)
+    {
+        Serial.println("[WIFI_MODULE] Stopping fallback AP (idle, STA connected)");
+        WiFi.softAPdisconnect(true);
+        // Return to STA-only for efficiency
+        if (WiFi.getMode() == WIFI_AP_STA)
+        {
+            WiFi.mode(WIFI_STA);
+        }
+        apStarted = false;
+        ModuleManager::getInstance().broadcastEvent("wifi_ap_stopped", "");
+    }
 }
 
 // Required interface methods

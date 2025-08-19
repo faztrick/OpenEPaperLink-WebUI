@@ -1,0 +1,94 @@
+Processing OutdoorAP (board: esp32-s3-devkitc-1; platform: https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+PYTHONEXE updated to penv environment: C:\Users\faztrick\.platformio\penv\Scripts\python.exe
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32-s3-devkitc-1.html
+PLATFORM: Espressif 32 (55.3.30) > Espressif ESP32-S3-DevKitC-1-N8 (8 MB QD, No PSRAM)
+HARDWARE: ESP32S3 240MHz, 320KB RAM, 32MB Flash
+DEBUG: Current (esp-builtin) On-board (esp-builtin) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - contrib-piohome @ 3.4.4 
+ - framework-arduinoespressif32 @ 3.3.0 
+ - framework-arduinoespressif32-libs @ 5.5.0+sha.b66b5448e0 
+ - tool-dfuutil-arduino @ 1.11.0 
+ - tool-esptoolpy @ 5.0.2 
+ - tool-mkfatfs @ 2.0.1 
+ - tool-mklittlefs @ 3.2.0 
+ - tool-mklittlefs4 @ 4.0.2 
+ - tool-mkspiffs @ 2.230.0 (2.30) 
+ - toolchain-xtensa-esp-elf @ 14.2.0+20241119
+*** Applied include path shortening for 325 framework paths ***
+*** Path length reduced from 39437 to ~13533 characters ***
+*** Estimated savings: 25350 characters ***
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 57 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- AsyncTCP @ 3.3.2+sha.ef448a8
+|-- ESPAsyncWebServer @ 3.6.0+sha.ad3741d
+|-- ArduinoJson @ 7.4.2
+|-- TFT_eSPI @ 2.5.43
+|-- TJpg_Decoder @ 1.1.0+sha.71bfc26
+|-- shoddyxml2 @ 0.1.1+sha.d19a4e5
+|-- QRCodeGenerator @ 0.0.2+sha.4e67315
+|-- FastLED @ 3.10.1
+|-- SoftSPI @ 1.0.6+sha.8e70c31
+|-- ElegantOTA @ 3.1.7
+|-- TaskScheduler @ 3.8.5
+|-- ESP32Ping @ 1.7.0
+|-- FS @ 3.3.0
+|-- BLE @ 3.3.0
+|-- esp-serial-flasher @ 0.0.0+20230909102418
+|-- HTTPClient @ 3.3.0
+|-- WiFi @ 3.3.0
+|-- LittleFS @ 3.3.0
+|-- Wire @ 3.3.0
+|-- Ethernet @ 3.3.0
+|-- miniz-oepl
+|-- Update @ 3.3.0
+|-- SD @ 3.3.0
+|-- SD_MMC @ 3.3.0
+|-- SPI @ 3.3.0
+|-- ESP32 Async UDP @ 3.3.0
+|-- NetworkClientSecure @ 3.3.0
+|-- Preferences @ 3.3.0
+Building in release mode
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkClient.cpp.o
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkEvents.cpp.o
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkInterface.cpp.o
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkManager.cpp.o
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkServer.cpp.o
+Compiling .pio\build\OutdoorAP\lib6ee\Network\NetworkUdp.cpp.o
+Compiling .pio\build\OutdoorAP\libfac\AsyncTCP@src-7fb2940bccb78b8d2de6915ae328b7fc\AsyncTCP.cpp.o
+Compiling .pio\build\OutdoorAP\libd33\FS\FS.cpp.o
+Compiling .pio\build\OutdoorAP\libd33\FS\vfs_api.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\Parsing.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\WebServer.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\detail\mimetable.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\middleware\AuthenticationMiddleware.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\middleware\CorsMiddleware.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\middleware\LoggingMiddleware.cpp.o
+Compiling .pio\build\OutdoorAP\libc23\WebServer\middleware\MiddlewareChain.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\AP.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\STA.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFi.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFiAP.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFiGeneric.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFiMulti.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFiSTA.cpp.o
+Compiling .pio\build\OutdoorAP\lib57b\WiFi\WiFiScan.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\AsyncEventSource.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\AsyncJson.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\AsyncMessagePack.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\AsyncWebHeader.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\AsyncWebSocket.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\BackPort_SHA1Builder.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\ChunkPrint.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\Middleware.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\WebAuthentication.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\WebHandlers.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\WebRequest.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\WebResponses.cpp.o
+Compiling .pio\build\OutdoorAP\libb49\ESPAsyncWebServer@src-8a740033305cb1c99d89b522d725653f\WebServer.cpp.o
+Compiling .pio\build\OutdoorAP\lib8ba\SPI\SPI.cpp.o

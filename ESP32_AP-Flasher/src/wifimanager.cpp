@@ -26,6 +26,7 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
+#include <vector>
 
 #include "ips_display.h"
 #include "newproto.h"
@@ -116,8 +117,7 @@ WifiManager::WifiManager()
 
 void WifiManager::setScanVerbose(bool v)
 {
-    _scanVerbose = v;
-}
+    _scanVerbose = v;}
 
 bool WifiManager::scanVerbose() const
 {
@@ -154,6 +154,19 @@ void WifiManager::poll()
     }
 
 #endif
+
+    // Initial bring-up: if WiFi hasn't been initialized yet, try to connect.
+    // On failure or missing credentials, connectToWifi() will start the open config AP.
+    if (wifiStatus == NOINIT)
+    {
+        Serial.println("[WiFi] Initializing WiFi subsystem (NOINIT → CONNECT/CONFIG AP)");
+        // Always bring up the configuration AP first so users can connect immediately
+        // and so AP remains available while STA attempts proceed.
+        startManagementServer();
+        // Attempt STA connection in parallel; AP will stay up (WIFI_AP_STA)
+        connectToWifi();
+        _nextReconnectCheck = millis() + _reconnectIntervalCheck;
+    }
 
     // Optimized WiFi reconnection logic
     if (wifiStatus == AP && millis() > _nextReconnectCheck && !_ssid.isEmpty())
@@ -298,9 +311,20 @@ bool WifiManager::connectToWifi()
         return true;
 #endif
 
-    // Load WiFi settings from filesystem
-    _ssid = WiFi_SSID();
-    _pass = WiFi_psk();
+    // Build a list of candidate networks from apconfig.json
+    std::vector<std::pair<String, String>> candidates;
+
+    // First, include NVS-stored creds (may be empty depending on persistence settings)
+    String nvs_ssid = WiFi_SSID();
+    String nvs_pass = WiFi_psk();
+    if (!nvs_ssid.isEmpty())
+    {
+        candidates.emplace_back(nvs_ssid, nvs_pass);
+    }
+
+    // Then, parse /current/apconfig.json for single and multi-STA entries
+    _ssid = "";
+    _pass = "";
     if (contentFS)
     {
         fs::File f = contentFS->open("/current/apconfig.json", "r");
@@ -309,23 +333,65 @@ bool WifiManager::connectToWifi()
             JsonDocument cfg;
             if (deserializeJson(cfg, f) == DeserializationError::Ok)
             {
-                if (cfg.containsKey("ssid"))
+                // legacy single ssid/password
+                if (cfg["ssid"].is<String>())
                     _ssid = cfg["ssid"].as<String>();
-                if (cfg.containsKey("password"))
+                if (cfg["password"].is<String>())
                     _pass = cfg["password"].as<String>();
+
+                if (!_ssid.isEmpty())
+                {
+                    candidates.emplace_back(_ssid, _pass);
+                }
+
+                // new: networks array support
+                if (cfg["networks"].is<JsonArray>())
+                {
+                    for (JsonVariant v : cfg["networks"].as<JsonArray>())
+                    {
+                        String ss = v["ssid"].as<String>();
+                        String pw = v["password"].as<String>();
+                        if (!ss.isEmpty())
+                        {
+                            candidates.emplace_back(ss, pw);
+                        }
+                    }
+                }
             }
             f.close();
         }
     }
 
-    if (_ssid.isEmpty())
+    // De-duplicate by SSID preserving order (keep first occurrence)
+    if (!candidates.empty())
+    {
+        std::vector<std::pair<String, String>> unique;
+        for (auto &p : candidates)
+        {
+            bool exists = false;
+            for (auto &u : unique)
+            {
+                if (u.first == p.first)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists)
+                unique.push_back(p);
+        }
+        candidates.swap(unique);
+    }
+
+    if (candidates.empty())
     {
         terminalLog("No connection info saved");
         logLine("No connection information saved");
         startManagementServer();
         return false;
     }
-    terminalLog("ssid: " + String(_ssid));
+
+    terminalLog("Trying saved WiFi networks (" + String((int)candidates.size()) + ")...");
 
     String ip = "";
     String mask = "";
@@ -393,8 +459,26 @@ bool WifiManager::connectToWifi()
         }
     }
 
-    _connected = connectToWifi(_ssid, _pass, false);
-    return _connected;
+    // Try each candidate until one connects
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+        const String &ssid = candidates[i].first;
+        const String &pass = candidates[i].second;
+        if (ssid.isEmpty())
+            continue;
+        terminalLog("ssid: " + ssid);
+        // Save credentials back to apconfig.json when a candidate succeeds
+        if (connectToWifi(ssid, pass, true))
+        {
+            _ssid = ssid;
+            _pass = pass;
+            return true;
+        }
+    }
+
+    // If all candidates failed, start open AP for configuration
+    startManagementServer();
+    return false;
 }
 
 bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfull)
@@ -414,13 +498,9 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     _pass = pass;
     _savewhensuccessfull = savewhensuccessfull;
 
-    _APstarted = false;
-
-    // Proper WiFi disconnect and reset sequence
-    WiFi.disconnect(true, true);
-    vTaskDelay(pdMS_TO_TICKS(500)); // Allow time for disconnect
-    WiFi.mode(WIFI_MODE_NULL);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    // Keep AP running if we already started it (always-on AP)
+    // Avoid tearing down AP by not forcing full disconnect/mode-null.
+    // Instead, ensure the correct combined mode is set below.
 
     // Set hostname before connecting
     String hostname = buildHostname(WIFI_IF_STA);
@@ -429,7 +509,20 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
         Serial.printf("WARNING: Failed to set hostname: %s\n", hostname.c_str());
     }
 
-    WiFi.mode(WIFI_STA);
+    // If AP is active, use dual mode so AP remains available during STA connect
+    if (_APstarted)
+    {
+        WiFi.mode(WIFI_AP_STA);
+        // Ensure AP is up (idempotent if already started)
+        if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0))
+        {
+            WiFi.softAP("OpenEPaperLink", "", 1, false, 8);
+        }
+    }
+    else
+    {
+        WiFi.mode(WIFI_STA);
+    }
 
     // ESP32-S3 Performance optimizations
     esp_err_t ret = esp_wifi_set_ps(WIFI_PS_NONE); // Disable power saving for faster connection

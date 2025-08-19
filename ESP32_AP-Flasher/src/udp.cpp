@@ -15,13 +15,16 @@
 #define UDPPORT 16033
 
 UDPcomm udpsync;
+static bool s_udpInitRequested = false;
+static bool s_udpInited = false;
 
 extern uint8_t channelList[6];
 extern espSetChannelPower curChannel;
 
 void init_udp()
 {
-    udpsync.init();
+    // Mark for initialization; actual init runs when WiFi is ready
+    s_udpInitRequested = true;
 }
 
 UDPcomm::UDPcomm()
@@ -36,6 +39,16 @@ UDPcomm::~UDPcomm()
 
 void UDPcomm::init()
 {
+    if (s_udpInited)
+        return;
+    // Only initialize when WiFi netif is present
+    wifi_mode_t m = WiFi.getMode();
+    bool netReady = (m == WIFI_STA || m == WIFI_AP || m == WIFI_AP_STA);
+    if (!netReady)
+    {
+        return; // main loop should call again once WiFi is ready
+    }
+
     if (config.discovery == 0)
     {
         if (udp.listenMulticast(UDPIP, UDPPORT))
@@ -45,6 +58,8 @@ void UDPcomm::init()
                 if (packet.remoteIP() != wm.localIP()) {
                     this->processPacket(packet);
                 } });
+            s_udpInited = true;
+            Serial.printf("[UDP] Listening mcast %s:%u\n", UDPIP.toString().c_str(), (unsigned)UDPPORT);
         }
     }
     else
@@ -56,9 +71,14 @@ void UDPcomm::init()
                 if (packet.isBroadcast() && packet.remoteIP() != wm.localIP()) {
                     this->processPacket(packet);
                 } });
+            s_udpInited = true;
+            Serial.printf("[UDP] Listening on %u (bcast)\n", (unsigned)UDPPORT);
         }
     }
-    setAPchannel();
+    if (s_udpInited)
+    {
+        setAPchannel();
+    }
 }
 
 void UDPcomm::processPacket(AsyncUDPPacket packet)
@@ -185,6 +205,8 @@ void autoselect(void *pvParameters)
 
 void UDPcomm::getAPList()
 {
+    if (!s_udpInited)
+        return;
     APlist APitem;
     APitem.src = wm.localIP();
     strncpy(APitem.alias, config.alias, sizeof(APitem.alias) - 1);
@@ -207,6 +229,8 @@ void UDPcomm::getAPList()
 
 void UDPcomm::netProcessDataReq(struct espAvailDataReq *eadr)
 {
+    if (!s_udpInited)
+        return;
     uint8_t buffer[sizeof(struct espAvailDataReq) + 1];
     buffer[0] = PKT_AVAIL_DATA_INFO;
     memcpy(buffer + 1, eadr, sizeof(struct espAvailDataReq));
@@ -215,6 +239,8 @@ void UDPcomm::netProcessDataReq(struct espAvailDataReq *eadr)
 
 void UDPcomm::netProcessXferComplete(struct espXferComplete *xfc)
 {
+    if (!s_udpInited)
+        return;
     uint8_t buffer[sizeof(struct espXferComplete) + 1];
     buffer[0] = PKT_XFER_COMPLETE;
     memcpy(buffer + 1, xfc, sizeof(struct espXferComplete));
@@ -223,6 +249,8 @@ void UDPcomm::netProcessXferComplete(struct espXferComplete *xfc)
 
 void UDPcomm::netProcessXferTimeout(struct espXferComplete *xfc)
 {
+    if (!s_udpInited)
+        return;
     uint8_t buffer[sizeof(struct espXferComplete) + 1];
     buffer[0] = PKT_XFER_TIMEOUT;
     memcpy(buffer + 1, xfc, sizeof(struct espXferComplete));
@@ -231,6 +259,8 @@ void UDPcomm::netProcessXferTimeout(struct espXferComplete *xfc)
 
 void UDPcomm::netSendDataAvail(struct pendingData *pending)
 {
+    if (!s_udpInited)
+        return;
     uint8_t buffer[sizeof(struct pendingData) + 1];
     buffer[0] = PKT_AVAIL_DATA_REQ;
     memcpy(buffer + 1, pending, sizeof(struct pendingData));
@@ -239,6 +269,8 @@ void UDPcomm::netSendDataAvail(struct pendingData *pending)
 
 void UDPcomm::netTaginfo(struct TagInfo *taginfoitem)
 {
+    if (!s_udpInited)
+        return;
     uint8_t buffer[sizeof(struct TagInfo) + 1];
     buffer[0] = PKT_TAGINFO;
     memcpy(buffer + 1, taginfoitem, sizeof(struct TagInfo));
@@ -247,6 +279,8 @@ void UDPcomm::netTaginfo(struct TagInfo *taginfoitem)
 
 void UDPcomm::writeUdpPacket(uint8_t *buffer, uint16_t len, IPAddress senderIP)
 {
+    if (!s_udpInited)
+        return;
     if (config.discovery == 0)
     {
         udp.writeTo(buffer, len, senderIP, UDPPORT);

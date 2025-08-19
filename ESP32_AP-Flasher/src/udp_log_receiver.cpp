@@ -20,11 +20,20 @@
 
 static WiFiUDP s_logUdp;
 static bool s_udpReady = false;
+// Defer startup until WiFi netif is ready; retry from poll with backoff
+static bool s_udpStartRequested = false;
+static unsigned long s_lastStartAttempt = 0;
 
-void startUdpLogReceiver()
+static bool tryStartUdpLogReceiver()
 {
-  if (s_udpReady)
-    return;
+  // Only start when WiFi/LwIP netif exists (AP/STA/AP_STA)
+  wifi_mode_t m = WiFi.getMode();
+  bool netReady = (m == WIFI_STA || m == WIFI_AP || m == WIFI_AP_STA);
+  if (!netReady)
+  {
+    return false;
+  }
+
   // Prefer joining the multicast group so we can receive logs broadcast by peers
   // Arduino-ESP32 3.x has beginMulticast(group, port); 2.x had beginMulticast(localIP, group, port)
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
@@ -35,26 +44,47 @@ void startUdpLogReceiver()
   {
     s_udpReady = true;
     Serial.printf("[UDP-LOG] Joined mcast %s:%u\n", LOG_UDP_GROUP.toString().c_str(), (unsigned)LOG_UDP_PORT);
+    return true;
   }
-  else
+  // Fallback: bind to unicast/broadcast if multicast join fails
+  if (s_logUdp.begin(LOG_UDP_PORT))
   {
-    // Fallback: bind to unicast/broadcast if multicast join fails
-    if (s_logUdp.begin(LOG_UDP_PORT))
-    {
-      s_udpReady = true;
-      Serial.printf("[UDP-LOG] Listening on %u (no mcast)\n", (unsigned)LOG_UDP_PORT);
-    }
-    else
-    {
-      Serial.printf("[UDP-LOG] Failed to open UDP port %u\n", (unsigned)LOG_UDP_PORT);
-    }
+    s_udpReady = true;
+    Serial.printf("[UDP-LOG] Listening on %u (no mcast)\n", (unsigned)LOG_UDP_PORT);
+    return true;
+  }
+  Serial.printf("[UDP-LOG] Failed to open UDP port %u (will retry)\n", (unsigned)LOG_UDP_PORT);
+  return false;
+}
+
+void startUdpLogReceiver()
+{
+  if (s_udpReady)
+    return;
+  s_udpStartRequested = true;
+  if (!tryStartUdpLogReceiver())
+  {
+    // Defer start until WiFi is up; poll will retry
+    Serial.println("[UDP-LOG] Deferring UDP log receiver start until WiFi is ready");
   }
 }
 
 void pollUdpLogReceiver()
 {
+  // If start was requested but not ready yet, retry with backoff
+  if (!s_udpReady && s_udpStartRequested)
+  {
+    unsigned long now = millis();
+    if (now - s_lastStartAttempt > 500)
+    {
+      s_lastStartAttempt = now;
+      tryStartUdpLogReceiver();
+    }
+  }
+
   if (!s_udpReady)
     return;
+
   int psize = s_logUdp.parsePacket();
   if (psize <= 0)
     return;

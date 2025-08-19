@@ -257,6 +257,79 @@ async function listSystemSerialPorts() {
     }
 }
 
+// ---- Improv Serial helpers (WiFi scan/connect over serial) ----
+// Frame structure: 'IMPROV' (6 bytes), version(1), type(1), len(1), payload(len), checksum(1)
+const IMPROV_HDR = Buffer.from('IMPROV');
+const IMPROV_VER = 0x01;
+const TYPE_RPC = 0x03;
+const TYPE_RPC_RESPONSE = 0x04;
+const CMD_WIFI_SETTINGS = 0x01;
+const CMD_GET_CURRENT_STATE = 0x02;
+const CMD_GET_DEVICE_INFO = 0x03;
+const CMD_GET_WIFI_NETWORKS = 0x04;
+
+function checksum(buf) {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum = (sum + buf[i]) & 0xFF;
+    return Buffer.from([sum]);
+}
+
+function buildImprovRpc(command, payload = Buffer.alloc(0)) {
+    const pl = Buffer.concat([Buffer.from([command]), payload]);
+    const header = Buffer.concat([IMPROV_HDR, Buffer.from([IMPROV_VER, TYPE_RPC, pl.length])]);
+    const frame = Buffer.concat([header, pl]);
+    return Buffer.concat([frame, checksum(frame)]);
+}
+
+function buildWifiSettingsPayload(ssid, password) {
+    const ss = Buffer.from(String(ssid || ''), 'utf8');
+    const pw = Buffer.from(String(password || ''), 'utf8');
+    if (ss.length > 255 || pw.length > 255) throw new Error('ssid/password too long');
+    return Buffer.concat([Buffer.from([ss.length]), ss, Buffer.from([pw.length]), pw]);
+}
+
+function parseImprovFrames(buffer, onFrame) {
+    // Returns remaining buffer after consuming frames
+    let buf = buffer;
+    while (true) {
+        const idx = buf.indexOf(IMPROV_HDR);
+        if (idx === -1) return buf.length > IMPROV_HDR.length ? buf.slice(-IMPROV_HDR.length) : buf;
+        if (idx > 0) buf = buf.slice(idx);
+        if (buf.length < 9) return buf; // need at least header+ver+type+len
+        const ver = buf[6];
+        const typ = buf[7];
+        const len = buf[8];
+        const fullLen = 9 + len + 1;
+        if (buf.length < fullLen) return buf; // wait for more
+        const frame = buf.slice(0, fullLen);
+        const calc = checksum(frame.slice(0, -1))[0];
+        if (calc !== frame[frame.length - 1]) {
+            // bad checksum, drop first byte and continue
+            buf = buf.slice(1);
+            continue;
+        }
+        const payload = frame.slice(9, -1);
+        try { onFrame({ ver, typ, payload }); } catch (_) { /* ignore */ }
+        buf = buf.slice(fullLen);
+    }
+}
+
+function decodeRpcPayload(payload) {
+    if (!payload || payload.length === 0) return { cmd: 0, items: [] };
+    const cmd = payload[0];
+    const items = [];
+    let i = 1;
+    while (i < payload.length) {
+        const sl = payload[i];
+        i += 1;
+        if (i + sl > payload.length) break;
+        const s = payload.slice(i, i + sl).toString('utf8');
+        items.push(s);
+        i += sl;
+    }
+    return { cmd, items };
+}
+
 // Configuration defaults
 const defaultConfig = {
     environment: 'OutdoorAP',
@@ -532,6 +605,118 @@ app.post('/api/serial/write', (req, res) => {
     }
 });
 
+// Serial WiFi scan using Improv protocol
+// body: { path, baudRate? }
+app.post('/api/serial/wifi/scan', async (req, res) => {
+    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    const { path: portPath, baudRate = 115200, timeoutMs = 8000 } = req.body || {};
+    if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
+
+    let tempPort = null;
+    let usedExisting = false;
+    let portRec = serialPorts.get(portPath);
+    try {
+        let port;
+        if (portRec && portRec.port) {
+            port = portRec.port;
+            usedExisting = true;
+        } else {
+            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            tempPort = port;
+        }
+
+        // Send GET_WIFI_NETWORKS
+        const frame = buildImprovRpc(CMD_GET_WIFI_NETWORKS);
+        await new Promise((resolve, reject) => {
+            try { port.write(frame, (err) => err ? reject(err) : resolve()); } catch (e) { reject(e); }
+        });
+
+        const networks = [];
+        let buf = Buffer.alloc(0);
+        let done = false;
+        const onData = (data) => {
+            buf = Buffer.concat([buf, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+            buf = parseImprovFrames(buf, (fr) => {
+                if (fr.typ !== TYPE_RPC_RESPONSE) return;
+                const { cmd, items } = decodeRpcPayload(fr.payload);
+                if (cmd === CMD_GET_WIFI_NETWORKS) {
+                    if (!items || items.length === 0) {
+                        done = true; // final marker
+                        return;
+                    }
+                    const ssid = items[0] || '';
+                    const rssi = items[1] ? Number(items[1]) : 0;
+                    const auth = items[2] || '';
+                    if (ssid) networks.push({ ssid, rssi, auth });
+                }
+            });
+        };
+        port.on('data', onData);
+
+        const started = Date.now();
+        while (!done && (Date.now() - started) < timeoutMs) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        try { port.removeListener('data', onData); } catch (_) {}
+        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+
+        return res.json({ success: true, networks });
+    } catch (err) {
+        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+        return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// Serial WiFi connect using Improv protocol
+// body: { path, ssid, password, baudRate? }
+app.post('/api/serial/wifi/connect', async (req, res) => {
+    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    const { path: portPath, ssid, password = '', baudRate = 115200 } = req.body || {};
+    if (!portPath || !ssid) return res.status(400).json({ success: false, error: 'path and ssid required' });
+
+    let tempPort = null;
+    try {
+        const portRec = serialPorts.get(portPath);
+        let port;
+        if (portRec && portRec.port) {
+            port = portRec.port;
+        } else {
+            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            tempPort = port;
+        }
+
+        const payload = buildWifiSettingsPayload(ssid, password);
+        const frame = buildImprovRpc(CMD_WIFI_SETTINGS, payload);
+        await new Promise((resolve, reject) => {
+            try { port.write(frame, (err) => err ? reject(err) : resolve()); } catch (e) { reject(e); }
+        });
+
+        // Optionally, wait briefly for a response frame
+        let received = false;
+        let buf = Buffer.alloc(0);
+        const onData = (data) => {
+            buf = Buffer.concat([buf, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+            buf = parseImprovFrames(buf, (fr) => {
+                if (fr.typ !== TYPE_RPC_RESPONSE) return;
+                const { cmd } = decodeRpcPayload(fr.payload);
+                if (cmd === CMD_WIFI_SETTINGS) received = true;
+            });
+        };
+        port.on('data', onData);
+        const started = Date.now();
+        while (!received && (Date.now() - started) < 3000) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        try { port.removeListener('data', onData); } catch (_) {}
+        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+
+        return res.json({ success: true, acknowledged: received });
+    } catch (err) {
+        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+        return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
 // Quick COM health check: write a test command and wait briefly for any response
 app.post('/api/com/check', async (req, res) => {
     if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
@@ -641,6 +826,92 @@ app.post('/api/device/wifi', async (req, res) => {
         io.emit('set-wifi', { ssid, password });
         appendLog('node', `set-wifi ssid=${ssid}`);
         return res.json({ success: true, emitted: true });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// WiFi: scan networks on device (proxy)
+// GET /api/device/wifi/scan?host=IP
+// Attempts to call device endpoints in order: /wifi_scan, /scan_wifi
+app.get('/api/device/wifi/scan', async (req, res) => {
+    try {
+        const host = req.query.host;
+        if (!host) return res.status(400).json({ success: false, error: 'host required' });
+
+        const base = `http://${host}`;
+        const tryPaths = ['/wifi_scan', '/scan_wifi'];
+        let lastErr = null;
+        for (const p of tryPaths) {
+            try {
+                const url = `${base}${p}`;
+                const r = await axios.get(url, { timeout: 10000, validateStatus: () => true });
+                if (r.status >= 200 && r.status < 300) {
+                    // Try to normalize payload
+                    let data = r.data;
+                    // some firmwares wrap in { networks: [...] }
+                    if (data && data.networks && Array.isArray(data.networks)) {
+                        data = data.networks;
+                    }
+                    // ensure array
+                    if (!Array.isArray(data) && typeof data === 'object') {
+                        data = Object.values(data);
+                    }
+                    return res.json({ success: true, networks: data });
+                }
+                lastErr = new Error(`HTTP ${r.status}`);
+            } catch (e) {
+                lastErr = e;
+            }
+        }
+        return res.status(502).json({ success: false, error: lastErr?.message || 'scan failed' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// WiFi: connect to a network (proxy saver)
+// POST /api/device/wifi/connect { host, ssid, password }
+// Tries device endpoints in order:
+//  - POST /save_wifi_config (JSON) { ssid, password }
+//  - POST /save_wifi_config (x-www-form-urlencoded)
+//  - POST /set_wifi (JSON)
+app.post('/api/device/wifi/connect', async (req, res) => {
+    try {
+        const { host, ssid, password = '' } = req.body || {};
+        if (!host || !ssid) return res.status(400).json({ success: false, error: 'host and ssid required' });
+
+        const base = `http://${host}`;
+        const payload = { ssid, password };
+
+        // helpers
+        const postJson = async (path) => axios.post(`${base}${path}`, payload, { timeout: 12000, validateStatus: () => true });
+        const postForm = async (path) => axios.post(`${base}${path}`, new URLSearchParams(payload).toString(), {
+            timeout: 12000,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            validateStatus: () => true
+        });
+
+        const attempts = [
+            async () => postJson('/save_wifi_config'),
+            async () => postForm('/save_wifi_config'),
+            async () => postJson('/set_wifi')
+        ];
+
+        let last = null;
+        for (const fn of attempts) {
+            try {
+                const r = await fn();
+                if (r.status >= 200 && r.status < 300) {
+                    return res.json({ success: true, data: r.data });
+                }
+                last = new Error(`HTTP ${r.status}`);
+            } catch (e) {
+                last = e;
+            }
+        }
+
+        return res.status(502).json({ success: false, error: last?.message || 'connect failed' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message || String(err) });
     }

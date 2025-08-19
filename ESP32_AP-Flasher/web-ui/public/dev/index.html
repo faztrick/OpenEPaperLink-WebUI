@@ -45,6 +45,7 @@
             <div class="container">
                 <a href="index.html" class="nav-link active">Dashboard</a>
                 <a href="flash.html" class="nav-link">Simple Flasher</a>
+                <a href="wifi.html" class="nav-link">WiFi</a>
                 <a href="files.html" class="nav-link">File Manager</a>
                 <a href="development.html" class="nav-link">Development</a>
                 <a href="settings.html" class="nav-link">Settings</a>
@@ -291,6 +292,34 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Add/Edit Modal -->
+        <div id="device-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="device-modal-title"><i class="fas fa-plug"></i> Add Device</h3>
+                    <button class="modal-close" id="device-cancel">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="devName">Name</label>
+                        <input id="devName" placeholder="My OutdoorAP" />
+                    </div>
+                    <div class="form-group">
+                        <label for="devHost">Host/IP (host[:port])</label>
+                        <input id="devHost" placeholder="192.168.4.1" />
+                    </div>
+                    <div class="form-group">
+                        <label for="devCom">COM Port</label>
+                        <input id="devCom" placeholder="COM10" />
+                    </div>
+                </div>
+                <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+                    <button class="btn" id="device-cancel-btn">Cancel</button>
+                    <button class="btn btn-primary" id="device-save-btn">Save</button>
                 </div>
             </div>
         </div>

@@ -14,26 +14,33 @@
 #define STR_IMPL(x) #x
 #define STR(x) STR_IMPL(x)
 
-std::vector<tagRecord*> tagDB;
+std::vector<tagRecord *> tagDB;
 std::unordered_map<std::string, varStruct> varDB;
 std::unordered_map<int, HwType> hwdata = {};
 
 Config config;
 
-tagRecord* tagRecord::findByMAC(const uint8_t mac[8]) {
-    for (tagRecord* tag : tagDB) {
-        if (memcmp(tag->mac, mac, 8) == 0 && tag->version == 0) {
+tagRecord *tagRecord::findByMAC(const uint8_t mac[8])
+{
+    for (tagRecord *tag : tagDB)
+    {
+        if (memcmp(tag->mac, mac, 8) == 0 && tag->version == 0)
+        {
             return tag;
         }
     }
     return nullptr;
 }
 
-bool deleteRecord(const uint8_t mac[8], bool allVersions) {
-    for (uint32_t c = 0; c < tagDB.size(); c++) {
-        tagRecord* tag = tagDB.at(c);
-        if (memcmp(tag->mac, mac, 8) == 0 && (allVersions || tag->version == 0)) {
-            if (tag->data != nullptr) {
+bool deleteRecord(const uint8_t mac[8], bool allVersions)
+{
+    for (uint32_t c = 0; c < tagDB.size(); c++)
+    {
+        tagRecord *tag = tagDB.at(c);
+        if (memcmp(tag->mac, mac, 8) == 0 && (allVersions || tag->version == 0))
+        {
+            if (tag->data != nullptr)
+            {
                 free(tag->data);
             }
             tag->data = nullptr;
@@ -45,43 +52,54 @@ bool deleteRecord(const uint8_t mac[8], bool allVersions) {
     return false;
 }
 
-void mac2hex(const uint8_t* mac, char* hexBuffer) {
+void mac2hex(const uint8_t *mac, char *hexBuffer)
+{
     sprintf(hexBuffer, "%02X%02X%02X%02X%02X%02X%02X%02X",
             mac[7], mac[6], mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
 }
 
-bool hex2mac(const String& hexString, uint8_t* mac) {
+bool hex2mac(const String &hexString, uint8_t *mac)
+{
     size_t hexLength = hexString.length();
-    if (hexLength != 12 && hexLength != 16) {
+    if (hexLength != 12 && hexLength != 16)
+    {
         return false;
     }
-    if (hexLength / 2 == 6) {
+    if (hexLength / 2 == 6)
+    {
         mac[6] = 0;
         mac[7] = 0;
         return (sscanf(hexString.c_str(), "%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX",
                        &mac[5], &mac[4], &mac[3], &mac[2], &mac[1], &mac[0]) == 6);
-    } else {
+    }
+    else
+    {
         return (sscanf(hexString.c_str(), "%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX",
                        &mac[7], &mac[6], &mac[5], &mac[4], &mac[3], &mac[2], &mac[1], &mac[0]) == 8);
     }
 }
 
-String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
+String tagDBtoJson(const uint8_t mac[8], uint8_t startPos)
+{
     JsonDocument doc;
     JsonArray tags = doc["tags"].to<ArduinoJson::JsonArray>();
 
-    for (uint32_t c = startPos; c < tagDB.size(); ++c) {
-        const tagRecord* taginfo = tagDB.at(c);
+    for (uint32_t c = startPos; c < tagDB.size(); ++c)
+    {
+        const tagRecord *taginfo = tagDB.at(c);
 
         const bool select = !mac || memcmp(taginfo->mac, mac, 8) == 0;
-        if (select && taginfo->version == 0) {
+        if (select && taginfo->version == 0)
+        {
             JsonObject tag = tags.add<ArduinoJson::JsonObject>();
             fillNode(tag, taginfo);
-            if (measureJson(doc) > 5000) {
+            if (measureJson(doc) > 5000)
+            {
                 doc["continu"] = c + 1;
                 break;
             }
-            if (mac) {
+            if (mac)
+            {
                 break;
             }
         }
@@ -90,12 +108,14 @@ String tagDBtoJson(const uint8_t mac[8], uint8_t startPos) {
     return doc.as<String>();
 }
 
-void fillNode(JsonObject& tag, const tagRecord* taginfo) {
+void fillNode(JsonObject &tag, const tagRecord *taginfo)
+{
     char hexmac[17];
     mac2hex(taginfo->mac, hexmac);
     tag["mac"] = String(hexmac);
     char hex[33];
-    for (uint8_t i = 0; i < 16; i++) {
+    for (uint8_t i = 0; i < 16; i++)
+    {
         sprintf(hex + (i * 2), "%02x", taginfo->md5[i]);
     }
     tag["hash"] = (String)hex;
@@ -124,7 +144,8 @@ void fillNode(JsonObject& tag, const tagRecord* taginfo) {
     tag["ver"] = taginfo->tagSoftwareVersion;
 }
 
-void saveDB(const String& filename) {
+void saveDB(const String &filename)
+{
     JsonDocument doc;
 
     const long t = millis();
@@ -132,11 +153,13 @@ void saveDB(const String& filename) {
     xSemaphoreTake(fsMutex, portMAX_DELAY);
 
     fs::File existingFile = contentFS->open(filename, "r");
-    if (existingFile) {
+    if (existingFile)
+    {
         existingFile.close();
         vTaskDelay(pdMS_TO_TICKS(100));
         String backupFilename = filename + ".bak";
-        if (!contentFS->rename(filename.c_str(), backupFilename.c_str())) {
+        if (!contentFS->rename(filename.c_str(), backupFilename.c_str()))
+        {
             xSemaphoreGive(fsMutex);
             logLine("error renaming tagDB to .bak");
             wsErr("error renaming tagDB to .bak");
@@ -145,21 +168,25 @@ void saveDB(const String& filename) {
     }
 
     fs::File file = contentFS->open(filename, "w");
-    if (!file) {
+    if (!file)
+    {
         Serial.println("saveDB: Failed to open file for writing");
         xSemaphoreGive(fsMutex);
         return;
     }
 
     file.write('[');
-    for (size_t c = 0; c < tagDB.size(); c++) {
-        const tagRecord* taginfo = tagDB.at(c);
+    for (size_t c = 0; c < tagDB.size(); c++)
+    {
+        const tagRecord *taginfo = tagDB.at(c);
         doc.clear();
 
-        if (taginfo->version == 0) {
+        if (taginfo->version == 0)
+        {
             JsonObject tag = doc.to<ArduinoJson::JsonObject>();
             fillNode(tag, taginfo);
-            if (c > 0) {
+            if (c > 0)
+            {
                 file.write(',');
             }
             serializeJsonPretty(doc, file);
@@ -172,80 +199,156 @@ void saveDB(const String& filename) {
     Serial.println("DB saved " + String(millis() - t) + "ms");
 }
 
-bool loadDB(const String& filename) {
+bool loadDB(const String &filename)
+{
     Serial.println("reading DB from " + String(filename));
     const long t = millis();
 
     fs::File readfile = contentFS->open(filename, "r");
-    if (!readfile) {
+    if (!readfile)
+    {
         Serial.println("loadDB: Failed to open file");
         return false;
     }
 
     time_t now;
     time(&now);
-    bool parsing = true;
 
-    if (readfile.find("[")) {
-        JsonDocument doc;
-        while (parsing) {
-            DeserializationError err = deserializeJson(doc, readfile);
-            if (!err) {
-                JsonObject tag = doc[0];
-                String dst = tag["mac"].as<String>();
-                uint8_t mac[8];
-                if (hex2mac(dst, mac)) {
-                    tagRecord* taginfo = tagRecord::findByMAC(mac);
-                    if (taginfo == nullptr) {
-                        taginfo = new tagRecord;
-                        memcpy(taginfo->mac, mac, sizeof(taginfo->mac));
-                        tagDB.push_back(taginfo);
-                    }
-                    String md5 = tag["hash"].as<String>();
-                    if (md5.length() >= 32) {
-                        for (uint8_t i = 0; i < 16; i++) {
-                            taginfo->md5[i] = strtoul(md5.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
-                        }
-                    }
-                    taginfo->lastseen = (uint32_t)tag["lastseen"];
-                    taginfo->nextupdate = (uint32_t)tag["nextupdate"];
-                    taginfo->expectedNextCheckin = (uint32_t)tag["nextcheckin"];
-                    if (taginfo->expectedNextCheckin < now) {
-                        taginfo->expectedNextCheckin = now + 60;
-                    }
-                    taginfo->pendingCount = 0;
-                    taginfo->alias = tag["alias"].as<String>();
-                    taginfo->contentMode = tag["contentMode"];
-                    taginfo->LQI = tag["LQI"];
-                    taginfo->RSSI = tag["RSSI"];
-                    taginfo->temperature = tag["temperature"];
-                    taginfo->batteryMv = tag["batteryMv"];
-                    taginfo->hwType = (uint8_t)tag["hwType"];
-                    taginfo->wakeupReason = tag["wakeupReason"];
-                    taginfo->capabilities = tag["capabilities"];
-                    taginfo->modeConfigJson = tag["modecfgjson"].as<String>();
-                    taginfo->isExternal = tag["isexternal"].as<bool>();
-                    taginfo->apIp.fromString(tag["apip"].as<String>());
-                    taginfo->rotate = tag["rotate"] | 0;
-                    taginfo->lut = tag["lut"] | 0;
-                    taginfo->invert = tag["invert"] | 0;
-                    taginfo->updateCount = tag["updatecount"] | 0;
-                    taginfo->updateLast = tag["updatelast"] | 0;
-                    taginfo->currentChannel = tag["ch"] | 0;
-                    taginfo->tagSoftwareVersion = tag["ver"] | 0;
-                }
-            } else {
-                Serial.print(F("deserializeJson() failed: "));
-                Serial.println(err.c_str());
-                parsing = false;
-                readfile.close();
-                return false;
-            }
-            parsing = parsing && readfile.find(",");
-        }
-    } else {
+    // Seek to the beginning of the array
+    if (!readfile.find("["))
+    {
         readfile.close();
         return false;
+    }
+
+    // Helper to skip whitespace
+    auto skipWs = [&readfile]()
+    {
+        int c = readfile.peek();
+        while (c >= 0 && (c == ' ' || c == '\t' || c == '\r' || c == '\n'))
+        {
+            readfile.read();
+            c = readfile.peek();
+        }
+        return c;
+    };
+
+    // Handle empty array case: next non-space char is ']'
+    int c = skipWs();
+    if (c == ']')
+    {
+        // consume ']'
+        readfile.read();
+        readfile.close();
+        Serial.println("loadDB: empty database []");
+        Serial.println("loadDB took " + String(millis() - t) + "ms");
+        return true;
+    }
+
+    // Parse objects until we hit ']'
+    while (true)
+    {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, readfile);
+        if (err)
+        {
+            Serial.print(F("deserializeJson() failed: "));
+            Serial.println(err.c_str());
+            readfile.close();
+            return false;
+        }
+
+        JsonObject tag = doc.as<JsonObject>();
+        if (!tag.isNull())
+        {
+            String dst = tag["mac"].as<String>();
+            uint8_t mac[8];
+            if (hex2mac(dst, mac))
+            {
+                tagRecord *taginfo = tagRecord::findByMAC(mac);
+                if (taginfo == nullptr)
+                {
+                    taginfo = new tagRecord;
+                    memcpy(taginfo->mac, mac, sizeof(taginfo->mac));
+                    tagDB.push_back(taginfo);
+                }
+                String md5 = tag["hash"].as<String>();
+                if (md5.length() >= 32)
+                {
+                    for (uint8_t i = 0; i < 16; i++)
+                    {
+                        taginfo->md5[i] = strtoul(md5.substring(i * 2, i * 2 + 2).c_str(), NULL, 16);
+                    }
+                }
+                taginfo->lastseen = (uint32_t)tag["lastseen"];
+                taginfo->nextupdate = (uint32_t)tag["nextupdate"];
+                taginfo->expectedNextCheckin = (uint32_t)tag["nextcheckin"];
+                if (taginfo->expectedNextCheckin < now)
+                {
+                    taginfo->expectedNextCheckin = now + 60;
+                }
+                taginfo->pendingCount = 0;
+                taginfo->alias = tag["alias"].as<String>();
+                taginfo->contentMode = tag["contentMode"];
+                taginfo->LQI = tag["LQI"];
+                taginfo->RSSI = tag["RSSI"];
+                taginfo->temperature = tag["temperature"];
+                taginfo->batteryMv = tag["batteryMv"];
+                taginfo->hwType = (uint8_t)tag["hwType"];
+                taginfo->wakeupReason = tag["wakeupReason"];
+                taginfo->capabilities = tag["capabilities"];
+                taginfo->modeConfigJson = tag["modecfgjson"].as<String>();
+                taginfo->isExternal = tag["isexternal"].as<bool>();
+                taginfo->apIp.fromString(tag["apip"].as<String>());
+                taginfo->rotate = tag["rotate"] | 0;
+                taginfo->lut = tag["lut"] | 0;
+                taginfo->invert = tag["invert"] | 0;
+                taginfo->updateCount = tag["updatecount"] | 0;
+                taginfo->updateLast = tag["updatelast"] | 0;
+                taginfo->currentChannel = tag["ch"] | 0;
+                taginfo->tagSoftwareVersion = tag["ver"] | 0;
+            }
+        }
+
+        // After an object, skip whitespace and check for ',' or ']'
+        c = skipWs();
+        if (c == ',')
+        {
+            readfile.read(); // consume comma and continue to next element
+            c = skipWs();
+            if (c == ']')
+            {
+                // Trailing comma not allowed in strict JSON, but if encountered, treat as end safely
+                readfile.read();
+                break;
+            }
+            continue;
+        }
+        else if (c == ']')
+        {
+            readfile.read(); // consume ']'
+            break;
+        }
+        else if (c < 0)
+        {
+            // EOF reached unexpectedly; treat as finished
+            break;
+        }
+        else
+        {
+            // Unexpected char; attempt to search for next separator or end
+            if (!readfile.find(",") && !readfile.find("]"))
+            {
+                break;
+            }
+            // If we found ']' the next iteration will catch it
+            c = skipWs();
+            if (c == ']')
+            {
+                readfile.read();
+                break;
+            }
+        }
     }
 
     readfile.close();
@@ -253,11 +356,14 @@ bool loadDB(const String& filename) {
     return true;
 }
 
-void destroyDB() {
+void destroyDB()
+{
     Serial.println("destroying DB");
     util::printHeap();
-    for (tagRecord*& tag : tagDB) {
-        if (tag->data != nullptr) {
+    for (tagRecord *&tag : tagDB)
+    {
+        if (tag->data != nullptr)
+        {
             free(tag->data);
         }
         tag->data = nullptr;
@@ -267,53 +373,71 @@ void destroyDB() {
     util::printHeap();
 }
 
-uint32_t getTagCount() {
+uint32_t getTagCount()
+{
     uint32_t temp = 0;
     return getTagCount(temp, temp);
 }
 
-uint32_t getTagCount(uint32_t& timeoutcount, uint32_t& lowbattcount) {
+uint32_t getTagCount(uint32_t &timeoutcount, uint32_t &lowbattcount)
+{
     uint32_t tagcount = 0;
     time_t now;
     time(&now);
-    for (const tagRecord* taginfo : tagDB) {
-        if (!taginfo->isExternal) tagcount++;
+    for (const tagRecord *taginfo : tagDB)
+    {
+        if (!taginfo->isExternal)
+            tagcount++;
         const int32_t timeout = now - taginfo->lastseen;
-        if (taginfo->expectedNextCheckin < 3600) {
+        if (taginfo->expectedNextCheckin < 3600)
+        {
             // not initialised, timeout if not seen last 5 minutes
-            if (timeout > config.maxsleep * 60 + 300) timeoutcount++;
-        } else if (now - static_cast<time_t>(taginfo->expectedNextCheckin) > 600) {
-            // expected checkin is behind, timeout if not seen last 5 minutes
-            if (timeout > config.maxsleep * 60 + 300) timeoutcount++;
+            if (timeout > config.maxsleep * 60 + 300)
+                timeoutcount++;
         }
-        if (taginfo->batteryMv < 2400 && taginfo->batteryMv != 0 && taginfo->batteryMv != 1337) lowbattcount++;
+        else if (now - static_cast<time_t>(taginfo->expectedNextCheckin) > 600)
+        {
+            // expected checkin is behind, timeout if not seen last 5 minutes
+            if (timeout > config.maxsleep * 60 + 300)
+                timeoutcount++;
+        }
+        if (taginfo->batteryMv < 2400 && taginfo->batteryMv != 0 && taginfo->batteryMv != 1337)
+            lowbattcount++;
     }
     return tagcount;
 }
 
-void clearPending(tagRecord* taginfo) {
+void clearPending(tagRecord *taginfo)
+{
     taginfo->filename = String();
-    if (taginfo->data != nullptr) {
+    if (taginfo->data != nullptr)
+    {
         // check if this is the last copy of the buffer
         int datacount = 0;
-        for (const tagRecord* tag : tagDB) {
-            if (tag->data == taginfo->data) {
+        for (const tagRecord *tag : tagDB)
+        {
+            if (tag->data == taginfo->data)
+            {
                 datacount++;
             }
         }
-        if (datacount == 1) {
+        if (datacount == 1)
+        {
             free(taginfo->data);
         }
         taginfo->data = nullptr;
     }
 }
 
-void initAPconfig() {
+void initAPconfig()
+{
     JsonDocument APconfig;
     File configFile = contentFS->open("/current/apconfig.json", "r");
-    if (configFile) {
+    if (configFile)
+    {
         DeserializationError error = deserializeJson(APconfig, configFile);
-        if (error) {
+        if (error)
+        {
             configFile.close();
             Serial.println("failed to read apconfig.json. Using default config");
             Serial.println(error.c_str());
@@ -322,7 +446,8 @@ void initAPconfig() {
     }
     config.channel = APconfig["channel"].is<uint8_t>() ? APconfig["channel"] : 0;
     config.subghzchannel = APconfig["subghzchannel"].is<uint8_t>() ? APconfig["subghzchannel"] : 0;
-    if (APconfig["alias"]) strlcpy(config.alias, APconfig["alias"], sizeof(config.alias));
+    if (APconfig["alias"])
+        strlcpy(config.alias, APconfig["alias"], sizeof(config.alias));
     // Default LED brightness to 0 (off) to prevent bright startup
     config.led = APconfig["led"].is<uint8_t>() ? APconfig["led"] : 0;
     config.tft = APconfig["tft"].is<uint8_t>() ? APconfig["tft"] : 255;
@@ -345,20 +470,26 @@ void initAPconfig() {
     config.wifiPower = APconfig["wifipower"].is<uint8_t>() ? APconfig["wifipower"] : 34;
     config.repo = APconfig["repo"].is<String>() ? APconfig["repo"].as<String>() : String("OpenEPaperLink/OpenEPaperLink");
     config.env = APconfig["env"].is<String>() ? APconfig["env"].as<String>() : String(STR(BUILD_ENV_NAME));
-    if (APconfig["timezone"]) {
+    if (APconfig["timezone"])
+    {
         strlcpy(config.timeZone, APconfig["timezone"], sizeof(config.timeZone));
-    } else {
+    }
+    else
+    {
         strlcpy(config.timeZone, "CET-1CEST,M3.5.0,M10.5.0/3", sizeof(config.timeZone));
     }
 }
 
-void saveAPconfig() {
+void saveAPconfig()
+{
     xSemaphoreTake(fsMutex, portMAX_DELAY);
     // Ensure the /current directory exists before creating files inside it
-    const char* curDir = "/current";
-    if (!contentFS->exists(curDir)) {
+    const char *curDir = "/current";
+    if (!contentFS->exists(curDir))
+    {
         Serial.println("saveAPconfig: /current directory missing, attempting to create it");
-        if (!contentFS->mkdir(curDir)) {
+        if (!contentFS->mkdir(curDir))
+        {
             Serial.println("saveAPconfig: Failed to create /current directory — aborting saveAPconfig");
             xSemaphoreGive(fsMutex);
             return;
@@ -393,17 +524,22 @@ void saveAPconfig() {
     xSemaphoreGive(fsMutex);
 }
 
-HwType getHwType(const uint8_t id) {
+HwType getHwType(const uint8_t id)
+{
     auto it = hwdata.find(id);
-    if (it != hwdata.end()) {
+    if (it != hwdata.end())
+    {
         return it->second;
-    } else {
+    }
+    else
+    {
         char filename[20];
         snprintf(filename, sizeof(filename), "/tagtypes/%02X.json", id);
         Serial.printf("read %s\r\n", filename);
         File jsonFile = contentFS->open(filename, "r");
 
-        if (jsonFile) {
+        if (jsonFile)
+        {
             JsonDocument filter;
             filter["width"] = true;
             filter["height"] = true;
@@ -417,30 +553,40 @@ HwType getHwType(const uint8_t id) {
             JsonDocument doc;
             DeserializationError error = deserializeJson(doc, jsonFile, DeserializationOption::Filter(filter));
             jsonFile.close();
-            if (error) {
+            if (error)
+            {
                 Serial.println("json error in " + String(filename));
                 Serial.println(error.c_str());
-            } else {
-                HwType& hwType = hwdata[id];
+            }
+            else
+            {
+                HwType &hwType = hwdata[id];
                 hwType.id = id;
                 hwType.width = doc["width"];
                 hwType.height = doc["height"];
                 hwType.rotatebuffer = doc["rotatebuffer"];
                 hwType.bpp = doc["bpp"];
                 hwType.shortlut = doc["shortlut"];
-                if (doc["zlib_compression"].is<const char*>()) {
+                if (doc["zlib_compression"].is<const char *>())
+                {
                     hwType.zlib = strtol(doc["zlib_compression"], nullptr, 16);
-                } else {
+                }
+                else
+                {
                     hwType.zlib = 0;
                 }
-                if (doc["g5_compression"].is<const char*>()) {
+                if (doc["g5_compression"].is<const char *>())
+                {
                     hwType.g5 = strtol(doc["g5_compression"], nullptr, 16);
-                } else {
+                }
+                else
+                {
                     hwType.g5 = 0;
                 }
                 hwType.highlightColor = doc["highlight_color"].is<uint16_t>() ? doc["highlight_color"].as<uint16_t>() : 2;
                 JsonObject colorTable = doc["colortable"];
-                for (auto kv : colorTable) {
+                for (auto kv : colorTable)
+                {
                     JsonArray color = kv.value();
                     Color c;
                     c.r = color[0];
@@ -455,9 +601,11 @@ HwType getHwType(const uint8_t id) {
     }
 }
 
-bool setVarDB(const std::string& key, const String& value, const bool notify) {
+bool setVarDB(const std::string &key, const String &value, const bool notify)
+{
     auto it = varDB.find(key);
-    if (it == varDB.end()) {
+    if (it == varDB.end())
+    {
         varStruct newVar;
         newVar.value = value;
         newVar.changed = notify;
@@ -465,38 +613,48 @@ bool setVarDB(const std::string& key, const String& value, const bool notify) {
         return true;
     }
 
-    if (it->second.value != value) {
+    if (it->second.value != value)
+    {
         it->second.value = value;
         it->second.changed = notify;
         return true;
-    } else {
+    }
+    else
+    {
         return false;
     }
 }
 
-String getBaseName(const String& filename) {
+String getBaseName(const String &filename)
+{
     // int lastDotIndex = filename.lastIndexOf('.');
     // return lastDotIndex != -1 ? filename.substring(0, lastDotIndex) : filename;
     return filename.substring(0, 16);
 }
 
-void cleanupCurrent() {
+void cleanupCurrent()
+{
     // clean unknown previews
     Serial.println("Cleaning up temporary files");
     File dir = contentFS->open("/current");
     File file = dir.openNextFile();
-    while (file) {
+    while (file)
+    {
         String filename = file.name();
         uint8_t mac[8];
-        if (hex2mac(getBaseName(filename), mac)) {
+        if (hex2mac(getBaseName(filename), mac))
+        {
             bool found = false;
-            for (tagRecord* record : tagDB) {
-                if (memcmp(record->mac, mac, 8) == 0) {
+            for (tagRecord *record : tagDB)
+            {
+                if (memcmp(record->mac, mac, 8) == 0)
+                {
                     found = true;
                     break;
                 }
             }
-            if (!found || filename.endsWith(".pending")) {
+            if (!found || filename.endsWith(".pending"))
+            {
                 filename = file.path();
                 file.close();
                 Serial.println("remove " + filename);
@@ -509,7 +667,8 @@ void cleanupCurrent() {
 
     dir = contentFS->open("/temp");
     file = dir.openNextFile();
-    while (file) {
+    while (file)
+    {
         String filename = file.name();
         filename = file.path();
         file.close();
@@ -519,15 +678,19 @@ void cleanupCurrent() {
     dir.close();
 }
 
-void pushTagInfo(tagRecord* taginfo) {
-    tagRecord* taginfo2 = new tagRecord(*taginfo);
+void pushTagInfo(tagRecord *taginfo)
+{
+    tagRecord *taginfo2 = new tagRecord(*taginfo);
     taginfo2->version = 1;
     tagDB.push_back(taginfo2);
 }
 
-void popTagInfo(const uint8_t mac[8]) {
-    for (tagRecord* tag : tagDB) {
-        if (memcmp(tag->mac, mac, 8) == 0 && tag->version == 1) {
+void popTagInfo(const uint8_t mac[8])
+{
+    for (tagRecord *tag : tagDB)
+    {
+        if (memcmp(tag->mac, mac, 8) == 0 && tag->version == 1)
+        {
             deleteRecord(mac, false);
             tag->version = 0;
         }

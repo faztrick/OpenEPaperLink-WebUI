@@ -1,6 +1,0 @@
-ninja: Entering directory `build'
-[0/1] C:\Users\faztrick\.espressif\tools\cmake\3.24.0\bin\cmake.exe --regenerate-during-build -SD:\projects\opel\OpenEPaperLink-WebUI\ESP32_AP-Flasher -BD:\projects\opel\OpenEPaperLink-WebUI\ESP32_AP-Flasher\build
--- Configuring incomplete, errors occurred!
-See also "D:/projects/opel/OpenEPaperLink-WebUI/ESP32_AP-Flasher/build/CMakeFiles/CMakeOutput.log".
-FAILED: [code=1] build.ninja 
-C:\Users\faztrick\.espressif\tools\cmake\3.24.0\bin\cmake.exe --regenerate-during-build -SD:\projects\opel\OpenEPaperLink-WebUI\ESP32_AP-Flasher -BD:\projects\opel\OpenEPaperLink-WebUI\ESP32_AP-Flasher\build

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFi Manager - OutdoorAP</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container" style="max-width:1100px;padding:16px">
+    <h1><i class="fas fa-wifi"></i> WiFi Manager</h1>
+    <p class="muted">Select device, scan networks, and connect. Uses saved devices from Dashboard.</p>
+
+    <div class="build-panel">
+      <h3><i class="fas fa-plug"></i> Device</h3>
+      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+        <div class="form-group">
+          <label for="wifi-device-select">Saved Device</label>
+          <select id="wifi-device-select"></select>
+        </div>
+        <div class="form-group">
+          <label for="wifi-host">Host (override)</label>
+          <input id="wifi-host" placeholder="192.168.4.1">
+        </div>
+        <button id="wifi-use-selected" class="btn btn-small"><i class="fas fa-link"></i> Use Selected</button>
+      </div>
+    </div>
+
+    <div class="build-panel">
+      <h3><i class="fas fa-search"></i> Scan</h3>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button id="wifi-scan" class="btn btn-primary"><i class="fas fa-wifi"></i> Scan Networks</button>
+        <span id="wifi-scan-status" class="muted"></span>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <select id="serial-port-select"></select>
+        <button id="wifi-serial-scan" class="btn"><i class="fas fa-usb"></i> Scan via Serial</button>
+        <span id="wifi-serial-scan-status" class="muted"></span>
+      </div>
+      <div id="wifi-list" style="margin-top:12px"></div>
+    </div>
+
+    <div class="build-panel">
+      <h3><i class="fas fa-key"></i> Connect</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="form-group">
+          <label for="wifi-ssid">SSID</label>
+          <input id="wifi-ssid" placeholder="SSID">
+        </div>
+        <div class="form-group">
+          <label for="wifi-pass">Password</label>
+          <input id="wifi-pass" placeholder="password (blank for open)" type="password">
+        </div>
+        <button id="wifi-connect" class="btn btn-success"><i class="fas fa-plug"></i> Connect</button>
+        <button id="wifi-serial-connect" class="btn"><i class="fas fa-usb"></i> Connect via Serial</button>
+        <span id="wifi-connect-status" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="console-panel">
+      <div class="console-header">
+        <h3><i class="fas fa-terminal"></i> Output</h3>
+        <div class="console-controls">
+          <button id="wifi-clear" class="btn btn-small"><i class="fas fa-eraser"></i> Clear</button>
+        </div>
+      </div>
+      <div id="wifi-console" class="console"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+  <script src="wifi.js"></script>
+</body>
+</html>

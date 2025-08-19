@@ -27,11 +27,8 @@ void init_web()
               {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->addHeader("Cache-Control", "max-age=30");
+    JsonDocument doc;
 
-        // Build JSON doc for response
-        JsonDocument doc;
-
-        // Ensure WiFi is in a mode that allows scanning
         wifi_mode_t currentMode = WiFi.getMode();
         if (currentMode == WIFI_OFF)
         {
@@ -47,7 +44,7 @@ void init_web()
         int scanResult = WiFi.scanComplete();
         doc["scanstatus"] = scanResult;
 
-        JsonArray networks = doc["networks"].to<JsonArray>();
+    JsonArray networks = doc["networks"].to<JsonArray>();
 
         if (scanResult > 0)
         {
@@ -327,7 +324,6 @@ void init_web()
                       // Parse very small JSON: { lines: [..], count: N }
                       JsonDocument resp;
                       DeserializationError derr = deserializeJson(resp, payload);
-                      // ArduinoJson deprecation: containsKey is deprecated; use key access + is<>()
                       if (!derr && resp["lines"].is<JsonArray>())
                       {
                           JsonArray arr = resp["lines"].as<JsonArray>();
@@ -353,7 +349,7 @@ void init_web()
                   else
                   {
                       doc["success"] = false;
-                      doc["error"] = String("peer http status ") + code;
+                      doc["error"] = String("HTTP status ") + code;
                   }
                   http.end();
                   String body;
@@ -373,8 +369,6 @@ void init_web()
         String host = request->hasParam("host", true) ? request->getParam("host", true)->value() : String();
         int lines = request->hasParam("lines", true) ? request->getParam("lines", true)->value().toInt() : 100;
         request->redirect(String("/api/bridge/print_c6_logs?host=") + host + "&lines=" + String(lines)); });
-
-    // Expose best-effort pin mapping (build-time / driver hints)
     server.on("/api/pins", HTTP_GET, [](AsyncWebServerRequest *request)
               {
         JsonDocument doc;
@@ -476,104 +470,7 @@ void init_web()
                 serializeJson(doc, *response);
                 request->send(response); });
 
-    // API list endpoint - returns a compact registry of commonly used endpoints
-    server.on("/api/all", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        JsonDocument doc;
-        JsonArray apis = doc["apis"].to<JsonArray>();
-
-        // /api/pins
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/api/pins";
-            a["method"] = "GET";
-            a["description"] = "Returns build-time and driver pin mappings (object).";
-            JsonArray params = a["params"].to<JsonArray>();
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["note"] = "Object with optional nested objects like TFT, FLASHER_RGB_LED, RC522, SUBGHZ.";
-        }
-
-        // /api/telemetry
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/api/telemetry";
-            a["method"] = "GET";
-            a["description"] = "Lightweight telemetry (uptime, heap, wifi RSSI, tag count).";
-            JsonArray params = a["params"].to<JsonArray>();
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["uptime_ms"] = 12345;
-            resp["freeHeap"] = 123456;
-            resp["tagCount"] = 5;
-        }
-
-        // /api/ping
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/api/ping";
-            a["method"] = "GET";
-            a["description"] = "Health/ping check returning ok, timestamp and basic stats.";
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["ok"] = true;
-            resp["ts"] = 123456789;
-        }
-
-        // /get_db (and /gettags)
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/get_db";
-            a["method"] = "GET";
-            a["description"] = "Return tag database JSON. Optional query params: mac, pos.";
-            JsonArray params = a["params"].to<JsonArray>();
-            JsonObject p1 = params.add<ArduinoJson::JsonObject>();
-            p1["name"] = "mac"; p1["in"] = "query"; p1["required"] = false; p1["type"] = "hex string (6/8 bytes)";
-            JsonObject p2 = params.add<ArduinoJson::JsonObject>();
-            p2["name"] = "pos"; p2["in"] = "query"; p2["required"] = false; p2["type"] = "int";
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["note"] = "Array/object of tag records; see tag DB format in repository (tagDBtoJson).";
-        }
-
-        // /tag_cmd
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/tag_cmd";
-            a["method"] = "POST";
-            a["description"] = "Command API for tags (alias /cmd). Accepts form params or body depending on caller.";
-            JsonArray params = a["params"].to<JsonArray>();
-            JsonObject p1 = params.add<ArduinoJson::JsonObject>();
-            p1["name"] = "mac"; p1["in"] = "form/json"; p1["required"] = true; p1["type"] = "hex";
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["note"] = "Returns HTTP 200 and text/plain message; command is queued/sent to tag.";
-        }
-
-        // /getdata
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/getdata";
-            a["method"] = "GET";
-            a["description"] = "Retrieve binary data for a tag (file). Use mac and optional md5 param.";
-            JsonArray params = a["params"].to<JsonArray>();
-            JsonObject p1 = params.add<ArduinoJson::JsonObject>();
-            p1["name"] = "mac"; p1["in"] = "query"; p1["required"] = true;
-            JsonObject p2 = params.add<ArduinoJson::JsonObject>();
-            p2["name"] = "md5"; p2["in"] = "query"; p2["required"] = false;
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["note"] = "Returns application/octet-stream with file contents or 404 if not found.";
-        }
-
-        // /api/features
-        {
-            JsonObject a = apis.add<ArduinoJson::JsonObject>();
-            a["path"] = "/api/features";
-            a["method"] = "GET";
-            a["description"] = "Feature flags enabled at build/runtime (booleans).";
-            JsonObject resp = a["responseExample"].to<JsonObject>();
-            resp["HAS_TFT"] = false;
-            resp["HAS_RGB_LED"] = false;
-        }
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
+    // Removed /api/all endpoint to reduce duplicated API catalog code
 
     // Enhanced Module Management API Endpoints
     moduleManager.setupModuleManagementAPI(server);
@@ -2390,11 +2287,10 @@ void init_web()
     if (!moduleManager.loadConfig())
     {
         Serial.println("[WEB] No persisted module config found or failed to load");
-        // No persisted config - enforce sensible defaults so basic modules auto-start
+        // No persisted config - apply safe defaults: keep WiFi enabled for web server, disable C6 for debugging
         // This will not override user choices if they exist in NVS
-        Serial.println("[WEB] Applying default autoStart for core modules: WiFiModule, C6Module");
-        // Ensure WiFi module autoStart is enabled by default
-        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"C6Module\",\"autoStart\":true}]");
+        Serial.println("[WEB] Applying default autoStart for core modules: WiFiModule (enabled), C6Module (disabled)");
+        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"C6Module\",\"autoStart\":false}]}");
     }
     else
     {
@@ -2672,23 +2568,19 @@ void ensure_webserver_started()
     if (started)
         return;
 
-    // If WiFi is completely OFF, force bringing up the network stack without joining.
-    if (WiFi.getMode() == WIFI_OFF)
-    {
-        WiFi.mode(WIFI_MODE_NULL);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    // If WiFi or ETH is in a mode that implies netif is up, start immediately.
+    // Only start the server once a real network interface is up (AP/STA/AP+STA).
     wifi_mode_t m = WiFi.getMode();
-    bool net_ready = (m == WIFI_STA || m == WIFI_AP || m == WIFI_AP_STA || m == WIFI_MODE_NULL);
+    bool net_ready = (m == WIFI_STA || m == WIFI_AP || m == WIFI_AP_STA);
 
-    if (net_ready)
+    if (!net_ready)
     {
-        server.begin();
-        started = true;
-        Serial.println("[WEB] AsyncWebServer started");
+        // Not ready yet; try again later
+        return;
     }
+
+    server.begin();
+    started = true;
+    Serial.println("[WEB] AsyncWebServer started");
 }
 
 void doJsonUpload(AsyncWebServerRequest *request)

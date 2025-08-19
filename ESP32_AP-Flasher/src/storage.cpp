@@ -22,9 +22,11 @@ DynStorage::DynStorage() : isInited(0) {}
 SemaphoreHandle_t fsMutex = NULL;
 
 #ifndef SD_CARD_ONLY
-static void initLittleFS() {
+static void initLittleFS()
+{
     // Attempt to mount LittleFS and fall back gracefully
-    if (!LittleFS.begin()) {
+    if (!LittleFS.begin())
+    {
         Serial.println("Warning: LittleFS.begin() failed — filesystem may be unavailable");
         // Still set contentFS to LittleFS to allow API calls; callers should check exists/open results
         contentFS = &LittleFS;
@@ -37,26 +39,36 @@ static void initLittleFS() {
 #ifdef HAS_SDCARD
 static bool sd_init_done = false;
 #ifdef SD_CARD_SDMMC
-static void initSDCard() {
-    if (!SD_MMC.begin("/sdcard", true, true, BOARD_MAX_SDMMC_FREQ, 5)) {
+static void initSDCard()
+{
+    if (!SD_MMC.begin("/sdcard", true, true, BOARD_MAX_SDMMC_FREQ, 5))
+    {
         Serial.println("Card Mount Failed");
         return;
     }
     uint8_t cardType = SD_MMC.cardType();
 
-    if (cardType == CARD_NONE) {
+    if (cardType == CARD_NONE)
+    {
         Serial.println("No SD_MMC card attached");
         return;
     }
 
     Serial.print("SD_MMC Card Type: ");
-    if (cardType == CARD_MMC) {
+    if (cardType == CARD_MMC)
+    {
         Serial.println("MMC");
-    } else if (cardType == CARD_SD) {
+    }
+    else if (cardType == CARD_SD)
+    {
         Serial.println("SDSC");
-    } else if (cardType == CARD_SDHC) {
+    }
+    else if (cardType == CARD_SDHC)
+    {
         Serial.println("SDHC");
-    } else {
+    }
+    else
+    {
         Serial.println("UNKNOWN");
     }
 
@@ -66,18 +78,21 @@ static void initSDCard() {
     contentFS = &SD_MMC;
 }
 #else
-static SPIClass* spi;
+static SPIClass *spi;
 
-static void initSDCard() {
+static void initSDCard()
+{
     uint8_t spi_bus = VSPI;
 
     // SD.begin and spi.begin are allocating memory so we dont want to do that
-    if (!spi) {
+    if (!spi)
+    {
         spi = new SPIClass(spi_bus);
         spi->begin(SD_CARD_CLK, SD_CARD_MISO, SD_CARD_MOSI, SD_CARD_SS);
 
         bool res = SD.begin(SD_CARD_SS, *spi, 40000000);
-        if (!res) {
+        if (!res)
+        {
             Serial.println("Card Mount Failed");
             return;
         }
@@ -85,7 +100,8 @@ static void initSDCard() {
 
     uint8_t cardType = SD.cardType();
 
-    if (cardType == CARD_NONE) {
+    if (cardType == CARD_NONE)
+    {
         Serial.println("No SD card attached");
         return;
     }
@@ -95,7 +111,8 @@ static void initSDCard() {
 #endif
 #endif
 
-uint64_t DynStorage::freeSpace() {
+uint64_t DynStorage::freeSpace()
+{
     this->begin();
 #ifdef HAS_SDCARD
     return SDCARD.totalBytes() - SDCARD.usedBytes();
@@ -106,7 +123,8 @@ uint64_t DynStorage::freeSpace() {
 }
 
 #ifndef SD_CARD_ONLY
-void copyFile(File in, File out) {
+void copyFile(File in, File out)
+{
     Serial.print("Copying ");
     Serial.print(in.path());
     Serial.print(" to ");
@@ -114,41 +132,53 @@ void copyFile(File in, File out) {
 
     size_t n;
     uint8_t buf[64];
-    while ((n = in.read(buf, sizeof(buf))) > 0) {
+    while ((n = in.read(buf, sizeof(buf))) > 0)
+    {
         out.write(buf, n);
     }
 }
 
 #ifdef HAS_SDCARD
 
-void copyBetweenFS(FS& sourceFS, const char* source_path, FS& targetFS) {
+void copyBetweenFS(FS &sourceFS, const char *source_path, FS &targetFS)
+{
     File root = sourceFS.open(source_path);
     char next_path[128];
 
-    if (root.isDirectory()) {
-        if (!contentFS->exists(root.path())) {
-            if (!contentFS->mkdir(root.path())) {
+    if (root.isDirectory())
+    {
+        if (!contentFS->exists(root.path()))
+        {
+            if (!contentFS->mkdir(root.path()))
+            {
                 Serial.print("Failed to create directory ");
                 Serial.println(root.path());
                 return;
             }
         }
         File file = root.openNextFile();
-        while (file) {
-            if (file.isDirectory()) {
-                char next_path[256];  // Ensure adequate buffer size
+        while (file)
+        {
+            if (file.isDirectory())
+            {
+                char next_path[256]; // Ensure adequate buffer size
                 snprintf(next_path, sizeof(next_path), "%s/%s", root.path(), file.path());
 
                 copyBetweenFS(sourceFS, file.path(), targetFS);
-            } else {
+            }
+            else
+            {
                 xSemaphoreTake(fsMutex, portMAX_DELAY);
                 File target = contentFS->open(file.path(), "w");
-                if (target) {
+                if (target)
+                {
                     copyFile(file, target);
                     target.close();
                     file.close();
                     xSemaphoreGive(fsMutex);
-                } else {
+                }
+                else
+                {
                     xSemaphoreGive(fsMutex);
                     Serial.print("Couldn't create high target file");
                     Serial.println(file.path());
@@ -157,14 +187,19 @@ void copyBetweenFS(FS& sourceFS, const char* source_path, FS& targetFS) {
             }
             file = root.openNextFile();
         }
-    } else {
+    }
+    else
+    {
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         File target = contentFS->open(root.path(), "w");
-        if (target) {
+        if (target)
+        {
             copyFile(root, target);
             target.close();
             xSemaphoreGive(fsMutex);
-        } else {
+        }
+        else
+        {
             xSemaphoreGive(fsMutex);
             Serial.print("Couldn't create target file ");
             Serial.println(root.path());
@@ -173,8 +208,10 @@ void copyBetweenFS(FS& sourceFS, const char* source_path, FS& targetFS) {
     }
 }
 
-void copyIfNeeded(const char* path) {
-    if (!contentFS->exists(path) && LittleFS.exists(path)) {
+void copyIfNeeded(const char *path)
+{
+    if (!contentFS->exists(path) && LittleFS.exists(path))
+    {
         Serial.printf("SDCard does not contain %s, littleFS does, copying\r\n", path);
         copyBetweenFS(LittleFS, path, *contentFS);
     }
@@ -182,8 +219,10 @@ void copyIfNeeded(const char* path) {
 #endif
 #endif
 
-void DynStorage::begin() {
-    if (fsMutex == NULL) {
+void DynStorage::begin()
+{
+    if (fsMutex == NULL)
+    {
         fsMutex = xSemaphoreCreateMutex();
     }
 
@@ -192,7 +231,8 @@ void DynStorage::begin() {
 #endif
 
 #ifdef HAS_SDCARD
-    if (!sd_init_done) {
+    if (!sd_init_done)
+    {
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         initSDCard();
         xSemaphoreGive(fsMutex);
@@ -210,32 +250,58 @@ void DynStorage::begin() {
 #endif
 #endif
 
-    if (!contentFS->exists("/current")) {
+    if (!contentFS->exists("/current"))
+    {
         contentFS->mkdir("/current");
     }
-    if (!contentFS->exists("/temp")) {
+    if (!contentFS->exists("/temp"))
+    {
         contentFS->mkdir("/temp");
     }
 
     // Ensure a minimal apconfig.json exists to avoid open() errors elsewhere.
-    const char* apconfigPath = "/current/apconfig.json";
-    if (!contentFS->exists(apconfigPath)) {
+    const char *apconfigPath = "/current/apconfig.json";
+    if (!contentFS->exists(apconfigPath))
+    {
         xSemaphoreTake(fsMutex, portMAX_DELAY);
         File cfg = contentFS->open(apconfigPath, "w");
-        if (cfg) {
+        if (cfg)
+        {
             // Write a minimal JSON configuration
-            const char* defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
+            const char *defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
             cfg.print(defaultCfg);
             cfg.close();
             Serial.println("Created default /current/apconfig.json");
-        } else {
+        }
+        else
+        {
             Serial.println("Warning: Failed to create /current/apconfig.json — storage may be read-only");
+        }
+        xSemaphoreGive(fsMutex);
+    }
+
+    // Ensure a default empty tag database exists
+    const char *tagdbPath = "/current/tagDB.json";
+    if (!contentFS->exists(tagdbPath))
+    {
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File db = contentFS->open(tagdbPath, "w");
+        if (db)
+        {
+            db.print("[]");
+            db.close();
+            Serial.println("Created default /current/tagDB.json (empty array)");
+        }
+        else
+        {
+            Serial.println("Warning: Failed to create /current/tagDB.json — storage may be read-only");
         }
         xSemaphoreGive(fsMutex);
     }
 }
 
-void DynStorage::end() {
+void DynStorage::end()
+{
 #ifdef HAS_SDCARD
 #ifndef SD_CARD_ONLY
     initLittleFS();
@@ -250,12 +316,14 @@ void DynStorage::end() {
 #ifndef SD_CARD_ONLY
     if (SD_CARD_CLK == FLASHER_AP_CLK ||
         SD_CARD_MISO == FLASHER_AP_MISO ||
-        SD_CARD_MOSI == FLASHER_AP_MOSI) {
+        SD_CARD_MOSI == FLASHER_AP_MOSI)
+    {
         Serial.println("Tearing down SD card connection");
 
         copyBetweenFS(*contentFS, "/tag_md5_db.json", LittleFS);
         copyBetweenFS(*contentFS, "/AP_FW_Pack.bin", LittleFS);
-        if (contentFS->exists("/AP_force_flash.bin")) {
+        if (contentFS->exists("/AP_force_flash.bin"))
+        {
             copyBetweenFS(*contentFS, "/AP_force_flash.bin", LittleFS);
             contentFS->remove("/AP_force_flash.bin");
         }
@@ -268,5 +336,5 @@ void DynStorage::end() {
 #endif
 }
 
-fs::FS* contentFS;
+fs::FS *contentFS;
 DynStorage Storage;

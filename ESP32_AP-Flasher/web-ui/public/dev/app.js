@@ -378,7 +378,7 @@ class ESP32DevUI {
 
     // Device manager UI bindings (if present on this page)
     const addDevBtn = document.getElementById('device-add');
-    if (addDevBtn) addDevBtn.addEventListener('click', () => this.addDeviceFromForm());
+    if (addDevBtn) addDevBtn.addEventListener('click', () => this.openDeviceModal('add'));
 
     // Quick-open buttons used in several pages (data-href)
     try {
@@ -545,6 +545,63 @@ class ESP32DevUI {
         // leave IP/COM as-is for convenience
     }
 
+    openDeviceModal(mode = 'add', device = null) {
+        const modal = document.getElementById('device-modal');
+        if (!modal) return;
+        const title = document.getElementById('device-modal-title');
+        const name = document.getElementById('devName');
+        const host = document.getElementById('devHost');
+        const com = document.getElementById('devCom');
+        modal.style.display = 'block';
+        if (title) title.textContent = mode === 'edit' ? 'Edit Device' : 'Add Device';
+        if (device) {
+            name.value = device.name || '';
+            host.value = device.ip || '';
+            com.value = device.com || '';
+            modal.setAttribute('data-edit-id', device.id);
+        } else {
+            name.value = '';
+            host.value = '';
+            const headerSel = document.getElementById('com-port-select');
+            com.value = headerSel && headerSel.value ? headerSel.value : (this.config.comPort || '');
+            modal.removeAttribute('data-edit-id');
+        }
+
+        const cancel = document.getElementById('device-cancel');
+        const cancel2 = document.getElementById('device-cancel-btn');
+        const save = document.getElementById('device-save-btn');
+        if (cancel && !cancel.__wired) { cancel.addEventListener('click', () => modal.style.display = 'none'); cancel.__wired = true; }
+        if (cancel2 && !cancel2.__wired) { cancel2.addEventListener('click', () => modal.style.display = 'none'); cancel2.__wired = true; }
+        if (save && !save.__wired) { save.addEventListener('click', () => this.saveDeviceModal()); save.__wired = true; }
+    }
+
+    saveDeviceModal() {
+        const modal = document.getElementById('device-modal');
+        if (!modal) return;
+        const editId = modal.getAttribute('data-edit-id');
+        const name = document.getElementById('devName').value.trim();
+        const ip = document.getElementById('devHost').value.trim();
+        const com = document.getElementById('devCom').value.trim();
+        if (!name) { alert('Enter a device name'); return; }
+        if (editId) {
+            const idx = this.devices.findIndex(d => d.id === editId);
+            if (idx >= 0) {
+                this.devices[idx] = { ...this.devices[idx], name, ip, com };
+                this.saveDevices();
+                this.renderDevices();
+            }
+        } else {
+            const id = `${name}`.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
+            const dev = { id, name, ip, com };
+            this.devices.push(dev);
+            this.selectedDeviceId = id;
+            this.saveDevices();
+            this.renderDevices();
+            this.applySelectedDevice(dev);
+        }
+        modal.style.display = 'none';
+    }
+
     getSelectedDevice() {
         if (!this.selectedDeviceId) return null;
         return this.devices.find(d => d.id === this.selectedDeviceId) || null;
@@ -591,6 +648,7 @@ class ESP32DevUI {
                 <div><small>COM: ${d.com || '-'}</small></div>
                 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
                     <button class="btn btn-small ${selected ? 'btn-success' : 'btn-outline'}" data-act="select" data-id="${d.id}">${selected ? 'Selected' : 'Select'}</button>
+                    <button class="btn btn-small" data-act="edit" data-id="${d.id}">Edit</button>
                     <button class="btn btn-small btn-outline" data-act="ping" data-id="${d.id}">Ping</button>
                     <button class="btn btn-small btn-danger" data-act="delete" data-id="${d.id}">Delete</button>
                 </div>
@@ -604,6 +662,10 @@ class ESP32DevUI {
                 btn.addEventListener('click', async () => {
                     if (act === 'select') this.selectDevice(id);
                     if (act === 'delete') this.deleteDevice(id);
+                    if (act === 'edit') {
+                        const dev = this.devices.find(x => x.id === id);
+                        if (dev) this.openDeviceModal('edit', dev);
+                    }
                     if (act === 'ping') {
                         const dev = this.devices.find(x => x.id === id);
                         if (dev && dev.ip) {

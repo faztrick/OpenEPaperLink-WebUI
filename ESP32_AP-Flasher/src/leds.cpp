@@ -13,6 +13,7 @@
 QueueHandle_t ledQueue;
 // Start with LEDs off by default to avoid bright startup flashes
 int maxledbrightness = 0;
+static bool s_flashLedReady = false; // guards writes until LEDC channel is attached
 
 #ifdef HAS_RGB_LED
 QueueHandle_t rgbLedQueue;
@@ -41,11 +42,9 @@ struct ledInstruction
 
 void ledcSet(uint8_t channel, uint8_t brightness)
 {
-#if ESP_ARDUINO_VERSION_MAJOR == 2
+    // Legacy wrapper retained for TFT/backlight paths that still use channels.
+    // Note: For the mono status LED we now write by pin (see showMono).
     ledcWrite(channel, brightness);
-#else
-    ledcWriteChannel(channel, brightness);
-#endif
 }
 
 #ifdef HAS_RGB_LED
@@ -225,10 +224,12 @@ void addFadeMono(uint8_t value)
 
 void showMono(uint8_t brightness)
 {
-    if (FLASHER_LED != -1)
-    {
-        ledcSet(7, gamma8[brightness]);
-    }
+    if (FLASHER_LED == -1)
+        return;
+    if (!s_flashLedReady)
+        return; // avoid spamming errors before channel attach
+    // Arduino-ESP32 3.x supports pin-based LEDC writes after ledcAttach(pin,...)
+    ledcWrite(FLASHER_LED, gamma8[brightness]);
 }
 
 void quickBlink(uint8_t repeat)
@@ -276,12 +277,10 @@ void ledTask(void *parameter)
 
     if (FLASHER_LED != -1)
     {
-#if ESP_ARDUINO_VERSION_MAJOR == 2
-        ledcSetup(7, 5000, 8);
-        ledcAttachPin(FLASHER_LED, 7);
-#else
-        ledcAttachChannel(FLASHER_LED, 1000, 8, 7);
-#endif
+        // Use Arduino-ESP32 3.x unified API to configure+attach LEDC on a pin
+        // Channel is auto-assigned; subsequent writes will target the pin, not a channel
+        ledcAttach(FLASHER_LED, 5000, 8);
+        s_flashLedReady = true;
     }
 
     struct ledInstruction *monoled = nullptr;

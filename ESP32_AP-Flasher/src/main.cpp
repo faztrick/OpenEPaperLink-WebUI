@@ -166,7 +166,28 @@ void setup()
     if (!loadDB("/current/tagDB.json"))
     {
         Serial.println("unable to load tagDB, reverting to backup");
-        loadDB("/current/tagDB.json.bak");
+        if (!loadDB("/current/tagDB.json.bak"))
+        {
+            Serial.println("both tagDB and backup invalid — creating empty database");
+            // Create an empty DB file to prevent repeated parse errors
+            if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(5000)) == pdTRUE)
+            {
+                File db = contentFS->open("/current/tagDB.json", "w");
+                if (db)
+                {
+                    db.print("[]");
+                    db.close();
+                    Serial.println("wrote new empty /current/tagDB.json");
+                }
+                xSemaphoreGive(fsMutex);
+            }
+            // No entries to clean, but run cleanup for consistency
+            cleanupCurrent();
+        }
+        else
+        {
+            cleanupCurrent();
+        }
     }
     else
     {
@@ -237,12 +258,22 @@ void setup()
     extern void startUdpLogReceiver();
     startUdpLogReceiver();
 #endif
+
+    // Defer UDP discovery init; will complete when WiFi is ready
+    extern void init_udp();
+    init_udp();
 }
 
 void loop()
 {
     ws.cleanupClients();
+    // Ensure web server starts only when TCP/IP stack is ready
+    ensure_webserver_started();
     wm.poll();
+
+    // Opportunistically attempt starting deferred UDP subsystems when WiFi becomes ready
+    extern UDPcomm udpsync;
+    udpsync.init();
 
     if (intervalSysinfo.doRun())
     {

@@ -2,6 +2,7 @@
 #define WIFI_MODULE_H
 
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <ArduinoJson.h>
 
 #include "module_manager.h"
@@ -16,6 +17,12 @@ private:
     uint32_t lastStatusCheck = 0;
     String lastError = "";
     int reconnectAttempts = 0;
+    // Tracks whether fallback AP is currently running
+    bool apStarted = false;
+    // Multi-STA support
+    WiFiMulti wifiMulti;
+    int savedNetworkCount = 0;
+    bool useWiFiMulti = false;
 
 public:
     // Module lifecycle
@@ -47,6 +54,13 @@ private:
     void handleDisconnection();
     bool attemptReconnection();
     void optimizeWiFiSettings();
+
+    // Fallback AP helpers
+    void startFallbackAP();
+    void stopFallbackAPIfIdle();
+
+    // Load saved STA networks from config
+    void loadSavedNetworks();
 };
 
 // WiFi module registration function

@@ -11,6 +11,19 @@
 				"OutdoorAP"
 			],
 			"group": "build"
+		},
+		{
+			"label": "PIO: Upload OutdoorAP (COM10 from ESP32_AP-Flasher)",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; pio run -e OutdoorAP -t upload --upload-port COM10"
+			],
+			"group": "build"
 		}
 	]
 }
