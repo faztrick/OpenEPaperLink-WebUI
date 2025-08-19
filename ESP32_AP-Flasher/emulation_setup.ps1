@@ -7,15 +7,20 @@ param(
     [string]$Action = "help",
 
     [Parameter()]
-    [switch]$Verbose
+    [string]$Environment = "OutdoorAP",
+
+    [int]$WokwiTimeoutMs = 0,
+    [switch]$WokwiInteractive,
+    [switch]$WokwiWeb
 )
 
 # Configuration
 $ProjectRoot = $PSScriptRoot
-$BuildDir = Join-Path $ProjectRoot ".pio\build\OutdoorAP"
+$BuildDir = Join-Path $ProjectRoot ".pio\build\$Environment"
 $FirmwareElf = Join-Path $BuildDir "firmware.elf"
 $WokwiDir = Join-Path $ProjectRoot "wokwi"
 $WokwiDiagram = Join-Path $WokwiDir "diagram.json"
+$TokenFile = Join-Path $ProjectRoot ".wokwi_token"
 
 # Color output functions
 function Write-Status($message) {
@@ -113,7 +118,7 @@ function Build-Firmware {
 
     Push-Location $ProjectRoot
     try {
-        & pio run -e OutdoorAP
+    & pio run -e $Environment
         if ($LASTEXITCODE -eq 0) {
             Write-Status "Build successful!"
             Write-Status "Firmware ELF: $FirmwareElf"
@@ -142,17 +147,50 @@ function Start-WokwiSimulation {
     }
 
     try {
-        Write-Status "Opening Wokwi simulation in browser..."
         Write-Status "Use VS Code 'Wokwi ESP32 Simulator' debug configuration to debug"
 
-        # Check if wokwi-cli is available
-        try {
-            & wokwi-cli --help > $null 2>&1
-            Write-Status "Starting Wokwi CLI simulation..."
-            & wokwi-cli --diagram $WokwiDiagram --elf $FirmwareElf
+        # If web is forced, open browser and return
+        if ($WokwiWeb) {
+            Write-Status "Opening Wokwi web interface (forced via -WokwiWeb)..."
+            Start-Process "https://wokwi.com/vscode"
+            return
         }
-        catch {
-            Write-Status "Opening Wokwi web interface..."
+
+        # Prefer Wokwi CLI only if token is available; otherwise open web UI
+        $token = $env:WOKWI_CLI_TOKEN
+        if (-not $token -and (Test-Path $TokenFile)) {
+            try { $token = (Get-Content $TokenFile -Raw).Trim() } catch {}
+        }
+        if ($token) {
+            $env:WOKWI_CLI_TOKEN = $token
+            try {
+                & wokwi-cli --help > $null 2>&1
+                Write-Status "Starting Wokwi CLI simulation..."
+                Push-Location $WokwiDir
+                try {
+                    # Build argument list dynamically
+                    $args = @('--diagram-file', 'diagram.json', '--elf', $FirmwareElf)
+                    if ($WokwiTimeoutMs -ge 0) { $args += @('--timeout', $WokwiTimeoutMs) }
+                    if ($WokwiInteractive) { $args += @('--interactive') }
+                    & wokwi-cli @args
+                    $exit = $LASTEXITCODE
+                    if ($exit -ne 0) {
+                        Write-Warning "Wokwi CLI exited with code $exit. Falling back to opening the web interface..."
+                        Write-Warning "If this persists, check network/firewall for WebSocket (wss) access and token validity."
+                        Start-Process "https://wokwi.com/vscode"
+                    }
+                }
+                finally {
+                    Pop-Location
+                }
+            }
+            catch {
+                Write-Warning "Wokwi CLI not available; opening Wokwi web interface..."
+                Start-Process "https://wokwi.com/vscode"
+            }
+        }
+        else {
+            Write-Status "Opening Wokwi web interface (no WOKWI_CLI_TOKEN set)..."
             Start-Process "https://wokwi.com/vscode"
         }
     }
@@ -234,7 +272,7 @@ function Show-Help {
     Write-Host @"
 ESP32 Emulation Management Script
 
-Usage: .\emulation_setup.ps1 [action] [-Verbose]
+Usage: .\emulation_setup.ps1 [action] [-Environment OutdoorAP] [-Verbose]
 
 Actions:
   setup   - Set up emulation environment and check prerequisites
@@ -246,9 +284,9 @@ Actions:
   help    - Show this help message
 
 Examples:
-  .\emulation_setup.ps1 setup
-  .\emulation_setup.ps1 build
-  .\emulation_setup.ps1 wokwi
+    .\emulation_setup.ps1 setup
+    .\emulation_setup.ps1 build -Environment OutdoorAP
+    .\emulation_setup.ps1 wokwi -Environment OutdoorAP
   .\emulation_setup.ps1 qemu
   .\emulation_setup.ps1 debug
 

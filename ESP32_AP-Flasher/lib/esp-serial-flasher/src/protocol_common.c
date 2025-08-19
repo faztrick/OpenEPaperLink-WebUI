@@ -259,6 +259,7 @@ esp_loader_error_t loader_change_baudrate_cmd(uint32_t baudrate)
 
 esp_loader_error_t loader_md5_cmd(uint32_t address, uint32_t size, uint8_t *md5_out)
 {
+    
     spi_flash_md5_command_t md5_cmd = {
         .common = {
             .direction = WRITE_DIRECTION,

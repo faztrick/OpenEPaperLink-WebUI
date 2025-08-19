@@ -307,7 +307,7 @@ void ledTask(void *parameter)
     {
 #ifdef HAS_RGB_LED
         // handle RGB led instructions
-        if (rgb == nullptr)
+        if (rgb == nullptr && rgbLedQueue)
         {
             // fetch a led instruction
             BaseType_t q = xQueueReceive(rgbLedQueue, &rgb, 1);
@@ -367,7 +367,7 @@ void ledTask(void *parameter)
         }
 #endif
         // handle flasher LED (single color)
-        if (monoled == nullptr)
+        if (monoled == nullptr && ledQueue)
         {
             BaseType_t q = xQueueReceive(ledQueue, &monoled, 1);
             if (q == pdTRUE)

@@ -20,6 +20,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+# Ensure we run relative paths from the script directory
+try { Set-Location -Path $PSScriptRoot } catch {}
+
 # Set build cache environment variables for faster builds
 $env:PLATFORMIO_BUILD_CACHE_DIR = ".pio\build_cache"
 $env:PLATFORMIO_LIBDEPS_CACHE_DIR = ".pio\libdeps_cache"
@@ -139,7 +142,8 @@ if (-not $SkipBuild) {
     }
 }
 
-# Fast binary organization
+# Fast binary organization (also prepare if SkipBuild to enable upload-only)
+if (-not (Test-Path $Environment)) { New-Item -ItemType Directory -Path $Environment -Force | Out-Null }
 if (-not $SkipBuild) {
     Write-FastOutput "⚡ Fast binary prep..." "Progress"
 
@@ -179,14 +183,15 @@ if (-not $SkipBuild) {
         Push-Location $outputDir
 
         try {
+            # For OPI octal flash, avoid overriding flash mode/freq; use size 32MB
             $mergeArgs = @(
-                "--chip", "esp32-s3"
-                "merge-bin", "-o", "merged-firmware.bin"
-                "--flash-mode", "qio", "--flash-freq", "80m", "--flash-size", "32MB"
-                "0x0000", "bootloader.bin"
-                "0x8000", "partitions.bin"
-                "0xe000", "boot_app0.bin"
-                "0x10000", "firmware.bin"
+                "--chip", "esp32-s3",
+                "merge-bin", "-o", "merged-firmware.bin",
+                "--flash-size", "32MB",
+                "0x0000", "bootloader.bin",
+                "0x8000", "partitions.bin",
+                "0xe000", "boot_app0.bin",
+                "0x10000", "firmware.bin",
                 "0x00910000", "littlefs.bin"
             )
 
@@ -208,18 +213,24 @@ if (-not $SkipUpload) {
     try {
         Push-Location $Environment
 
+        # Basic sanity: if SkipBuild was used, try to fetch binaries from last build location
+        if (-not (Test-Path "firmware.bin")) {
+            $lastFirmware = Join-Path ".pio\\build\\$Environment" "firmware.bin"
+            if (Test-Path $lastFirmware) { Copy-Item $lastFirmware . -Force }
+        }
+
         if ($FilesystemOnly) {
             # Fast filesystem-only upload
-            python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x00910000 littlefs.bin
+            python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-size detect 0x00910000 littlefs.bin
         }
         else {
             # Fast full upload using merged binary (faster than individual files)
             if (Test-Path "merged-firmware.bin") {
-                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x0 merged-firmware.bin
+                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-size detect 0x0000 merged-firmware.bin
             }
             else {
                 # Fallback to individual files
-                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-mode qio --flash-size detect 0x0000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin 0x00910000 littlefs.bin
+                python -m esptool -p $ComPort -b $BaudRate --chip esp32-s3 write-flash --flash-size detect 0x0000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin 0x00910000 littlefs.bin
             }
         }
 

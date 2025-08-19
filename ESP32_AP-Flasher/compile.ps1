@@ -11,11 +11,11 @@ param(
     [ValidateSet('esp32s3', 'esp32c6', 'esp32c3')]
     [string]$Chip = 'esp32s3',
     [ValidateSet('qio', 'dio', 'dout', 'qout', 'opi')]
-    [string]$FlashMode = 'qio',
+    [string]$FlashMode = 'opi',
     [ValidateSet('80m', '40m')]
     [string]$FlashFreq = '80m',
     [ValidateSet('32MB', '16MB', 'detect')]
-    [string]$FlashSize = 'detect',
+    [string]$FlashSize = '32MB',
     [switch]$DetectFlash,
     [switch]$DetectOnly,
     [switch]$EraseAll,
@@ -29,7 +29,9 @@ param(
     [switch]$Verbose,
     [switch]$FilesystemOnly,
     [switch]$FastBuild,
-    [int]$Jobs = 0
+    [int]$Jobs = 0,
+    [switch]$SkipFilesystem,
+    [switch]$LiveProgress
 )
 
 # Configuration
@@ -641,6 +643,15 @@ try {
         }
     }
 
+    if ($SkipFilesystem) {
+        # Remove filesystem entry if requested
+        $fsKey = $spiffsOffset
+        if ($flashConfig.addresses.ContainsKey($fsKey)) {
+            [void]$flashConfig.addresses.Remove($fsKey)
+            Write-ColorOutput "MERGE Note: Skipping filesystem (littlefs) in merged image as requested" "Info"
+        }
+    }
+
     # Build merge command
     $mergeArgs = @(
         "--chip", $flashConfig.chip,
@@ -833,6 +844,24 @@ if (-not $SkipUpload) {
                     "write-flash",
                     "0x0000", (Resolve-Path -Path (Join-Path $outputDir 'merged-firmware.bin')).Path
                 )
+                if ($LiveProgress) {
+                    # Stream esptool output live for progress visibility
+                    $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing:$AutoInstallEsptool
+                    if (-not $esptoolInvoker) { throw "esptool not found for live progress." }
+                    if ($esptoolInvoker[0] -eq 'esptool.py') {
+                        & esptool.py @($uploadArgs)
+                    }
+                    else {
+                        $python = $esptoolInvoker[0]
+                        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
+                        & $python @moduleArgs
+                    }
+                    if ($LASTEXITCODE -ne 0) { throw "Upload failed (live mode)" }
+                    $uploadTimer.Stop()
+                    Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
+                    # Skip retry wrapper when using live progress
+                    $resFw = [PSCustomObject]@{ ExitCode = 0 }
+                }
             }
             else {
                 $uploadArgs = @(
@@ -855,10 +884,31 @@ if (-not $SkipUpload) {
                         $uploadArgs += $addr.Key, $filePath
                     }
                 }
+
+                if ($LiveProgress) {
+                    # Stream esptool output live for progress visibility
+                    $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing:$AutoInstallEsptool
+                    if (-not $esptoolInvoker) { throw "esptool not found for live progress." }
+                    if ($esptoolInvoker[0] -eq 'esptool.py') {
+                        & esptool.py @($uploadArgs)
+                    }
+                    else {
+                        $python = $esptoolInvoker[0]
+                        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
+                        & $python @moduleArgs
+                    }
+                    if ($LASTEXITCODE -ne 0) { throw "Upload failed (live mode)" }
+                    $uploadTimer.Stop()
+                    Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
+                    # Skip retry wrapper when using live progress
+                    $resFw = [PSCustomObject]@{ ExitCode = 0 }
+                }
             }
 
-            Write-ColorOutput "  ├─ Connecting to device..." "Progress"
-            $resFw = Invoke-EsptoolWithRetry -BaseArgs $uploadArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 240 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            if (-not $LiveProgress) {
+                Write-ColorOutput "  ├─ Connecting to device..." "Progress"
+                $resFw = Invoke-EsptoolWithRetry -BaseArgs $uploadArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 240 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            }
             if ($resFw.ExitCode -ne 0) { throw "Upload failed (code $($resFw.ExitCode))" }
 
             $uploadTimer.Stop()

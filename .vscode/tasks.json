@@ -1,41 +1,112 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "build",
-			"type": "shell",
-			"command": "dotnet",
-			"args": [
-				"build",
-				"/property:GenerateFullPaths=true",
-				"/consoleloggerparameters:NoSummary"
-			],
-			"group": "build"
-		},
-		{
-			"label": "build: ESP32_AP-Flasher OutdoorAP",
-			"type": "shell",
-			"command": "pio",
-			"args": [
-				"run",
-				"-e",
-				"OutdoorAP"
-			],
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build"
-		},
-		{
-			"label": "pio build OutdoorAP",
-			"type": "shell",
-			"command": "pio",
-			"args": [
-				"run",
-				"-e",
-				"OutdoorAP"
-			],
-			"group": "build"
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PIO: Build OutdoorAP",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher" },
+      "command": "pio",
+      "args": ["run", "-e", "OutdoorAP"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "PIO: Upload OutdoorAP (auto)",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher" },
+      "command": "pio",
+      "args": ["run", "-e", "OutdoorAP", "-t", "upload"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "PIO: Upload OutdoorAP (choose port)",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher" },
+      "command": "pio",
+      "args": [
+        "run",
+        "-e",
+        "OutdoorAP",
+        "-t",
+        "upload",
+        "--upload-port",
+        "${input:uploadPort}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PIO: Monitor (choose port)",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}" },
+      "command": "pio",
+      "args": [
+        "device",
+        "monitor",
+        "--baud",
+        "115200",
+        "--port",
+        "${input:monitorPort}"
+      ],
+      "isBackground": false,
+      "problemMatcher": []
+    },
+    {
+      "label": "QEMU: Start (OutdoorAP)",
+      "type": "shell",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher" },
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/ESP32_AP-Flasher/emulation_setup.ps1",
+        "qemu",
+        "-Environment",
+        "OutdoorAP"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "build: ESP32_AP-Flasher OutdoorAP",
+      "type": "shell",
+      "command": "pio",
+      "args": ["run", "-e", "OutdoorAP"],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "pio build OutdoorAP",
+      "type": "shell",
+      "command": "pio",
+      "args": ["run", "-e", "OutdoorAP"],
+      "group": "build"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "uploadPort",
+      "type": "promptString",
+      "description": "Enter upload serial port (e.g. COM10)",
+      "default": "COM10"
+    },
+    {
+      "id": "monitorPort",
+      "type": "promptString",
+      "description": "Enter monitor serial port (e.g. COM10)",
+      "default": "COM10"
+    }
+  ]
 }

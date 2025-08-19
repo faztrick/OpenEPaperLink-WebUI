@@ -54,13 +54,13 @@
     "connections": [
         [
             "esp32s3:GPIO13",
-            "display1:MOSI",
+            "display1:SDA",
             "blue",
             []
         ],
         [
             "esp32s3:GPIO12",
-            "display1:SCLK",
+            "display1:SCL",
             "yellow",
             []
         ],
@@ -78,7 +78,7 @@
         ],
         [
             "esp32s3:GPIO1",
-            "display1:RST",
+            "display1:RES",
             "orange",
             []
         ],

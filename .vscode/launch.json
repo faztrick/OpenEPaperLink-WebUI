@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ESP32 QEMU: Attach GDB (OutdoorAP)",
+      "type": "cppdbg",
+      "request": "launch",
+      "MIMode": "gdb",
+      "miDebuggerPath": "${env:USERPROFILE}\\.platformio\\packages\\toolchain-xtensa-esp32s3\\bin\\xtensa-esp32s3-elf-gdb.exe",
+      "program": "${workspaceFolder}/ESP32_AP-Flasher/.pio/build/OutdoorAP/firmware.elf",
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
+      "externalConsole": false,
+      "setupCommands": [
+        { "text": "file ${workspaceFolder}/ESP32_AP-Flasher/.pio/build/OutdoorAP/firmware.elf" },
+        { "text": "target remote 127.0.0.1:3333" },
+        { "text": "monitor reset halt" }
+      ]
+    }
+  ]
+}

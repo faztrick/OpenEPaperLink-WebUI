@@ -80,3 +80,6 @@ __pycache__/
 
 # Dependencies lock files that might contain sensitive info
 dependencies.lock
+
+# Wokwi token file (local secret)
+.wokwi_token
