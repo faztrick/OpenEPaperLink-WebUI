@@ -323,6 +323,39 @@
                 </div>
             </div>
         </div>
+
+        <!-- Quick WiFi Scan Modal -->
+        <div id="wifi-scan-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="wifi-scan-title"><i class="fas fa-wifi"></i> WiFi Setup</h3>
+                    <button class="modal-close" id="wifi-scan-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="wifi-scan-host">Device Host/IP</label>
+                        <input id="wifi-scan-host" placeholder="192.168.4.1" />
+                    </div>
+                    <div class="form-group">
+                        <label>Networks</label>
+                        <div id="wifi-scan-status" class="muted" style="margin-bottom:6px"></div>
+                        <div id="wifi-scan-list" style="max-height:260px;overflow:auto;border:1px solid #333;border-radius:6px;padding:8px;background:#0a0a0a"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="wifi-scan-ssid">SSID</label>
+                        <input id="wifi-scan-ssid" placeholder="Network name" />
+                    </div>
+                    <div class="form-group">
+                        <label for="wifi-scan-pass">Password</label>
+                        <input type="password" id="wifi-scan-pass" placeholder="••••••••" />
+                    </div>
+                </div>
+                <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+                    <button class="btn" id="wifi-scan-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="wifi-scan-send"><i class="fas fa-paper-plane"></i> Send</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>

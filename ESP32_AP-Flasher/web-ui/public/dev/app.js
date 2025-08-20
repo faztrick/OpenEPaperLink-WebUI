@@ -867,7 +867,14 @@ class ESP32DevUI {
                 if (info.channel) parts.push(`ch ${info.channel}`);
                 el.innerHTML = `${dot}<span>WiFi: Connected${parts.length ? ' • ' + parts.join(' • ') : ''}</span>`;
             } else {
-                el.innerHTML = `${dot}<span>WiFi: Offline</span>`;
+                // Add inline WiFi scan action when offline
+                const btnId = `wifi-scan-btn-${dev.id}`;
+                el.innerHTML = `${dot}<span>WiFi: Offline</span> <button id="${btnId}" class="btn btn-small btn-outline" style="margin-left:6px"><i class="fas fa-wifi"></i> Scan</button>`;
+                // Wire the scan button (idempotent by reassigning handler)
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    btn.onclick = () => this.openWifiScanModal(dev);
+                }
             }
         } catch (e) {
             // ignore update errors
@@ -884,6 +891,131 @@ class ESP32DevUI {
                 }
             });
         } catch (e) { /* ignore */ }
+    }
+
+    // --- Quick WiFi Scan Modal for a device ---
+    openWifiScanModal(device) {
+        try {
+            const modal = document.getElementById('wifi-scan-modal');
+            if (!modal) return alert('WiFi scan modal not found');
+            modal.style.display = 'block';
+
+            // Populate fields
+            const title = document.getElementById('wifi-scan-title');
+            const hostEl = document.getElementById('wifi-scan-host');
+            const ssidEl = document.getElementById('wifi-scan-ssid');
+            const passEl = document.getElementById('wifi-scan-pass');
+            const statusEl = document.getElementById('wifi-scan-status');
+            const listEl = document.getElementById('wifi-scan-list');
+            if (title) title.textContent = `WiFi Setup: ${device.name || device.id}`;
+            if (hostEl) hostEl.value = device.ip || '';
+            if (ssidEl) ssidEl.value = '';
+            if (passEl) passEl.value = '';
+            if (statusEl) statusEl.textContent = '';
+            if (listEl) listEl.innerHTML = '<em>Scanning...</em>';
+
+            // Store device id for later submit
+            modal.setAttribute('data-device-id', device.id);
+
+            // Wire close buttons once
+            const closeEls = [document.getElementById('wifi-scan-close'), document.getElementById('wifi-scan-cancel')];
+            closeEls.forEach(el => { if (el && !el.__wired) { el.addEventListener('click', () => modal.style.display = 'none'); el.__wired = true; }});
+            const sendBtn = document.getElementById('wifi-scan-send');
+            if (sendBtn && !sendBtn.__wired) {
+                sendBtn.addEventListener('click', () => this.sendWifiCredentialsFromModal());
+                sendBtn.__wired = true;
+            }
+
+            // Kick off scan
+            this.scanNetworksForHost(device.ip).catch(err => {
+                if (statusEl) statusEl.textContent = `Scan error: ${err.message}`;
+            });
+        } catch (e) {
+            alert(`Error opening WiFi scan: ${e.message}`);
+        }
+    }
+
+    async scanNetworksForHost(host) {
+        const listEl = document.getElementById('wifi-scan-list');
+        const statusEl = document.getElementById('wifi-scan-status');
+        if (!host) {
+            if (statusEl) statusEl.textContent = 'Set device host/IP first';
+            return;
+        }
+        try {
+            if (statusEl) statusEl.textContent = 'Scanning...';
+            const r = await fetch(`/api/device/wifi/scan?host=${encodeURIComponent(host)}`);
+            const j = await r.json();
+            if (!j.success) throw new Error(j.error || 'scan failed');
+            const networks = Array.isArray(j.networks) ? j.networks : [];
+            if (statusEl) statusEl.textContent = `Found ${networks.length} networks`;
+            this.renderWifiScanList(networks);
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+            if (listEl) listEl.innerHTML = '<em>Scan failed</em>';
+        }
+    }
+
+    renderWifiScanList(list) {
+        const box = document.getElementById('wifi-scan-list');
+        const ssidEl = document.getElementById('wifi-scan-ssid');
+        if (!box) return;
+        box.innerHTML = '';
+        if (!Array.isArray(list) || list.length === 0) {
+            box.innerHTML = '<em>No networks found</em>';
+            return;
+        }
+        const table = document.createElement('table');
+        table.className = 'simple-table';
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>SSID</th><th>RSSI</th><th>Security</th><th></th></tr>';
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        list.forEach(n => {
+            const ssid = n.ssid || n.SSID || n.name || '';
+            const rssi = n.rssi ?? n.RSSI ?? '';
+            const sec = n.encryption || n.auth || n.type || '';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${ssid}</td><td>${rssi}</td><td>${sec}</td><td><button class="btn btn-small" data-ssid="${ssid}">Use</button></td>`;
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        box.appendChild(table);
+        // Wire Use buttons
+        box.querySelectorAll('button[data-ssid]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const ssid = btn.getAttribute('data-ssid') || '';
+                if (ssidEl) ssidEl.value = ssid;
+                // Also mirror into WiFi page if present
+                try { const wifiPageSsid = document.getElementById('wifi-ssid'); if (wifiPageSsid) wifiPageSsid.value = ssid; } catch (_) {}
+            });
+        });
+    }
+
+    async sendWifiCredentialsFromModal() {
+        const modal = document.getElementById('wifi-scan-modal');
+        if (!modal) return;
+        const host = (document.getElementById('wifi-scan-host')?.value || '').trim();
+        const ssid = (document.getElementById('wifi-scan-ssid')?.value || '').trim();
+        const password = document.getElementById('wifi-scan-pass')?.value || '';
+        const statusEl = document.getElementById('wifi-scan-status');
+        if (!host) { if (statusEl) statusEl.textContent = 'Enter device host/IP'; return; }
+        if (!ssid) { if (statusEl) statusEl.textContent = 'Choose an SSID'; return; }
+        try {
+            if (statusEl) statusEl.textContent = 'Sending credentials...';
+            const res = await fetch('/api/device/wifi/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, ssid, password }) });
+            const j = await res.json();
+            if (!j.success) throw new Error(j.error || 'connect failed');
+            if (statusEl) statusEl.textContent = 'Saved. Device will try to connect.';
+            // Update device status shortly after
+            const devId = modal.getAttribute('data-device-id');
+            const dev = this.devices.find(d => d.id === devId);
+            setTimeout(() => { if (dev) this.updateDeviceWifiStatus(dev); }, 3000);
+            // Also prefill WiFi page fields if present
+            try { const wSsid = document.getElementById('wifi-ssid'); if (wSsid) wSsid.value = ssid; const wPass = document.getElementById('wifi-pass'); if (wPass) wPass.value = password; } catch (_) {}
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+        }
     }
 
     // Test reachability of a remote host (HTTP) with a short timeout

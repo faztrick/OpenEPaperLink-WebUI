@@ -18,6 +18,17 @@
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
 
+// Control verbosity to host USB CDC (Serial). Excess output can interfere with flashing.
+// Set to 1 only when you explicitly want to see raw AP UART traffic echoed to USB.
+#ifndef AP_SERIAL_ECHO
+#define AP_SERIAL_ECHO 0
+#endif
+
+// Verbose logs for periodic operations (e.g., ping spam)
+#ifndef AP_SERIAL_VERBOSE
+#define AP_SERIAL_VERBOSE 0
+#endif
+
 QueueHandle_t rxCmdQueue;
 SemaphoreHandle_t txActive;
 
@@ -405,7 +416,8 @@ bool sendPing()
         return true;
     if (apInfo.state == AP_STATE_FLASHING)
         return false;
-    Serial.print("ping");
+    if (AP_SERIAL_VERBOSE)
+        Serial.print("ping");
     int t = millis();
     if (!txStart())
         return false;
@@ -421,7 +433,8 @@ bool sendPing()
         }
     }
     txEnd();
-    Serial.println(" failed");
+    if (AP_SERIAL_VERBOSE)
+        Serial.println(" failed");
     return false;
 }
 bool sendGetInfo()
@@ -566,7 +579,10 @@ void rxSerialTask(void *parameter)
             {
             case ZBS_RX_WAIT_HEADER:
 
-                Serial.write(lastchar);
+                if (AP_SERIAL_ECHO)
+                {
+                    Serial.write(lastchar);
+                }
 
                 //  shift characters in
                 for (uint8_t c = 0; c < 3; c++)
@@ -867,7 +883,10 @@ void rxSerialTask2(void *parameter)
             charCount++;
 
             // debug info
-            Serial.write(lastchar);
+            if (AP_SERIAL_ECHO)
+            {
+                Serial.write(lastchar);
+            }
 
             rxStr[rxStrCount] = lastchar;
             if (lastchar == '\n' || lastchar == '\r')
@@ -1183,103 +1202,103 @@ void APTask(void *parameter)
 
         refreshAllPending();
     }
-    else
-    {
-#ifndef FLASH_TIMEOUT
-#define FLASH_TIMEOUT 30
-#endif
+    //     else
+    //     {
+    // #ifndef FLASH_TIMEOUT
+    // #define FLASH_TIMEOUT 30
+    // #endif
 
-        if (FLASHER_AP_MOSI == -1)
-        {
-            Serial.printf("I wasn't able to connect to the AP radio. Did you flash it?\r\n");
-            Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
-#ifdef HAS_RGB_LED
-            showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
-#endif
-            if (apInfo.state != AP_STATE_FLASHING) // In case we are flashing already we do not want to end in a failed AP
-                setAPstate(false, AP_STATE_FAILED);
-        }
-        else
-        {
-#ifndef C6_OTA_FLASHING
-            // AP unavailable, maybe time to flash?
-            setAPstate(false, AP_STATE_OFFLINE);
+    //         if (FLASHER_AP_MOSI == 0)
+    //         {
+    //             Serial.printf("I wasn't able to connect to the AP radio. Did you flash it?\r\n");
+    //             Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
+    // #ifdef HAS_RGB_LED
+    //             showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
+    // #endif
+    //             if (apInfo.state != AP_STATE_FLASHING) // In case we are flashing already we do not want to end in a failed AP
+    //                 setAPstate(false, AP_STATE_FAILED);
+    //         }
+    //         else
+    //         {
+    // #ifndef C6_OTA_FLASHING
+    //             // AP unavailable, maybe time to flash?
+    //             setAPstate(false, AP_STATE_OFFLINE);
 
-            Serial.printf("I wasn't able to connect to a ZBS (AP) tag.\r\n");
-            Serial.printf("This could be the first time this AP is booted and the AP-tag may be unflashed.\r\n");
-            Serial.printf("If this tag was previously flashed succesfully but this message still shows up, there's probably something wrong with the serial connections.\r\n");
-            Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
-            Serial.printf("Performing firmware flash in about %d seconds!\r\n", FLASH_TIMEOUT);
-            flashCountDown(FLASH_TIMEOUT);
-            if (doAPFlash())
-            {
-                checkWaitPowerCycle();
-                if (bringAPOnline())
-                {
-                    // AP works
-                    ShowAPInfo();
-                    if (apInfo.type == SOLUM_SEG_UK)
-                    {
-                        segmentedShowIp();
-                        showAPSegmentedInfo(apInfo.mac, true);
-                    }
-                    refreshAllPending();
-                }
-                else
-                {
-                    Serial.printf("Failed to bring up the AP after successful flashing... That's not supposed to happen!\r\n");
-                    Serial.printf("This generally means that the flasher connections (MISO/MOSI/CLK/RESET/CS) are okay,\r\n");
-                    Serial.printf("but we can't (yet) talk to the AP over serial lines. Verify the pins mentioned above.\r\n\r\n");
+    //             Serial.printf("I wasn't able to connect to a ZBS (AP) tag.\r\n");
+    //             Serial.printf("This could be the first time this AP is booted and the AP-tag may be unflashed.\r\n");
+    //             Serial.printf("If this tag was previously flashed succesfully but this message still shows up, there's probably something wrong with the serial connections.\r\n");
+    //             Serial.printf("The build of this firmware expects an AP tag with TXD/RXD on ESP32 pins %d and %d, does this match with your wiring?\r\n", FLASHER_AP_RXD, FLASHER_AP_TXD);
+    //             Serial.printf("Performing firmware flash in about %d seconds!\r\n", FLASH_TIMEOUT);
+    //             flashCountDown(FLASH_TIMEOUT);
+    //             if (doAPFlash())
+    //             {
+    //                 checkWaitPowerCycle();
+    //                 if (bringAPOnline())
+    //                 {
+    //                     // AP works
+    //                     ShowAPInfo();
+    //                     if (apInfo.type == SOLUM_SEG_UK)
+    //                     {
+    //                         segmentedShowIp();
+    //                         showAPSegmentedInfo(apInfo.mac, true);
+    //                     }
+    //                     refreshAllPending();
+    //                 }
+    //                 else
+    //                 {
+    //                     Serial.printf("Failed to bring up the AP after successful flashing... That's not supposed to happen!\r\n");
+    //                     Serial.printf("This generally means that the flasher connections (MISO/MOSI/CLK/RESET/CS) are okay,\r\n");
+    //                     Serial.printf("but we can't (yet) talk to the AP over serial lines. Verify the pins mentioned above.\r\n\r\n");
 
-#ifndef POWER_NO_SOFT_POWER
-                    Serial.printf("The firmware you're using expects soft power control over the AP tag; if it can't\r\n");
-                    Serial.printf("power-cycle the AP-tag using GPIO pin %d, this can cause this very same issue.\r\n", APpowerPins[0]);
-#endif
+    // #ifndef POWER_NO_SOFT_POWER
+    //                     Serial.printf("The firmware you're using expects soft power control over the AP tag; if it can't\r\n");
+    //                     Serial.printf("power-cycle the AP-tag using GPIO pin %d, this can cause this very same issue.\r\n", APpowerPins[0]);
+    // #endif
 
-#ifdef HAS_RGB_LED
-                    showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
-#endif
-                    setAPstate(false, AP_STATE_FAILED);
-                }
-            }
-            else
-            {
-                // failed to flash
-#ifdef HAS_RGB_LED
-                showColorPattern(CRGB::Red, CRGB::Red, CRGB::Red);
-#endif
-                setAPstate(false, AP_STATE_FAILED);
-                Serial.println("Failed to flash the AP :(");
-                Serial.println("Seems like you're running into some issues with the wiring, or (very small chance) the tag itself");
-                Serial.println("This ESP32-build expects the following pins connected to the ZBS243:");
-                Serial.println("---  ZBS243 based tag              ESP32  ---");
-                Serial.printf("       TXD     ----------------     %02d\r\n", FLASHER_AP_RXD);
-                Serial.printf("       RXD     ----------------     %02d\r\n", FLASHER_AP_TXD);
-                Serial.printf("       CS/SS   ----------------     %02d\r\n", FLASHER_AP_SS);
-                Serial.printf("       MOSI    ----------------     %02d\r\n", FLASHER_AP_MOSI);
-                Serial.printf("       MISO    ----------------     %02d\r\n", FLASHER_AP_MISO);
-                Serial.printf("       CLK     ----------------     %02d\r\n", FLASHER_AP_CLK);
-                Serial.printf("       RSET    ----------------     %02d\r\n", FLASHER_AP_RESET);
-#ifdef POWER_NO_SOFT_POWER
-                Serial.printf("Your firmware is configured without soft power control. This means you'll have to manually power-cycle the tag after flashing.\r\n");
-#else
-                Serial.printf("       POWER   ----------------     %02d\r\n", APpowerPins[0]);
-#endif
-                Serial.println("Please verify your wiring and try again!");
-            }
-#ifdef HAS_SDCARD
-            if (SD_CARD_CLK == FLASHER_AP_CLK ||
-                SD_CARD_MISO == FLASHER_AP_MISO ||
-                SD_CARD_MOSI == FLASHER_AP_MOSI)
-            {
-                Serial.println("Reseting in 30 seconds to restore SPI state!\r\n");
-                flashCountDown(30);
-                ESP.restart();
-            }
-#endif
-#endif
-        }
-    }
+    // #ifdef HAS_RGB_LED
+    //                     showColorPattern(CRGB::Red, CRGB::Yellow, CRGB::Red);
+    // #endif
+    //                     setAPstate(false, AP_STATE_FAILED);
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 // failed to flash
+    // #ifdef HAS_RGB_LED
+    //                 showColorPattern(CRGB::Red, CRGB::Red, CRGB::Red);
+    // #endif
+    //                 setAPstate(false, AP_STATE_FAILED);
+    //                 Serial.println("Failed to flash the AP :(");
+    //                 Serial.println("Seems like you're running into some issues with the wiring, or (very small chance) the tag itself");
+    //                 Serial.println("This ESP32-build expects the following pins connected to the ZBS243:");
+    //                 Serial.println("---  ZBS243 based tag              ESP32  ---");
+    //                 Serial.printf("       TXD     ----------------     %02d\r\n", FLASHER_AP_RXD);
+    //                 Serial.printf("       RXD     ----------------     %02d\r\n", FLASHER_AP_TXD);
+    //                 Serial.printf("       CS/SS   ----------------     %02d\r\n", FLASHER_AP_SS);
+    //                 Serial.printf("       MOSI    ----------------     %02d\r\n", FLASHER_AP_MOSI);
+    //                 Serial.printf("       MISO    ----------------     %02d\r\n", FLASHER_AP_MISO);
+    //                 Serial.printf("       CLK     ----------------     %02d\r\n", FLASHER_AP_CLK);
+    //                 Serial.printf("       RSET    ----------------     %02d\r\n", FLASHER_AP_RESET);
+    // #ifdef POWER_NO_SOFT_POWER
+    //                 Serial.printf("Your firmware is configured without soft power control. This means you'll have to manually power-cycle the tag after flashing.\r\n");
+    // #else
+    //                 Serial.printf("       POWER   ----------------     %02d\r\n", APpowerPins[0]);
+    // #endif
+    //                 Serial.println("Please verify your wiring and try again!");
+    //             }
+    // #ifdef HAS_SDCARD
+    //             if (SD_CARD_CLK == FLASHER_AP_CLK ||
+    //                 SD_CARD_MISO == FLASHER_AP_MISO ||
+    //                 SD_CARD_MOSI == FLASHER_AP_MOSI)
+    //             {
+    //                 Serial.println("Reseting in 30 seconds to restore SPI state!\r\n");
+    //                 flashCountDown(30);
+    //                 ESP.restart();
+    //             }
+    // #endif
+    // #endif
+    //         }
+    //     }
 
     uint8_t attempts = 0;
     while (1)

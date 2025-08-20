@@ -587,17 +587,21 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
         Serial.printf("WARNING: Failed to set power save mode: %s\n", esp_err_to_name(ret));
     }
 
-    ret = WiFi.setTxPower(WIFI_POWER_19_5dBm); // Optimal power for ESP32-S3
-    if (!ret)
+    // Set TX power (Arduino API returns bool)
     {
-        Serial.println("WARNING: Failed to set TX power");
+        bool txp_ok = WiFi.setTxPower(WIFI_POWER_19_5dBm); // Optimal power for ESP32-S3
+        if (!txp_ok)
+        {
+            Serial.println("WARNING: Failed to set TX power");
+        }
     }
 
     // Initialize WiFi with optimized configuration
     wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
     wifi_init_cfg.nvs_enable = 0; // Disable NVS storage
     ret = esp_wifi_init(&wifi_init_cfg);
-    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT)
+    // It's not an error if WiFi was already initialized
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_INIT_STATE)
     {
         Serial.printf("ERROR: WiFi init failed: %s\n", esp_err_to_name(ret));
         return false;
@@ -850,7 +854,7 @@ void WifiManager::startManagementServer()
         // Sanitize configuration
         if (apSsid.length() == 0)
             apSsid = "OpenEPaperLink";
-        // Always run open AP (no password) per requirement
+        // Always run open AP (no password), per requirement
         bool usePassword = false;
         if (apChannel < 1 || apChannel > 13)
             apChannel = 1;
@@ -869,9 +873,13 @@ void WifiManager::startManagementServer()
         terminalLog("Starting config AP, ssid: " + apSsid);
         logLine("Starting configuration AP, ssid " + apSsid);
 
-        // Proper disconnect sequence
-        WiFi.disconnect(true, true);
-        vTaskDelay(pdMS_TO_TICKS(200));
+        // Proper mode: keep STA available too
+        // Avoid full disconnect if already in AP/dual to keep clients
+        if ((WiFi.getMode() & WIFI_MODE_AP) == 0)
+        {
+            WiFi.disconnect(true, true);
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
 
         // Optimized WiFi settings for ESP32-S3 AP mode
         WiFi.mode(WIFI_AP_STA); // Use dual mode to allow scanning while in AP mode
@@ -888,16 +896,7 @@ void WifiManager::startManagementServer()
             Serial.println("WARNING: Failed to set AP TX power");
         }
 
-        // Pre-configure scan settings for when users request WiFi networks
-        wifi_scan_config_t scanConf;
-        memset(&scanConf, 0, sizeof(scanConf));
-        scanConf.ssid = NULL;
-        scanConf.bssid = NULL;
-        scanConf.channel = 0;
-        scanConf.show_hidden = true;
-        scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-        scanConf.scan_time.active.min = 100; // Faster scan timing
-        scanConf.scan_time.active.max = 300;
+        // Remove unused local scanConf; scanning is handled elsewhere when needed
 
         // Optional: configure AP IP if provided
         if (apIPStr.length() > 0 && apMaskStr.length() > 0 && apGwStr.length() > 0)
@@ -909,14 +908,17 @@ void WifiManager::startManagementServer()
             }
         }
 
-        // Start AP with optimized settings and configured parameters (forced open network)
-        if (!WiFi.softAP(apSsid.c_str(), "", apChannel, apHidden, apMaxClients))
+        // Start AP with optimized settings and configured parameters
+        const char *apPassCStr = usePassword ? apPassword.c_str() : "";
+        if (!WiFi.softAP(apSsid.c_str(), apPassCStr, apChannel, apHidden, apMaxClients))
         { // Allow up to apMaxClients connections
             Serial.println("ERROR: Failed to start WiFi AP");
             return;
         }
 
-        if (!WiFi.softAPsetHostname(apSsid.c_str()))
+        // Set AP hostname based on buildHostname(AP)
+        String apHost = buildHostname(WIFI_IF_AP);
+        if (!WiFi.softAPsetHostname(apHost.c_str()))
         {
             Serial.println("WARNING: Failed to set AP hostname");
         }
@@ -929,7 +931,7 @@ void WifiManager::startManagementServer()
         }
 
         IPAddress IP = WiFi.softAPIP();
-        terminalLog("✅ AP Started (open). Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
+        terminalLog("✅ AP Started (open). Connect and visit http://" + String(IP.toString().c_str()) + "/setup");
         Serial.printf("AP Mode (open): SSID=%s, CH=%d, Hidden=%s, Max=%d, IP=%s, MAC=%s\n",
                       apSsid.c_str(), apChannel, apHidden ? "yes" : "no", apMaxClients,
                       IP.toString().c_str(), WiFi.softAPmacAddress().c_str());
