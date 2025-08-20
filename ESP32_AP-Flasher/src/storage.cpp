@@ -259,7 +259,28 @@ void DynStorage::begin()
         contentFS->mkdir("/temp");
     }
 
-    // Ensure a minimal apconfig.json exists to avoid open() errors elsewhere.
+    // Ensure a minimal staconfig.json exists to avoid open() errors elsewhere (STA credentials)
+    const char *staconfigPath = "/current/staconfig.json";
+    if (!contentFS->exists(staconfigPath))
+    {
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        File cfg = contentFS->open(staconfigPath, "w");
+        if (cfg)
+        {
+            // Write a minimal JSON configuration for STA
+            const char *defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
+            cfg.print(defaultCfg);
+            cfg.close();
+            Serial.println("Created default /current/staconfig.json");
+        }
+        else
+        {
+            Serial.println("Warning: Failed to create /current/staconfig.json — storage may be read-only");
+        }
+        xSemaphoreGive(fsMutex);
+    }
+
+    // Maintain legacy/default AP/system config file for AP mode and other settings
     const char *apconfigPath = "/current/apconfig.json";
     if (!contentFS->exists(apconfigPath))
     {
@@ -267,8 +288,8 @@ void DynStorage::begin()
         File cfg = contentFS->open(apconfigPath, "w");
         if (cfg)
         {
-            // Write a minimal JSON configuration
-            const char *defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
+            // Minimal AP/system config
+            const char *defaultCfg = "{\"alias\":\"\",\"channel\":0}";
             cfg.print(defaultCfg);
             cfg.close();
             Serial.println("Created default /current/apconfig.json");

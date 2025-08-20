@@ -33,13 +33,25 @@
 
     <main class="settings-container container">
         <h2>Advanced Build Tools</h2>
+        <div class="form-group" style="margin-bottom:1rem">
+            <label for="jobs">Parallel Jobs</label>
+            <select id="jobs">
+                <option value="0" selected>Auto</option>
+                <option value="4">4</option>
+                <option value="8">8</option>
+                <option value="12">12</option>
+                <option value="16">16</option>
+                <option value="24">24</option>
+            </select>
+            <div style="color:#9ca3af;font-size:0.9rem;margin-top:4px">Reduce this to lower CPU usage during builds. "Auto" lets PlatformIO decide.</div>
+        </div>
         <div class="button-grid">
-            <button class="btn btn-primary" id="run-build"><i class="fas fa-hammer"></i> Run Build</button>
-            <button class="btn btn-success" id="run-upload"><i class="fas fa-upload"></i> Upload</button>
+            <button class="btn btn-primary" id="run-build" data-action="build"><i class="fas fa-hammer"></i> Run Build</button>
+            <button class="btn btn-success" id="run-upload" data-action="upload"><i class="fas fa-upload"></i> Upload</button>
             <button class="btn btn-outline" id="open-build"><i class="fas fa-folder-open"></i> Open Build Folder</button>
             <button class="btn btn-info" id="open-webui"><i class="fas fa-globe"></i> Open Web UI</button>
-            <button class="btn btn-warning" id="fast-build"><i class="fas fa-bolt"></i> Turbo Build</button>
-            <button class="btn btn-danger" id="clean-build-btn"><i class="fas fa-broom"></i> Clean Build</button>
+            <button class="btn btn-warning" id="fast-build" data-action="fast-build"><i class="fas fa-bolt"></i> Turbo Build</button>
+            <button class="btn btn-danger" id="clean-build-btn" data-action="clean"><i class="fas fa-broom"></i> Clean Build</button>
         </div>
 
         <div style="margin-top:1rem">

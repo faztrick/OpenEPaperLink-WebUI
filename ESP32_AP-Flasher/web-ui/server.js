@@ -275,7 +275,10 @@ function checksum(buf) {
 }
 
 function buildImprovRpc(command, payload = Buffer.alloc(0)) {
-    const pl = Buffer.concat([Buffer.from([command]), payload]);
+    // Insert an overall data-length byte (payload length) after the command to
+    // match the firmware's parse_improv_data expectation.
+    const lenByte = Buffer.from([payload.length & 0xFF]);
+    const pl = Buffer.concat([Buffer.from([command]), lenByte, payload]);
     const header = Buffer.concat([IMPROV_HDR, Buffer.from([IMPROV_VER, TYPE_RPC, pl.length])]);
     const frame = Buffer.concat([header, pl]);
     return Buffer.concat([frame, checksum(frame)]);
@@ -317,16 +320,34 @@ function parseImprovFrames(buffer, onFrame) {
 function decodeRpcPayload(payload) {
     if (!payload || payload.length === 0) return { cmd: 0, items: [] };
     const cmd = payload[0];
-    const items = [];
-    let i = 1;
-    while (i < payload.length) {
-        const sl = payload[i];
-        i += 1;
-        if (i + sl > payload.length) break;
-        const s = payload.slice(i, i + sl).toString('utf8');
-        items.push(s);
-        i += sl;
+
+    // Parser that assumes items start at given index and are encoded as [len][bytes]...
+    const tryParseFrom = (startIdx) => {
+        const items = [];
+        let i = startIdx;
+        while (i < payload.length) {
+            const sl = payload[i];
+            i += 1;
+            if (i + sl > payload.length) return items; // truncated or invalid
+            const s = payload.slice(i, i + sl).toString('utf8');
+            items.push(s);
+            i += sl;
+        }
+        return items;
+    };
+
+    // Most implementations put an overall-length byte at index 1; others omit it.
+    // Try the simple parse first; if it yields no items but payload has room,
+    // try skipping the overall-length byte at index 1.
+    let items = tryParseFrom(1);
+    if (items.length === 0 && payload.length >= 2) {
+        const maybeTotalLen = payload[1];
+        // If there is a total length, the items should start at index 2.
+        const items2 = tryParseFrom(2);
+        // Prefer the parse that yields more items
+        if (items2.length > items.length) items = items2;
     }
+
     return { cmd, items };
 }
 
@@ -341,7 +362,11 @@ const defaultConfig = {
     verbose: false,
     filesystemOnly: false,
     skipUpload: false,
-    monitor: false
+    monitor: false,
+    // When true, the web UI and APIs will only work with a single, manually-selected COM port.
+    // This disables auto-open behavior and hides other system ports from the UI list.
+    manualComOnly: true,
+    allowedComPort: 'COM10'
 };
 
 let currentConfig = { ...defaultConfig };
@@ -458,6 +483,10 @@ app.get(['/dashboard', '/home'], (req, res) => {
 
 app.post('/api/config', (req, res) => {
     currentConfig = { ...currentConfig, ...req.body };
+    // If manual mode is enabled, keep comPort aligned to allowedComPort
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        currentConfig.comPort = currentConfig.allowedComPort;
+    }
     res.json({ success: true, config: currentConfig });
 });
 
@@ -496,16 +525,25 @@ app.get('/api/com-ports', async (req, res) => {
             }
         }
 
+        // Manual COM mode: hide all but the allowed COM port
+        if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+            const allowed = String(currentConfig.allowedComPort).toUpperCase();
+            const filtered = ports.filter(p => (p.path || '').toUpperCase() === allowed);
+            // If not present, still return only the allowed as a choice
+            ports = filtered.length > 0 ? filtered : [{ path: allowed, manufacturer: 'Manual' }];
+        }
+
         appendLog('api', `com-ports returned ${ports.length} ports`);
         res.json(ports);
     } catch (error) {
         console.error('COM ports API error:', error);
         appendLog('api', `com-ports error: ${error.message}`);
         // Return fallback ports on any error
-        const fallbackPorts = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({
-            path: p,
-            manufacturer: 'Fallback'
-        }));
+        let fallbackPorts = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({ path: p, manufacturer: 'Fallback' }));
+        if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+            const allowed = String(currentConfig.allowedComPort).toUpperCase();
+            fallbackPorts = [{ path: allowed, manufacturer: 'Manual' }];
+        }
         res.json(fallbackPorts);
     }
 });
@@ -550,6 +588,14 @@ app.post('/api/serial/open', (req, res) => {
     const { path: portPath, baudRate = 115200 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
+    // Enforce manual COM mode if enabled
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
+        }
+    }
+
     try {
         if (serialPorts.has(portPath)) return res.json({ success: true, message: 'already open' });
 
@@ -578,6 +624,14 @@ app.post('/api/serial/close', (req, res) => {
     const { path: portPath } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
+    // Enforce manual COM mode if enabled (only allow closing the allowed port)
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} can be closed.` });
+        }
+    }
+
     const rec = serialPorts.get(portPath);
     if (!rec) return res.json({ success: false, error: 'port not open' });
 
@@ -591,6 +645,14 @@ app.post('/api/serial/close', (req, res) => {
 app.post('/api/serial/write', (req, res) => {
     const { path: portPath, data } = req.body || {};
     if (!portPath || data === undefined) return res.status(400).json({ success: false, error: 'path and data required' });
+
+    // Enforce manual COM mode if enabled
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
+        }
+    }
 
     const rec = serialPorts.get(portPath);
     if (!rec) return res.status(400).json({ success: false, error: 'port not open' });
@@ -612,6 +674,14 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
     const { path: portPath, baudRate = 115200, timeoutMs = 8000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
+    // Enforce manual COM mode if enabled
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
+        }
+    }
+
     let tempPort = null;
     let usedExisting = false;
     let portRec = serialPorts.get(portPath);
@@ -621,7 +691,9 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
             port = portRec.port;
             usedExisting = true;
         } else {
+            // Add an error handler to avoid unhandled 'error' events when port cannot be opened
             port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            try { port.on('error', (e) => appendLog('serial', `wifi_scan error path=${portPath} err=${e.message || e}`)); } catch (_) {}
             tempPort = port;
         }
 
@@ -658,11 +730,11 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
             await new Promise(r => setTimeout(r, 100));
         }
         try { port.removeListener('data', onData); } catch (_) {}
-        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+    if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
 
         return res.json({ success: true, networks });
     } catch (err) {
-        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+    if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
         return res.status(500).json({ success: false, error: err.message || String(err) });
     }
 });
@@ -674,6 +746,14 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
     const { path: portPath, ssid, password = '', baudRate = 115200 } = req.body || {};
     if (!portPath || !ssid) return res.status(400).json({ success: false, error: 'path and ssid required' });
 
+    // Enforce manual COM mode if enabled
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
+        }
+    }
+
     let tempPort = null;
     try {
         const portRec = serialPorts.get(portPath);
@@ -681,7 +761,9 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
         if (portRec && portRec.port) {
             port = portRec.port;
         } else {
+            // Add an error handler to avoid unhandled 'error' events
             port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            try { port.on('error', (e) => appendLog('serial', `wifi_connect error path=${portPath} err=${e.message || e}`)); } catch (_) {}
             tempPort = port;
         }
 
@@ -708,11 +790,11 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
             await new Promise(r => setTimeout(r, 100));
         }
         try { port.removeListener('data', onData); } catch (_) {}
-        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+    if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
 
         return res.json({ success: true, acknowledged: received });
     } catch (err) {
-        if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
+    if (tempPort) { try { await new Promise(r => tempPort.close(() => r())); } catch (_) {} }
         return res.status(500).json({ success: false, error: err.message || String(err) });
     }
 });
@@ -723,9 +805,18 @@ app.post('/api/com/check', async (req, res) => {
     const { path: portPath, baudRate = 115200, testCmd = '\n', timeout = 1000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
+    // Enforce manual COM mode if enabled
+    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
+        const allowed = String(currentConfig.allowedComPort).toUpperCase();
+        if (String(portPath).toUpperCase() !== allowed) {
+            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
+        }
+    }
+
     let rec = serialPorts.get(portPath);
     let tempOpened = false;
     let port;
+    let portErrored = null;
 
     try {
         if (rec && rec.port) {
@@ -733,6 +824,8 @@ app.post('/api/com/check', async (req, res) => {
         } else {
             // open temporary port
             port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            // Guard against unhandled 'error' events that can crash the process
+            try { port.on('error', (e) => { portErrored = e; appendLog('serial', `com_check error-event path=${portPath} err=${e.message || e}`); }); } catch (_) {}
             tempOpened = true;
         }
 
@@ -743,7 +836,8 @@ app.post('/api/com/check', async (req, res) => {
 
         port.on('data', onData);
 
-        // write test command
+        // write test command (if port didn't already error)
+        if (portErrored) throw portErrored;
         await new Promise((resolve, reject) => {
             try {
                 port.write(testCmd, (err) => {
@@ -753,8 +847,13 @@ app.post('/api/com/check', async (req, res) => {
             } catch (err) { reject(err); }
         });
 
-        // wait up to timeout ms for data
-        await new Promise((resolve) => setTimeout(resolve, parseInt(timeout, 10)));
+        // wait up to timeout ms for data (or early exit on error)
+        const toMs = parseInt(timeout, 10);
+        let waited = 0;
+        while (waited < toMs && !portErrored) {
+            await new Promise(r => setTimeout(r, 50));
+            waited += 50;
+        }
 
         port.removeListener('data', onData);
 
@@ -762,6 +861,10 @@ app.post('/api/com/check', async (req, res) => {
             try { port.close(() => {}); } catch (e) {}
         }
 
+        if (portErrored) {
+            appendLog('serial', `com_check failed path=${portPath} err=${portErrored.message || portErrored}`);
+            return res.status(500).json({ success: false, error: portErrored.message || String(portErrored) });
+        }
         appendLog('serial', `com_check path=${portPath} resp=${captured.replace(/\r?\n/g,'\\n')}`);
         return res.json({ success: true, response: captured });
     } catch (err) {
@@ -1259,10 +1362,12 @@ app.post('/api/device-files/write', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Path and content required' });
         }
 
-        const response = await axios.post(`http://${host}/update_file`, {
-            path: path,
-            content: content
-        }, {
+        // Firmware expects x-www-form-urlencoded form fields (path, content)
+        const body = new URLSearchParams();
+        body.append('path', path);
+        body.append('content', typeof content === 'string' ? content : String(content));
+
+        await axios.post(`http://${host}/update_file`, body.toString(), {
             timeout: 15000,
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
@@ -1284,10 +1389,12 @@ app.post('/api/device-files/create', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Path required' });
         }
 
-        const response = await axios.post(`http://${host}/create_file`, {
-            path: path,
-            content: content
-        }, {
+        // Firmware expects x-www-form-urlencoded form fields (path, content)
+        const body = new URLSearchParams();
+        body.append('path', path);
+        body.append('content', typeof content === 'string' ? content : String(content));
+
+        await axios.post(`http://${host}/create_file`, body.toString(), {
             timeout: 15000,
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });

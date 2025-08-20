@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include "storage.h"
+#include "compat_wifi_modes.h"
 
 // WiFi Module Implementation
 // ==========================
@@ -35,7 +36,7 @@ bool WiFiModule::start()
     String password = "";
     if (contentFS)
     {
-        File f = contentFS->open("/current/apconfig.json", "r");
+        File f = contentFS->open("/current/staconfig.json", "r");
         if (f)
         {
             JsonDocument cfg;
@@ -48,6 +49,24 @@ bool WiFiModule::start()
                     password = cfg["password"].as<String>();
             }
             f.close();
+        }
+        else
+        {
+            // Backward-compat: read from legacy apconfig.json
+            File f2 = contentFS->open("/current/apconfig.json", "r");
+            if (f2)
+            {
+                JsonDocument cfg;
+                DeserializationError err = deserializeJson(cfg, f2);
+                if (!err)
+                {
+                    if (cfg["ssid"].is<String>())
+                        ssid = cfg["ssid"].as<String>();
+                    if (cfg["password"].is<String>())
+                        password = cfg["password"].as<String>();
+                }
+                f2.close();
+            }
         }
     }
 
@@ -280,7 +299,7 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         // Persist networks to config
         if (contentFS) {
             xSemaphoreTake(fsMutex, portMAX_DELAY);
-            File f = contentFS->open("/current/apconfig.json", "w");
+            File f = contentFS->open("/current/staconfig.json", "w");
             if (f) { serializeJson(cfg, f); f.close(); }
             xSemaphoreGive(fsMutex);
         }
@@ -379,7 +398,7 @@ String WiFiModule::getConfig() const
     // Read current settings from filesystem
     if (contentFS)
     {
-        File f = contentFS->open("/current/apconfig.json", "r");
+        File f = contentFS->open("/current/staconfig.json", "r");
         if (f)
         {
             JsonDocument cfg;
@@ -417,7 +436,7 @@ bool WiFiModule::setConfig(const String &config)
         // Merge into existing file if present
         JsonDocument cfg;
         {
-            File r = contentFS->open("/current/apconfig.json", "r");
+            File r = contentFS->open("/current/staconfig.json", "r");
             if (r)
             {
                 deserializeJson(cfg, r);
@@ -433,7 +452,7 @@ bool WiFiModule::setConfig(const String &config)
         if (doc["hostname"].is<String>())
             cfg["hostname"] = doc["hostname"].as<String>();
         xSemaphoreTake(fsMutex, portMAX_DELAY);
-        File w = contentFS->open("/current/apconfig.json", "w");
+        File w = contentFS->open("/current/staconfig.json", "w");
         if (w)
         {
             serializeJson(cfg, w);
@@ -561,7 +580,7 @@ void WiFiModule::optimizeWiFiSettings()
     String hostname = "esp32-ap-flasher";
     if (contentFS)
     {
-        File f = contentFS->open("/current/apconfig.json", "r");
+        File f = contentFS->open("/current/staconfig.json", "r");
         if (f)
         {
             JsonDocument cfg;
@@ -585,7 +604,7 @@ void WiFiModule::loadSavedNetworks()
         return;
 
     xSemaphoreTake(fsMutex, portMAX_DELAY);
-    File f = contentFS->open("/current/apconfig.json", "r");
+    File f = contentFS->open("/current/staconfig.json", "r");
     if (!f)
     {
         xSemaphoreGive(fsMutex);

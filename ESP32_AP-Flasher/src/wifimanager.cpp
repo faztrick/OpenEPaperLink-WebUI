@@ -26,6 +26,7 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
+#include "compat_wifi_modes.h"
 #include <vector>
 
 #include "ips_display.h"
@@ -35,6 +36,7 @@
 #include "oepl_udp.h"
 #include "web.h"
 #include "storage.h"
+#include "leds.h"
 
 uint8_t WifiManager::apClients = 0;
 uint8_t x_buffer[100];
@@ -117,7 +119,8 @@ WifiManager::WifiManager()
 
 void WifiManager::setScanVerbose(bool v)
 {
-    _scanVerbose = v;}
+    _scanVerbose = v;
+}
 
 bool WifiManager::scanVerbose() const
 {
@@ -232,21 +235,21 @@ void WifiManager::poll()
             {
                 Serial.println("Resetting WiFi settings...");
 
-                // Clear WiFi settings stored in filesystem
+                // Clear WiFi settings stored in filesystem (STA credentials)
                 if (contentFS)
                 {
                     xSemaphoreTake(fsMutex, portMAX_DELAY);
-                    fs::File f = contentFS->open("/current/apconfig.json", "w");
+                    fs::File f = contentFS->open("/current/staconfig.json", "w");
                     if (f)
                     {
                         const char *empty = "{\"ssid\":\"\",\"password\":\"\",\"ip\":\"\",\"mask\":\"\",\"gw\":\"\",\"dns\":\"\"}";
                         f.print(empty);
                         f.close();
-                        Serial.println("✅ WiFi settings cleared from file");
+                        Serial.println("✅ STA WiFi settings cleared from staconfig.json");
                     }
                     else
                     {
-                        Serial.println("❌ Failed to open apconfig.json for clearing");
+                        Serial.println("❌ Failed to open staconfig.json for clearing");
                     }
                     xSemaphoreGive(fsMutex);
                 }
@@ -311,7 +314,7 @@ bool WifiManager::connectToWifi()
         return true;
 #endif
 
-    // Build a list of candidate networks from apconfig.json
+    // Build a list of candidate networks from staconfig.json (fallback to apconfig.json)
     std::vector<std::pair<String, String>> candidates;
 
     // First, include NVS-stored creds (may be empty depending on persistence settings)
@@ -322,12 +325,12 @@ bool WifiManager::connectToWifi()
         candidates.emplace_back(nvs_ssid, nvs_pass);
     }
 
-    // Then, parse /current/apconfig.json for single and multi-STA entries
+    // Then, parse /current/staconfig.json for single and multi-STA entries (with backward compatibility)
     _ssid = "";
     _pass = "";
     if (contentFS)
     {
-        fs::File f = contentFS->open("/current/apconfig.json", "r");
+        fs::File f = contentFS->open("/current/staconfig.json", "r");
         if (f)
         {
             JsonDocument cfg;
@@ -359,6 +362,41 @@ bool WifiManager::connectToWifi()
                 }
             }
             f.close();
+        }
+        else
+        {
+            // Backward compatibility: read from legacy apconfig.json if present
+            fs::File f2 = contentFS->open("/current/apconfig.json", "r");
+            if (f2)
+            {
+                JsonDocument cfg;
+                if (deserializeJson(cfg, f2) == DeserializationError::Ok)
+                {
+                    if (cfg["ssid"].is<String>())
+                        _ssid = cfg["ssid"].as<String>();
+                    if (cfg["password"].is<String>())
+                        _pass = cfg["password"].as<String>();
+
+                    if (!_ssid.isEmpty())
+                    {
+                        candidates.emplace_back(_ssid, _pass);
+                    }
+
+                    if (cfg["networks"].is<JsonArray>())
+                    {
+                        for (JsonVariant v : cfg["networks"].as<JsonArray>())
+                        {
+                            String ss = v["ssid"].as<String>();
+                            String pw = v["password"].as<String>();
+                            if (!ss.isEmpty())
+                            {
+                                candidates.emplace_back(ss, pw);
+                            }
+                        }
+                    }
+                }
+                f2.close();
+            }
         }
     }
 
@@ -399,7 +437,8 @@ bool WifiManager::connectToWifi()
     String dns = "";
     if (contentFS)
     {
-        fs::File f = contentFS->open("/current/apconfig.json", "r");
+        // Station static IP/DNS settings now live in staconfig.json
+        fs::File f = contentFS->open("/current/staconfig.json", "r");
         if (f)
         {
             JsonDocument cfg;
@@ -411,6 +450,23 @@ bool WifiManager::connectToWifi()
                 dns = cfg["dns"].as<String>();
             }
             f.close();
+        }
+        else
+        {
+            // Fallback to legacy apconfig.json
+            fs::File f2 = contentFS->open("/current/apconfig.json", "r");
+            if (f2)
+            {
+                JsonDocument cfg;
+                if (deserializeJson(cfg, f2) == DeserializationError::Ok)
+                {
+                    ip = cfg["ip"].as<String>();
+                    mask = cfg["mask"].as<String>();
+                    gw = cfg["gw"].as<String>();
+                    dns = cfg["dns"].as<String>();
+                }
+                f2.close();
+            }
         }
     }
 
@@ -467,7 +523,7 @@ bool WifiManager::connectToWifi()
         if (ssid.isEmpty())
             continue;
         terminalLog("ssid: " + ssid);
-        // Save credentials back to apconfig.json when a candidate succeeds
+        // Save credentials back to staconfig.json when a candidate succeeds
         if (connectToWifi(ssid, pass, true))
         {
             _ssid = ssid;
@@ -576,6 +632,11 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     wifi_config.sta.pmf_cfg.required = false;                // But don't require it
 
     terminalLog("Connecting to WiFi with optimized settings...");
+#ifdef HAS_RGB_LED
+    // Indicate scanning/connecting with blue idle
+    rgbIdleColor = CRGB::Blue;
+    shortBlink(CRGB::Blue);
+#endif
     WiFi.persistent(false);
 
     // Apply configuration and connect
@@ -590,6 +651,9 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     if (ret != ESP_OK)
     {
         Serial.printf("ERROR: WiFi connect failed: %s\n", esp_err_to_name(ret));
+#ifdef HAS_RGB_LED
+        shortBlink(CRGB::Red);
+#endif
         return false;
     }
 
@@ -636,6 +700,18 @@ bool WifiManager::waitForConnection()
             }
 
             logLine("Unable to connect to WiFi");
+#ifdef HAS_RGB_LED
+            // Show error in red, then revert to AP-yellow if AP is active, else keep blue
+            shortBlink(CRGB::Red);
+            if (_APstarted)
+            {
+                rgbIdleColor = CRGB::Yellow;
+            }
+            else
+            {
+                rgbIdleColor = CRGB::Blue;
+            }
+#endif
             startManagementServer();
             return false;
         }
@@ -657,7 +733,7 @@ bool WifiManager::waitForConnection()
         if (contentFS)
         {
             JsonDocument cfg;
-            fs::File r = contentFS->open("/current/apconfig.json", "r");
+            fs::File r = contentFS->open("/current/staconfig.json", "r");
             if (r)
             {
                 deserializeJson(cfg, r);
@@ -666,14 +742,14 @@ bool WifiManager::waitForConnection()
             cfg["ssid"] = _ssid;
             cfg["password"] = _pass;
             xSemaphoreTake(fsMutex, portMAX_DELAY);
-            fs::File w = contentFS->open("/current/apconfig.json", "w");
+            fs::File w = contentFS->open("/current/staconfig.json", "w");
             if (w)
             {
                 serializeJson(cfg, w);
                 w.close();
             }
             xSemaphoreGive(fsMutex);
-            Serial.println("✅ WiFi credentials saved to filesystem");
+            Serial.println("✅ WiFi credentials saved to staconfig.json");
         }
         _savewhensuccessfull = false;
     }
@@ -689,6 +765,10 @@ bool WifiManager::waitForConnection()
 
     _nextReconnectCheck = millis() + _reconnectIntervalCheck;
     wifiStatus = CONNECTED;
+#ifdef HAS_RGB_LED
+    shortBlink(CRGB::Green);
+    rgbIdleColor = CRGB::Green;
+#endif
     return true;
 }
 
@@ -696,8 +776,98 @@ void WifiManager::startManagementServer()
 {
     if (!_APstarted && wifiStatus != ETHERNET)
     {
-        terminalLog("Starting config AP, ssid: OpenEPaperLink");
-        logLine("Starting configuration AP, ssid OpenEPaperLink");
+        // Load AP configuration from /current/apconfig.json
+        String apSsid = "OpenEPaperLink";
+        String apPassword = ""; // open by default (no password)
+        int apChannel = 1;
+        bool apHidden = false;
+        int apMaxClients = 8;
+        bool apEnabled = true; // default: enabled
+
+        // Optional static IP settings for AP
+        String apIPStr = "";
+        String apMaskStr = "";
+        String apGwStr = "";
+
+        if (contentFS)
+        {
+            fs::File f = contentFS->open("/current/apconfig.json", "r");
+            if (f)
+            {
+                JsonDocument cfg;
+                if (deserializeJson(cfg, f) == DeserializationError::Ok)
+                {
+                    // Prefer nested object: { "ap": { enabled, ssid, password, channel, hidden, max_clients, ip, mask, gw } }
+                    JsonVariant ap = cfg["ap"];
+                    if (ap.is<JsonObject>())
+                    {
+                        if (ap["enabled"].is<bool>())
+                            apEnabled = ap["enabled"].as<bool>();
+                        if (ap["ssid"].is<String>())
+                            apSsid = ap["ssid"].as<String>();
+                        if (ap["password"].is<String>())
+                            apPassword = ap["password"].as<String>();
+                        if (ap["channel"].is<int>())
+                            apChannel = ap["channel"].as<int>();
+                        if (ap["hidden"].is<bool>())
+                            apHidden = ap["hidden"].as<bool>();
+                        if (ap["max_clients"].is<int>())
+                            apMaxClients = ap["max_clients"].as<int>();
+                        if (ap["ip"].is<String>())
+                            apIPStr = ap["ip"].as<String>();
+                        if (ap["mask"].is<String>())
+                            apMaskStr = ap["mask"].as<String>();
+                        if (ap["gw"].is<String>())
+                            apGwStr = ap["gw"].as<String>();
+                    }
+                    else
+                    {
+                        // Legacy flat keys: ap_ssid, ap_password, ap_channel, ap_hidden, ap_max_clients, ap_ip, ap_mask, ap_gw
+                        if (cfg["ap_enabled"].is<bool>())
+                            apEnabled = cfg["ap_enabled"].as<bool>();
+                        if (cfg["ap_ssid"].is<String>())
+                            apSsid = cfg["ap_ssid"].as<String>();
+                        if (cfg["ap_password"].is<String>())
+                            apPassword = cfg["ap_password"].as<String>();
+                        if (cfg["ap_channel"].is<int>())
+                            apChannel = cfg["ap_channel"].as<int>();
+                        if (cfg["ap_hidden"].is<bool>())
+                            apHidden = cfg["ap_hidden"].as<bool>();
+                        if (cfg["ap_max_clients"].is<int>())
+                            apMaxClients = cfg["ap_max_clients"].as<int>();
+                        if (cfg["ap_ip"].is<String>())
+                            apIPStr = cfg["ap_ip"].as<String>();
+                        if (cfg["ap_mask"].is<String>())
+                            apMaskStr = cfg["ap_mask"].as<String>();
+                        if (cfg["ap_gw"].is<String>())
+                            apGwStr = cfg["ap_gw"].as<String>();
+                    }
+                }
+                f.close();
+            }
+        }
+
+        // Sanitize configuration
+        if (apSsid.length() == 0)
+            apSsid = "OpenEPaperLink";
+        // Always run open AP (no password) per requirement
+        bool usePassword = false;
+        if (apChannel < 1 || apChannel > 13)
+            apChannel = 1;
+        if (apMaxClients < 1)
+            apMaxClients = 1;
+        else if (apMaxClients > 10)
+            apMaxClients = 10;
+
+        if (!apEnabled)
+        {
+            // AP explicitly disabled by config; don't start management AP
+            terminalLog("Config AP disabled by configuration");
+            return;
+        }
+
+        terminalLog("Starting config AP, ssid: " + apSsid);
+        logLine("Starting configuration AP, ssid " + apSsid);
 
         // Proper disconnect sequence
         WiFi.disconnect(true, true);
@@ -729,14 +899,24 @@ void WifiManager::startManagementServer()
         scanConf.scan_time.active.min = 100; // Faster scan timing
         scanConf.scan_time.active.max = 300;
 
-        // Start AP with optimized settings
-        if (!WiFi.softAP("OpenEPaperLink", "", 1, false, 8))
-        { // Allow up to 8 connections
+        // Optional: configure AP IP if provided
+        if (apIPStr.length() > 0 && apMaskStr.length() > 0 && apGwStr.length() > 0)
+        {
+            IPAddress apIP, apMask, apGw;
+            if (apIP.fromString(apIPStr) && apMask.fromString(apMaskStr) && apGw.fromString(apGwStr))
+            {
+                WiFi.softAPConfig(apIP, apGw, apMask);
+            }
+        }
+
+        // Start AP with optimized settings and configured parameters (forced open network)
+        if (!WiFi.softAP(apSsid.c_str(), "", apChannel, apHidden, apMaxClients))
+        { // Allow up to apMaxClients connections
             Serial.println("ERROR: Failed to start WiFi AP");
             return;
         }
 
-        if (!WiFi.softAPsetHostname("OpenEPaperLink"))
+        if (!WiFi.softAPsetHostname(apSsid.c_str()))
         {
             Serial.println("WARNING: Failed to set AP hostname");
         }
@@ -749,12 +929,19 @@ void WifiManager::startManagementServer()
         }
 
         IPAddress IP = WiFi.softAPIP();
-        terminalLog("✅ AP Started! Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
-        Serial.printf("AP Mode: IP=%s, MAC=%s\n", IP.toString().c_str(), WiFi.softAPmacAddress().c_str());
+        terminalLog("✅ AP Started (open). Connect to it, visit http://" + String(IP.toString().c_str()) + "/setup");
+        Serial.printf("AP Mode (open): SSID=%s, CH=%d, Hidden=%s, Max=%d, IP=%s, MAC=%s\n",
+                      apSsid.c_str(), apChannel, apHidden ? "yes" : "no", apMaxClients,
+                      IP.toString().c_str(), WiFi.softAPmacAddress().c_str());
 
         _APstarted = true;
         _nextReconnectCheck = millis() + _retryIntervalCheck;
         wifiStatus = AP;
+#ifdef HAS_RGB_LED
+        // Indicate AP availability with yellow idle
+        rgbIdleColor = CRGB::Yellow;
+        shortBlink(CRGB::Yellow);
+#endif
     }
 }
 
@@ -855,9 +1042,21 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
     {
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
         eventname = "Connected to access point";
+#ifdef HAS_RGB_LED
+        // Briefly show progress
+        shortBlink(CRGB::Blue);
+#endif
         break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
         // eventname = "Disconnected from WiFi access point";
+#ifdef HAS_RGB_LED
+        shortBlink(CRGB::Red);
+        // Fall back to AP yellow if AP is running, else blue
+        if ((WiFi.getMode() & WIFI_MODE_AP) != 0)
+            rgbIdleColor = CRGB::Yellow;
+        else
+            rgbIdleColor = CRGB::Blue;
+#endif
         break;
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
         eventname = "Authentication mode of access point has changed";
@@ -867,6 +1066,10 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
         init_udp();
         // Start web server when IP is ready (safe to call multiple times)
         ensure_webserver_started();
+#ifdef HAS_RGB_LED
+        shortBlink(CRGB::Green);
+        rgbIdleColor = CRGB::Green;
+#endif
         break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
         eventname = "Lost IP address and IP address is reset to 0";
@@ -876,6 +1079,10 @@ void WifiManager::WiFiEvent(WiFiEvent_t event)
         // eventname = "WiFi access point started";
         // In AP mode, netif is up; ensure web server is started
         ensure_webserver_started();
+#ifdef HAS_RGB_LED
+        rgbIdleColor = CRGB::Yellow;
+        shortBlink(CRGB::Yellow);
+#endif
         break;
     case ARDUINO_EVENT_WIFI_AP_STOP:
         // eventname = "WiFi access point stopped";
@@ -1010,7 +1217,7 @@ bool onCommandCallback(improv::ImprovCommand cmd)
             if (contentFS)
             {
                 JsonDocument cfg;
-                fs::File r = contentFS->open("/current/apconfig.json", "r");
+                fs::File r = contentFS->open("/current/staconfig.json", "r");
                 if (r)
                 {
                     deserializeJson(cfg, r);
@@ -1019,7 +1226,7 @@ bool onCommandCallback(improv::ImprovCommand cmd)
                 cfg["ssid"] = cmd.ssid.c_str();
                 cfg["password"] = cmd.password.c_str();
                 xSemaphoreTake(fsMutex, portMAX_DELAY);
-                fs::File w = contentFS->open("/current/apconfig.json", "w");
+                fs::File w = contentFS->open("/current/staconfig.json", "w");
                 if (w)
                 {
                     serializeJson(cfg, w);

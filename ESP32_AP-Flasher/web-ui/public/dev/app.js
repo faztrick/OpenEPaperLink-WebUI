@@ -10,12 +10,14 @@ class ESP32DevUI {
     this.devices = [];
     this.selectedDeviceId = null;
         this.config = {
-            comPort: 'COM3',
+            comPort: 'COM10',
             wifiSSID: '',
             wifiPassword: '',
             fastCompile: false,
             verboseOutput: false,
-            cleanBuild: false
+            cleanBuild: false,
+            manualComOnly: true,
+            allowedComPort: 'COM10'
         };
 
         this.remoteConfig = {
@@ -32,13 +34,13 @@ class ESP32DevUI {
     init() {
         this.initSocket();
         this.bindEvents();
-        this.loadConfig();
+    this.loadConfig();
     this.initDeviceManager();
         this.updateUI();
     // ensure COM header and device form are populated like Simple Flasher
     try { this.refreshPorts(); } catch (e) {}
 
-        // Start API health checks after a short delay
+    // Start API health checks after a short delay
         setTimeout(() => {
             this.startApiHealthChecks();
         }, 1000);
@@ -444,6 +446,26 @@ class ESP32DevUI {
 
         select.innerHTML = '';
 
+        // Manual COM mode: always show only the allowed port
+        if (this.config.manualComOnly && this.config.allowedComPort) {
+            const allowed = String(this.config.allowedComPort);
+            const option = document.createElement('option');
+            option.value = allowed;
+            option.textContent = `${allowed} - Manual`;
+            select.appendChild(option);
+            select.disabled = false;
+            select.value = allowed;
+            this.updateConfig('comPort', allowed);
+            // Mirror to header and device selects if present
+            try {
+                const header = document.getElementById('com-port-select');
+                const device = document.getElementById('device-com');
+                if (header) { header.innerHTML = `<option value="${allowed}">${allowed}</option>`; header.value = allowed; }
+                if (device) { device.innerHTML = `<option value="${allowed}">${allowed}</option>`; device.value = allowed; }
+            } catch (_) {}
+            return;
+        }
+
         if (ports.length === 0) {
             const option = document.createElement('option');
             option.value = '';
@@ -635,7 +657,7 @@ class ESP32DevUI {
             container.appendChild(empty);
             return;
         }
-        this.devices.forEach(d => {
+    this.devices.forEach(d => {
             const card = document.createElement('div');
             card.className = 'device-card';
             const selected = d.id === this.selectedDeviceId;
@@ -646,6 +668,7 @@ class ESP32DevUI {
                 </div>
                 <div><small>IP: ${d.ip || '-'}</small></div>
                 <div><small>COM: ${d.com || '-'}</small></div>
+        <div class="wifi-line"><small id="wifi-status-${d.id}"><span class="muted">WiFi: —</span></small></div>
                 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
                     <button class="btn btn-small ${selected ? 'btn-success' : 'btn-outline'}" data-act="select" data-id="${d.id}">${selected ? 'Selected' : 'Select'}</button>
                     <button class="btn btn-small" data-act="edit" data-id="${d.id}">Edit</button>
@@ -679,7 +702,20 @@ class ESP32DevUI {
                     }
                 });
             });
+
+            // Fetch WiFi status for this device (non-blocking)
+            this.updateDeviceWifiStatus(d).catch(() => {
+                // silent
+            });
         });
+
+        // Start/refresh periodic WiFi status updates (every 30s)
+        try {
+            if (this._wifiStatusInterval) clearInterval(this._wifiStatusInterval);
+            this._wifiStatusInterval = setInterval(() => {
+                this.refreshAllDevicesWifiStatus();
+            }, 30000);
+        } catch (e) { /* ignore */ }
     }
 
     applySelectedDevice(dev) {
@@ -722,6 +758,9 @@ class ESP32DevUI {
         }
 
         // Keep websocket local; no reconnect to device
+
+    // Refresh WiFi status line immediately for selected device
+    try { if (dev) this.updateDeviceWifiStatus(dev); } catch (e) { /* ignore */ }
     }
 
     refreshHeaderComListToDeviceForm() {
@@ -750,6 +789,101 @@ class ESP32DevUI {
             eraseBtn.disabled = !hasPort;
             eraseBtn.title = hasPort ? '' : 'No serial port available';
         }
+    }
+
+    // --- Device WiFi status helpers ---
+    async getWifiStatusForHost(host) {
+        if (!host) return { online: false };
+        // Try a sequence of endpoints via server proxy to avoid CORS
+        const paths = ['/network_info', '/api/telemetry', '/sysinfo', '/api/ping'];
+        for (const p of paths) {
+            try {
+                const url = `/device${p}?host=${encodeURIComponent(host)}`;
+                const res = await fetch(url, { method: 'GET' });
+                if (!res.ok) continue;
+                const data = await res.json().catch(() => ({}));
+
+                // Normalize into a common shape
+                if (p === '/network_info' && data) {
+                    const wifi = data.wifi || {};
+                    const ap = data.ap || {};
+                    const connected = !!wifi.connected;
+                    return {
+                        online: connected || typeof ap.enabled !== 'undefined',
+                        ssid: wifi.ssid || '',
+                        rssi: typeof wifi.rssi === 'number' ? wifi.rssi : undefined,
+                        ip: wifi.localIP || '',
+                        channel: wifi.channel || undefined
+                    };
+                }
+
+                if (p === '/api/telemetry' && data) {
+                    const statusNum = data.wifiStatus;
+                    const online = statusNum === 3 || (typeof statusNum === 'string' && statusNum.toString() === '3');
+                    return {
+                        online: !!online,
+                        ssid: undefined,
+                        rssi: typeof data.rssi === 'number' ? data.rssi : undefined,
+                        ip: data.localIP || '',
+                        channel: undefined
+                    };
+                }
+
+                if (p === '/sysinfo' && data) {
+                    const statusNum = data.wifiStatus;
+                    const online = statusNum === 3 || (typeof statusNum === 'string' && statusNum.toString() === '3');
+                    return {
+                        online: !!online,
+                        ssid: undefined,
+                        rssi: typeof data.wifi?.rssi === 'number' ? data.wifi.rssi : (typeof data.rssi === 'number' ? data.rssi : undefined),
+                        ip: data.localIP || data.wifi?.localIP || '',
+                        channel: data.wifi?.channel || undefined
+                    };
+                }
+
+                if (p === '/api/ping' && data && data.ok) {
+                    return { online: true };
+                }
+            } catch (e) {
+                // try next endpoint
+            }
+        }
+        return { online: false };
+    }
+
+    async updateDeviceWifiStatus(dev) {
+        try {
+            const el = document.getElementById(`wifi-status-${dev.id}`);
+            if (!el) return;
+            if (!dev.ip) { el.innerHTML = '<span class="muted">WiFi: no IP set</span>'; return; }
+
+            const info = await this.getWifiStatusForHost(dev.ip);
+            const dot = `<span class="status-dot ${info.online ? 'status-online' : 'status-offline'}"></span>`;
+            if (info.online) {
+                const parts = [];
+                if (info.ssid) parts.push(`SSID "${info.ssid}"`);
+                if (info.rssi !== undefined) parts.push(`${info.rssi} dBm`);
+                if (info.ip) parts.push(`IP ${info.ip}`);
+                if (info.channel) parts.push(`ch ${info.channel}`);
+                el.innerHTML = `${dot}<span>WiFi: Connected${parts.length ? ' • ' + parts.join(' • ') : ''}</span>`;
+            } else {
+                el.innerHTML = `${dot}<span>WiFi: Offline</span>`;
+            }
+        } catch (e) {
+            // ignore update errors
+        }
+    }
+
+    refreshAllDevicesWifiStatus() {
+        try {
+            if (!Array.isArray(this.devices)) return;
+            this.devices.forEach(d => {
+                // Only refresh if card element exists on page
+                if (document.getElementById(`wifi-status-${d.id}`)) {
+                    this.updateDeviceWifiStatus(d).catch(() => {});
+                }
+            });
+        } catch (e) { /* ignore */ }
     }
 
     // Test reachability of a remote host (HTTP) with a short timeout
@@ -806,6 +940,10 @@ class ESP32DevUI {
             if (response.ok) {
                 const config = await response.json();
                 this.config = { ...this.config, ...config };
+                // keep comPort aligned when manual mode enabled
+                if (this.config.manualComOnly && this.config.allowedComPort) {
+                    this.config.comPort = this.config.allowedComPort;
+                }
                 this.updateConfigUI();
                 this.log('Configuration loaded via API', 'info');
             }
@@ -836,6 +974,10 @@ class ESP32DevUI {
             });
             if (response.ok) {
                 const result = await response.json();
+                // reflect any enforced server settings
+                if (result && result.config) {
+                    this.config = { ...this.config, ...result.config };
+                }
                 this.log('Configuration saved via API', 'success');
                 return result;
             }
@@ -874,7 +1016,18 @@ class ESP32DevUI {
             if (headerSelect) headerSelect.innerHTML = '';
             if (deviceSelect) deviceSelect.innerHTML = '';
 
-            if (Array.isArray(ports) && ports.length > 0) {
+            // Manual mode: force-only COM10
+            if (this.config.manualComOnly && this.config.allowedComPort) {
+                const allowed = String(this.config.allowedComPort);
+                const o = document.createElement('option');
+                o.value = allowed;
+                o.textContent = allowed;
+                if (headerSelect) headerSelect.appendChild(o.cloneNode(true));
+                if (deviceSelect) deviceSelect.appendChild(o.cloneNode(true));
+                this.updateConfig('comPort', allowed);
+                this.saveLastPort(allowed);
+                this.log('Manual COM mode: forcing COM list to allowed port', 'info');
+            } else if (Array.isArray(ports) && ports.length > 0) {
                 ports.forEach(p => {
                     const val = p.path || p;
                     const o = document.createElement('option');
@@ -905,7 +1058,8 @@ class ESP32DevUI {
             const deviceSelect = document.getElementById('device-com');
             if (headerSelect) headerSelect.innerHTML = '';
             if (deviceSelect) deviceSelect.innerHTML = '';
-            ['COM1', 'COM3', 'COM10', 'COM13'].forEach(port => {
+            const ports = (this.config.manualComOnly && this.config.allowedComPort) ? [this.config.allowedComPort] : ['COM1', 'COM3', 'COM10', 'COM13'];
+            ports.forEach(port => {
                 const o = document.createElement('option');
                 o.value = port;
                 o.textContent = port;

@@ -7,34 +7,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="styles.css" rel="stylesheet">
-    <style>
-        .file-manager { display: flex; height: calc(100vh - 80px); }
-        .file-sidebar { width: 300px; border-right: 1px solid #ddd; background: #f8f9fa; }
-        .file-content { flex: 1; display: flex; flex-direction: column; }
-        .file-toolbar { padding: 10px; background: #fff; border-bottom: 1px solid #ddd; display: flex; gap: 10px; align-items: center; }
-        .file-tree { padding: 10px; overflow-y: auto; height: 100%; }
-        .file-item { padding: 5px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 5px; }
-        .file-item:hover { background: #e9ecef; }
-        .file-item.selected { background: #007bff; color: white; }
-        .file-icon { width: 16px; }
-        .file-editor { flex: 1; display: flex; flex-direction: column; }
-        .editor-header { padding: 10px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
-        .editor-content { flex: 1; position: relative; }
-        .code-editor { width: 100%; height: 100%; border: none; font-family: 'Courier New', monospace; font-size: 14px; padding: 15px; resize: none; }
-        .file-info { display: flex; gap: 20px; color: #666; font-size: 12px; }
-        .device-selector { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-        .status-indicator { width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
-        .status-connected { background: #28a745; }
-        .status-disconnected { background: #dc3545; }
-        .file-tabs { display: flex; background: #f1f3f4; border-bottom: 1px solid #ddd; overflow-x: auto; }
-        .file-tab { padding: 8px 15px; border-right: 1px solid #ddd; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-        .file-tab.active { background: #fff; }
-        .file-tab .close-btn { margin-left: 8px; opacity: 0.6; }
-        .file-tab .close-btn:hover { opacity: 1; color: #dc3545; }
-        .breadcrumb { padding: 5px 10px; background: #e9ecef; font-size: 12px; }
-        .btn-group { display: flex; gap: 5px; }
-        .search-box { flex: 1; margin: 0 10px; }
-    </style>
+
 </head>
 <body>
     <header class="header">

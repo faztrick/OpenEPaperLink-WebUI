@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "ESP32_AP-Flasher",
+			"path": "."
+		}
+	],
+	"settings": {
+		"github.copilot.chat.agent.thinkingTool": true,
+		"github.copilot.chat.alternateGptPrompt.enabled": true,
+		"github.copilot.chat.scopeSelection": true,
+		"github.copilot.chat.codesearch.enabled": true,
+		"github.copilot.chat.editor.temporalContext.enabled": true,
+		"github.copilot.chat.notebook.followCellExecution.enabled": true,
+		"files.associations": {
+			"valarray": "cpp"
+		}
+	}
+}

@@ -20,9 +20,14 @@ static void loadLogUdpPrefs()
 {
   if (!contentFS)
     return;
-  File r = contentFS->open("/current/apconfig.json", "r");
+  File r = contentFS->open("/current/staconfig.json", "r");
   if (!r)
-    return;
+  {
+    // Backward-compatibility: try legacy file
+    r = contentFS->open("/current/apconfig.json", "r");
+    if (!r)
+      return;
+  }
   JsonDocument cfg;
   if (deserializeJson(cfg, r) == DeserializationError::Ok)
   {
@@ -40,7 +45,7 @@ static void saveLogUdpPrefs()
   if (!contentFS)
     return;
   JsonDocument cfg;
-  File r = contentFS->open("/current/apconfig.json", "r");
+  File r = contentFS->open("/current/staconfig.json", "r");
   if (r)
   {
     deserializeJson(cfg, r);
@@ -50,7 +55,7 @@ static void saveLogUdpPrefs()
   cfg["logcfg"]["port"] = g_logPort;
   cfg["logcfg"]["enabled"] = g_logUdpEnabled;
   xSemaphoreTake(fsMutex, portMAX_DELAY);
-  File w = contentFS->open("/current/apconfig.json", "w");
+  File w = contentFS->open("/current/staconfig.json", "w");
   if (w)
   {
     serializeJson(cfg, w);

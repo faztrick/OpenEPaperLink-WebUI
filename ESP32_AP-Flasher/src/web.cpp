@@ -736,8 +736,8 @@ void init_web()
 
         response->print("\"apstate\": \"" + String(apInfo.state) + "\"");
 
-        // Include config file if it exists
-        File configFile = contentFS->open("/current/apconfig.json", "r");
+    // Include STA config file if it exists
+    File configFile = contentFS->open("/current/staconfig.json", "r");
         if (configFile) {
             response->print(", ");
             configFile.seek(1);
@@ -895,11 +895,11 @@ void init_web()
 
         if (contentFS) {
             JsonDocument cfg;
-            File r = contentFS->open("/current/apconfig.json", "r");
+            File r = contentFS->open("/current/staconfig.json", "r");
             if (r) { deserializeJson(cfg, r); r.close(); }
             cfg["dns"] = openDNS;
             xSemaphoreTake(fsMutex, portMAX_DELAY);
-            File w = contentFS->open("/current/apconfig.json", "w");
+            File w = contentFS->open("/current/staconfig.json", "w");
             if (w) { serializeJson(cfg, w); w.close(); }
             xSemaphoreGive(fsMutex);
         }
@@ -922,7 +922,7 @@ void init_web()
         JsonDocument doc;
         String currentDNS = "";
         if (contentFS) {
-            File r = contentFS->open("/current/apconfig.json", "r");
+            File r = contentFS->open("/current/staconfig.json", "r");
             if (r) { JsonDocument cfg; if (deserializeJson(cfg, r) == DeserializationError::Ok) currentDNS = cfg["dns"].as<String>(); r.close(); }
 
             doc["success"] = true;
@@ -979,7 +979,7 @@ void init_web()
     // Load existing config from filesystem
     JsonDocument cfg;
     if (!contentFS) { request->send(500, "application/json", "{\"error\":\"Storage unavailable\"}"); return; }
-    File r = contentFS->open("/current/apconfig.json", "r");
+    File r = contentFS->open("/current/staconfig.json", "r");
     if (r) { deserializeJson(cfg, r); r.close(); }
 
         // Save configuration with validation
@@ -996,7 +996,7 @@ void init_web()
             }
         }
         xSemaphoreTake(fsMutex, portMAX_DELAY);
-        File w = contentFS->open("/current/apconfig.json", "w");
+    File w = contentFS->open("/current/staconfig.json", "w");
         if (w) { serializeJson(cfg, w); w.close(); }
         xSemaphoreGive(fsMutex);
 
@@ -1017,13 +1017,13 @@ void init_web()
             config.runStatus = RUNSTATUS_STOP;
             vTaskDelay(pdMS_TO_TICKS(2000));
 
-            // Clear stored credentials in filesystem
+            // Clear stored STA credentials in filesystem
             if (contentFS) {
                 cfg.clear();
                 cfg["ssid"] = "";
                 cfg["password"] = "";
                 xSemaphoreTake(fsMutex, portMAX_DELAY);
-                File w2 = contentFS->open("/current/apconfig.json", "w");
+                File w2 = contentFS->open("/current/staconfig.json", "w");
                 if (w2) { serializeJson(cfg, w2); w2.close(); }
                 xSemaphoreGive(fsMutex);
             }
@@ -1040,7 +1040,7 @@ void init_web()
             contentFS->remove("/current/tagDB.json");
             contentFS->remove("/current/tagDB.json.bak");
             contentFS->remove("/current/tagDBrestored.json");
-            contentFS->remove("/current/apconfig.json");
+            contentFS->remove("/current/staconfig.json");
             vTaskDelay(pdMS_TO_TICKS(100));
             esp_deep_sleep_start();
             ESP.restart();
@@ -2114,17 +2114,17 @@ void init_web()
         serializeJson(doc, *response);
         request->send(response); });
 
-    // Convenience API to read/update apconfig.json under /current
-    server.on("/api/config/apconfig", HTTP_GET, [](AsyncWebServerRequest *request)
+    // Convenience API to read/update staconfig.json under /current (STA settings)
+    server.on("/api/config/staconfig", HTTP_GET, [](AsyncWebServerRequest *request)
               {
-        const char *path = "/current/apconfig.json";
+        const char *path = "/current/staconfig.json";
         if (contentFS->exists(path)) {
             request->send(*contentFS, path, "application/json");
         } else {
-            request->send(404, "application/json", "{\"error\":\"apconfig.json not found\"}");
+            request->send(404, "application/json", "{\"error\":\"staconfig.json not found\"}");
         } });
 
-    server.on("/api/config/apconfig", HTTP_POST, [](AsyncWebServerRequest *request)
+    server.on("/api/config/staconfig", HTTP_POST, [](AsyncWebServerRequest *request)
               {
         // Body handler will handle the content
         request->send(200, "application/json", "{\"status\":\"ok\"}"); }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
@@ -2142,14 +2142,14 @@ void init_web()
         for (size_t i = 0; i < len; i++) body += (char)data[i];
         if (index + len == total) {
             // Write atomically under semaphore
-            const char *path = "/current/apconfig.json";
+            const char *path = "/current/staconfig.json";
             if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                 File f = contentFS->open(path, "w");
                 if (f) {
                     f.print(body);
                     f.close();
                     xSemaphoreGive(fsMutex);
-                    wsSerial("apconfig.json updated via API");
+                    wsSerial("staconfig.json updated via API");
                     request->send(200, "application/json", "{\"success\":true}");
                 } else {
                     xSemaphoreGive(fsMutex);

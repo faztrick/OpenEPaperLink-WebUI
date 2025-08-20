@@ -8,36 +8,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="styles.css" rel="stylesheet">
     <link href="ai-agent-widget.css" rel="stylesheet">
-    <style>
-        /* Minimal inline styles to ensure layout works even if styles.css is missing */
-        :root{--card-bg:#0f1724;--panel-border:#1f2937;--muted:#9ca3af;--console-bg:#071018;--console-text:#d1e8ff}
-        html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
-        .header{background:linear-gradient(90deg,#0b1220,#0f1724);color:#fff;padding:12px 16px}
-        .header-content{display:flex;align-items:center;gap:16px}
-        .logo{display:flex;align-items:center;gap:10px}
-        .logo i{font-size:20px}
-        .top-nav{display:flex;gap:8px;padding:8px 16px;background:#071029}
-        .nav-link{color:#9fb0c9;text-decoration:none;padding:8px 12px;border-radius:6px}
-        .nav-link.active{background:#142433;color:#fff}
-        .dev-container{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px}
-        .build-panel,.dev-card,.memory-viewer{background:var(--card-bg);padding:12px;border-radius:8px;border:1px solid var(--panel-border);color:#e6eef8}
-        .status-panel{display:flex;gap:12px}
-        .status-item{flex:1}
-        .status-value{font-size:18px;font-weight:700}
-        .tool-grid{display:flex;flex-wrap:wrap;gap:8px}
-        .tool-btn{background:#0b1228;padding:10px;border-radius:8px;min-width:120px;text-align:center;cursor:pointer;border:1px solid #1f2a38}
-        .memory-bar{background:#071018;border-radius:6px;padding:6px;position:relative}
-        .memory-fill{background:#2dd4bf;height:12px;border-radius:6px}
-        .log-viewer{background:#01070a;padding:12px;border-radius:6px;height:220px;overflow:auto;font-family:monospace}
-        .btn{padding:6px 10px;border-radius:6px;border:none;cursor:pointer}
-        .btn-small{padding:6px 8px;font-size:13px}
-        .btn-primary{background:#2563eb;color:#fff}
-        .btn-info{background:#0ea5a4;color:#fff}
-        .btn-success{background:#16a34a;color:#fff}
-        .device-grid{display:flex;gap:8px;flex-wrap:wrap}
-        .device-card{background:#071429;padding:8px;border-radius:6px;border:1px solid #112335;width:220px}
-        @media (max-width:980px){.dev-container{grid-template-columns:1fr}.build-panel{order:1}}
-    </style>
 </head>
 <body>
     <header class="header">
@@ -77,117 +47,13 @@
             <a href="index.html" class="nav-link">Dashboard</a>
             <a href="flash.html" class="nav-link">Simple Flasher</a>
             <a href="files.html" class="nav-link">File Manager</a>
+            <!-- Keep link for compatibility; this page now mirrors index and uses same JS -->
             <a href="development.html" class="nav-link active">Development</a>
             <a href="settings.html" class="nav-link">Settings</a>
             <a href="ai.html" class="nav-link">AI</a>
         </div>
     </nav>
 
-
-            <!-- Debug Console -->
-            <div class="dev-section">
-                <div class="section-header">
-                    <h3><i class="fas fa-terminal"></i> Debug Console</h3>
-                    <div class="console-controls">
-                        <button id="clear-debug-log" class="btn btn-small">
-                            <i class="fas fa-eraser"></i> Clear
-                        </button>
-                        <button id="save-debug-log" class="btn btn-small">
-                            <i class="fas fa-save"></i> Save
-                        </button>
-                        <select id="debug-level-filter" class="form-control">
-                            <option value="ALL">All Levels</option>
-                            <option value="ERROR">Errors Only</option>
-                            <option value="WARN">Warnings+</option>
-                            <option value="INFO">Info+</option>
-                            <option value="DEBUG">Debug+</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="console-input">
-                    <input type="text" id="debug-command" placeholder="Enter debug command..." />
-                    <button id="send-debug-btn" class="btn btn-primary">
-                        <i class="fas fa-play"></i> Send
-                    </button>
-                </div>
-
-                <div class="debug-console" id="debug-log">
-                    <div class="log-line info">
-                        <span class="timestamp">[12:34:56]</span>
-                        <span class="level">[INFO]</span>
-                        <span class="message">Development tools initialized</span>
-                    </div>
-                    <div class="log-line success">
-                        <span class="timestamp">[12:34:57]</span>
-                        <span class="level">[SUCCESS]</span>
-                        <span class="message">Device connection established</span>
-                    </div>
-                    <div class="log-line debug">
-                        <span class="timestamp">[12:34:58]</span>
-                        <span class="level">[DEBUG]</span>
-                        <span class="message">Monitoring ESP32 device</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Memory Analysis -->
-            <div class="dev-section">
-                <div class="section-header">
-                    <h3><i class="fas fa-memory"></i> Memory Analysis</h3>
-                    <button id="refresh-memory" class="btn btn-small">
-                        <i class="fas fa-sync"></i> Refresh
-                    </button>
-                </div>
-
-                <div class="memory-stats">
-                    <div class="stat-card">
-                        <div class="stat-icon">💾</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="heap-free">256KB</div>
-                            <div class="stat-label">Free Heap</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">📊</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="stack-usage">12KB</div>
-                            <div class="stat-label">Stack Usage</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">💿</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="flash-free">1.2MB</div>
-                            <div class="stat-label">Free Flash</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">⚙️</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="task-count">8</div>
-                            <div class="stat-label">Active Tasks</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="memory-bars">
-                    <div class="memory-item">
-                        <label>Flash Memory Usage</label>
-                        <div class="memory-bar">
-                            <div class="memory-fill" style="width: 65%"></div>
-                            <span class="memory-text">65% Used (2.1MB / 3.2MB)</span>
-                        </div>
-                    </div>
-                    <div class="memory-item">
-                        <label>Heap Memory Usage</label>
-                        <div class="memory-bar">
-                            <div class="memory-fill" style="width: 45%"></div>
-                            <span class="memory-text">45% Used (115KB / 256KB)</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
     <div class="main-container container">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -283,7 +149,120 @@
                 <div id="saved-devices" class="device-grid"></div>
             </div>
 
-            <!-- ESP32 Quick Actions -->
+
+
+            <!-- Debug Console (moved) -->
+            <div class="console-panel">
+                <div class="console-header">
+                    <h3><i class="fas fa-terminal"></i> Console Output</h3>
+                    <div class="console-controls">
+                        <button id="clear-console" class="btn btn-small">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                        <button id="save-log" class="btn btn-small">
+                            <i class="fas fa-save"></i> Save Log
+                        </button>
+                        <button id="kill-process" class="btn btn-danger btn-small" disabled>
+                            <i class="fas fa-stop"></i> Stop
+                        </button>
+                    </div>
+                </div>
+
+                <div id="console" class="console"></div>
+            </div>
+
+
+
+            <!-- Debug Console (after Device Management) -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-terminal"></i> Debug Console</h3>
+                    <div class="console-controls">
+                        <button id="clear-debug-log" class="btn btn-small">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                        <button id="save-debug-log" class="btn btn-small">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <select id="debug-level-filter" class="form-control">
+                            <option value="ALL">All Levels</option>
+                            <option value="ERROR">Errors Only</option>
+                            <option value="WARN">Warnings+</option>
+                            <option value="INFO">Info+</option>
+                            <option value="DEBUG">Debug+</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="console-input">
+                    <input type="text" id="debug-command" placeholder="Enter debug command..." />
+                    <button id="send-debug-btn" class="btn btn-primary">
+                        <i class="fas fa-play"></i> Send
+                    </button>
+                </div>
+
+                <div class="debug-console" id="debug-log"></div>
+            </div>
+
+            <!-- Memory Analysis (after Device Management) -->
+            <div class="dev-section">
+                <div class="section-header">
+                    <h3><i class="fas fa-memory"></i> Memory Analysis</h3>
+                    <button id="refresh-memory" class="btn btn-small">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+
+                <div class="memory-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon">💾</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="heap-free">-</div>
+                            <div class="stat-label">Free Heap</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stack-usage">-</div>
+                            <div class="stat-label">Stack Usage</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💿</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="flash-free">-</div>
+                            <div class="stat-label">Free Flash</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚙️</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="task-count">-</div>
+                            <div class="stat-label">Active Tasks</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="memory-bars">
+                    <div class="memory-item">
+                        <label>Flash Memory Usage</label>
+                        <div class="memory-bar">
+                            <div class="memory-fill" style="width: 0%"></div>
+                            <span class="memory-text" id="flash-usage-text">-</span>
+                        </div>
+                    </div>
+                    <div class="memory-item">
+                        <label>Heap Memory Usage</label>
+                        <div class="memory-bar">
+                            <div class="memory-fill" style="width: 0%"></div>
+                            <span class="memory-text" id="heap-usage-text">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ESP32 Quick Actions (moved below diagnostics) -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
@@ -316,27 +295,7 @@
                 </div>
             </div>
 
-            <!-- Debug Console (moved) -->
-            <div class="console-panel">
-                <div class="console-header">
-                    <h3><i class="fas fa-terminal"></i> Console Output</h3>
-                    <div class="console-controls">
-                        <button id="clear-console" class="btn btn-small">
-                            <i class="fas fa-eraser"></i> Clear
-                        </button>
-                        <button id="save-log" class="btn btn-small">
-                            <i class="fas fa-save"></i> Save Log
-                        </button>
-                        <button id="kill-process" class="btn btn-danger btn-small" disabled>
-                            <i class="fas fa-stop"></i> Stop
-                        </button>
-                    </div>
-                </div>
-
-                <div id="console" class="console"></div>
-            </div>
-
-            <!-- API Testing Section -->
+            <!-- API Testing Section (moved below Quick Actions) -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-network-wired"></i> API Testing</h3>
@@ -444,8 +403,49 @@
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="development.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
+        <!-- Use the same app logic as index.html so Devices behaves identically everywhere -->
+        <script src="app.js"></script>
+        <script>
+            // Optional soft-redirect: if a query flag is present, redirect to index.html
+            // Otherwise keep this page loaded but with unified behavior.
+            (function(){
+                try {
+                    const params = new URLSearchParams(location.search);
+                    if (params.get('redirect') === '1') {
+                        location.replace('index.html');
+                    }
+                } catch (_) {}
+            })();
+        </script>
+
+    <!-- Device Add/Edit Modal (copied from index.html so app.js modal flows work here too) -->
+    <div id="device-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="device-modal-title"><i class="fas fa-plug"></i> Add Device</h3>
+                <button class="modal-close" id="device-cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="devName">Name</label>
+                    <input id="devName" placeholder="My OutdoorAP" />
+                </div>
+                <div class="form-group">
+                    <label for="devHost">Host/IP (host[:port])</label>
+                    <input id="devHost" placeholder="192.168.4.1" />
+                </div>
+                <div class="form-group">
+                    <label for="devCom">COM Port</label>
+                    <input id="devCom" placeholder="COM10" />
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+                <button class="btn" id="device-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="device-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
     <script>
         (function(){
             const root = document.documentElement;
