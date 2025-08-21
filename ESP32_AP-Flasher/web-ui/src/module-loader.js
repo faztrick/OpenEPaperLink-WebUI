@@ -209,24 +209,25 @@ class ModuleLoader {
      */
     registerCoreModules() {
         // Utilities (no dependencies)
-        this.register('utils', 'utils/common-utils.js', [], true);
+        this.register('common-utils', 'utils/common-utils.js', [], true);
         
         // API layer (depends on utils)
-        this.register('api-manager', 'api/api-manager.js', ['utils'], true);
+        this.register('api-manager', 'api/api-manager.js', ['common-utils'], true);
         
         // Configuration management (depends on utils)
-        this.register('config-manager', 'config/config-manager.js', ['utils'], true);
+        this.register('config-manager', 'config/config-manager.js', ['common-utils'], true);
         
         // Core functionality (depends on API and utils)
-        this.register('endpoint-fix', 'endpoint-fix.js', ['utils', 'api-manager'], true);
-        this.register('main-app', 'main-app.js', ['utils', 'api-manager', 'endpoint-fix', 'config-manager'], true);
+        this.register('endpoint-fix', 'endpoint-fix.js', ['common-utils', 'api-manager'], true);
+        this.register('main-app', 'main-app.js', ['common-utils', 'api-manager', 'endpoint-fix', 'config-manager'], true);
         
         // UI Components (depends on core modules)
-        this.register('main-app-controller', 'components/main-app-controller.js', ['utils', 'api-manager', 'config-manager', 'main-app'], false);
+        this.register('main-app-controller', 'components/main-app-controller.js', ['common-utils', 'api-manager', 'config-manager', 'main-app'], false);
+        this.register('device-manager', 'components/device-manager.js', ['common-utils'], false);
         
         // Diagnostics and testing (non-critical)
-        this.register('diagnostics', 'diagnostics.js', ['utils', 'api-manager'], false);
-        this.register('backend-test', 'backend-connectivity-test.js', ['utils', 'api-manager'], false);
+        this.register('diagnostics', 'diagnostics.js', ['common-utils', 'api-manager'], false);
+        this.register('backend-connectivity-test', 'backend-connectivity-test.js', ['common-utils', 'api-manager'], false);
     }
 
     /**
