@@ -214,9 +214,15 @@ class ModuleLoader {
         // API layer (depends on utils)
         this.register('api-manager', 'api/api-manager.js', ['utils'], true);
         
+        // Configuration management (depends on utils)
+        this.register('config-manager', 'config/config-manager.js', ['utils'], true);
+        
         // Core functionality (depends on API and utils)
         this.register('endpoint-fix', 'endpoint-fix.js', ['utils', 'api-manager'], true);
-        this.register('main-app', 'main-app.js', ['utils', 'api-manager', 'endpoint-fix'], true);
+        this.register('main-app', 'main-app.js', ['utils', 'api-manager', 'endpoint-fix', 'config-manager'], true);
+        
+        // UI Components (depends on core modules)
+        this.register('main-app-controller', 'components/main-app-controller.js', ['utils', 'api-manager', 'config-manager', 'main-app'], false);
         
         // Diagnostics and testing (non-critical)
         this.register('diagnostics', 'diagnostics.js', ['utils', 'api-manager'], false);
