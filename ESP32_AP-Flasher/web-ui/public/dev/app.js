@@ -39,6 +39,10 @@ class ESP32DevUI {
         this.updateUI();
     // ensure COM header and device form are populated like Simple Flasher
     try { this.refreshPorts(); } catch (e) {}
+    // if Serial Console is present on the page, populate its port list once
+    try { if (document.getElementById('serial-port-select')) this.refreshSerialPorts(); } catch (e) {}
+    // initialize artifacts UI when present
+    try { this.initArtifactsPanel(); } catch (e) { /* ignore if not on this page */ }
 
     // Start API health checks after a short delay
         setTimeout(() => {
@@ -264,22 +268,44 @@ class ESP32DevUI {
     if (serialRefreshBtn) serialRefreshBtn.addEventListener('click', () => this.refreshSerialPorts());
 
     // Header COM select change: persist and copy to device form
-    const headerComSelect = document.getElementById('com-port-select');
-    if (headerComSelect) headerComSelect.addEventListener('change', (e) => {
-        try { this.saveLastPort(e.target.value); } catch (_) {}
-        const devCom = document.getElementById('device-com');
-        if (devCom) devCom.value = e.target.value;
-        // also update main config
-        this.updateConfig('comPort', e.target.value);
-    });
+        const headerComSelect = document.getElementById('com-port-select');
+        if (headerComSelect) headerComSelect.addEventListener('change', (e) => {
+            try { this.saveLastPort(e.target.value); } catch (_) {}
+            // mirror to device modal COM select if present
+            const devCom = document.getElementById('devCom');
+            if (devCom) devCom.value = e.target.value;
+            // also update main config
+            this.updateConfig('comPort', e.target.value);
+        });
 
-    // Serial open/close/send bindings (C6 panel)
+    // Serial open/close/send bindings (panel)
     const serialOpenBtn = document.getElementById('serial-open');
     if (serialOpenBtn) serialOpenBtn.addEventListener('click', () => this.openSerialPort());
     const serialCloseBtn = document.getElementById('serial-close');
     if (serialCloseBtn) serialCloseBtn.addEventListener('click', () => this.closeSerialPort());
     const serialSendBtn = document.getElementById('serial-send-btn');
     if (serialSendBtn) serialSendBtn.addEventListener('click', () => this.sendSerial());
+    const serialSendSelectedBtn = document.getElementById('serial-send-selected');
+    if (serialSendSelectedBtn) serialSendSelectedBtn.addEventListener('click', () => this.sendSelectedSerialCommand());
+    const serialCheckBtn = document.getElementById('serial-check');
+    if (serialCheckBtn) serialCheckBtn.addEventListener('click', () => this.checkCom());
+
+    // Log tail controls
+    const startTailBtn = document.getElementById('start-tail');
+    if (startTailBtn) startTailBtn.addEventListener('click', () => this.startTail());
+    const stopTailBtn = document.getElementById('stop-tail');
+    if (stopTailBtn) stopTailBtn.addEventListener('click', () => this.stopTail());
+    const logSourceSel = document.getElementById('log-source');
+    if (logSourceSel) logSourceSel.addEventListener('change', () => {
+        // restart tail on source change (if tailing)
+        if (this._tailActive) this.startTail();
+    });
+
+    // Quick API tests
+    const apiBtn = document.getElementById('btn-api-status');
+    if (apiBtn) apiBtn.addEventListener('click', () => this.testApiStatus());
+    const wifiScanBtn = document.getElementById('btn-wifi-scan');
+    if (wifiScanBtn) wifiScanBtn.addEventListener('click', () => this.testWifiScan());
 
     // If running on settings.html, wire save button
     const saveSettingsBtn = document.getElementById('save-settings');
@@ -412,6 +438,176 @@ class ESP32DevUI {
         const modal = document.getElementById('newFileModal');
         if (modal) modal.style.display = 'none';
     });
+
+    // Cleanup on unload
+    try { window.addEventListener('beforeunload', () => { try { this.stopTail(); } catch (_) {} }); } catch (e) { /* ignore */ }
+    }
+
+    // --- Artifacts panel ---
+    initArtifactsPanel() {
+        this._selectedArtifact = null; // { name, type, relPath }
+        const envSel = document.getElementById('artifacts-env');
+        const refreshBtn = document.getElementById('artifacts-refresh');
+        const otaBtn = document.getElementById('artifact-ota');
+        const serialBtn = document.getElementById('artifact-serial');
+        const statusEl = document.getElementById('artifacts-status');
+
+        if (!envSel || !refreshBtn) return; // panel not present
+
+        // populate env selector from platformio.ini if backend provides devices list
+        fetch('/api/platformio-devices').then(r => r.json()).then(j => {
+            if (j && j.success && Array.isArray(j.devices) && j.devices.length) {
+                envSel.innerHTML = '';
+                j.devices.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id || d.name || d.board || 'env';
+                    opt.textContent = d.id || d.name || d.board || 'Env';
+                    envSel.appendChild(opt);
+                });
+                // try set to current env in sidebar
+                const curEnv = document.getElementById('current-env')?.textContent || 'OutdoorAP';
+                try { envSel.value = curEnv; } catch (_) {}
+            }
+        }).catch(() => {});
+
+        const refresh = async () => {
+            const env = envSel.value || 'OutdoorAP';
+            statusEl.textContent = 'Loading artifacts...';
+            const listEl = document.getElementById('artifacts-list');
+            if (listEl) listEl.innerHTML = '';
+            this._selectedArtifact = null;
+            this._updateArtifactButtons();
+            try {
+                const r = await fetch(`/api/artifacts?env=${encodeURIComponent(env)}`);
+                const j = await r.json();
+                if (!j.success) throw new Error(j.error || 'Failed');
+                const arts = Array.isArray(j.artifacts) ? j.artifacts.filter(a => a.exists) : [];
+                statusEl.textContent = `Env ${j.env}: ${arts.length} artifacts`;
+                this.renderArtifacts(arts);
+            } catch (e) {
+                statusEl.textContent = `Error: ${e.message}`;
+            }
+        };
+
+        refreshBtn.addEventListener('click', refresh);
+        envSel.addEventListener('change', refresh);
+        // auto-initialize once
+        setTimeout(refresh, 50);
+
+        if (otaBtn) otaBtn.addEventListener('click', () => this.otaSelectedArtifact());
+        if (serialBtn) serialBtn.addEventListener('click', () => this.serialFlashSelectedArtifact());
+    }
+
+    renderArtifacts(artifacts) {
+        const listEl = document.getElementById('artifacts-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        if (!Array.isArray(artifacts) || artifacts.length === 0) {
+            listEl.innerHTML = '<em>No artifacts found. Build first.</em>';
+            return;
+        }
+        artifacts.forEach(a => {
+            const card = document.createElement('div');
+            card.className = 'artifact-card';
+            card.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;padding:8px;min-width:180px;background:white;cursor:pointer';
+            const sizeStr = (a.size != null) ? `${(a.size/1024).toFixed(1)} KB` : '-';
+            const dateStr = a.mtime ? new Date(a.mtime).toLocaleString() : '';
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                    <strong>${a.name}</strong>
+                    <span class="badge">${a.type}</span>
+                </div>
+                <div class="muted" style="font-size:12px">${sizeStr}${dateStr ? ' • ' + dateStr : ''}</div>
+                <div class="muted" style="font-size:11px;word-break:break-all">${a.relPath || ''}</div>
+            `;
+            card.addEventListener('click', () => {
+                this._selectedArtifact = { name: a.name, type: a.type, relPath: a.relPath };
+                // highlight selection
+                listEl.querySelectorAll('.artifact-card').forEach(el => el.style.outline = 'none');
+                card.style.outline = '2px solid #2563eb';
+                this._updateArtifactButtons();
+            });
+            listEl.appendChild(card);
+        });
+    }
+
+    _updateArtifactButtons() {
+        const otaBtn = document.getElementById('artifact-ota');
+        const serialBtn = document.getElementById('artifact-serial');
+        const hasSel = !!(this._selectedArtifact && this._selectedArtifact.relPath);
+        if (otaBtn) {
+            otaBtn.disabled = !hasSel || (this._selectedArtifact.type !== 'firmware');
+            otaBtn.title = (this._selectedArtifact && this._selectedArtifact.type !== 'firmware') ? 'OTA supports firmware.bin only' : '';
+        }
+        if (serialBtn) serialBtn.disabled = !hasSel;
+    }
+
+    async otaSelectedArtifact() {
+        if (!this._selectedArtifact) { alert('Select an artifact first'); return; }
+        const dev = this.getSelectedDevice();
+        if (!dev || !dev.ip) { alert('Select a device with Host/IP first'); return; }
+        // host the artifact through the server and trigger OTA
+        try {
+            this.log(`Preparing OTA for ${this._selectedArtifact.name} to ${dev.ip}...`, 'info');
+            const hostResp = await fetch('/api/firmware/host-local', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: this._selectedArtifact.relPath })
+            });
+            const hostJson = await hostResp.json();
+            if (!hostJson.success) throw new Error(hostJson.error || 'host failed');
+            const firmwarePath = hostJson.path;
+            const triggerResp = await fetch('/api/firmware/trigger', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host: dev.ip, firmwarePath })
+            });
+            const trig = await triggerResp.json();
+            if (!trig.success) throw new Error(trig.error || 'OTA trigger failed');
+            this.log(`OTA triggered on ${dev.ip}: ${JSON.stringify(trig.deviceResponse)}`, 'success');
+        } catch (e) {
+            this.log(`OTA error: ${e.message}`, 'error');
+            alert(`OTA failed: ${e.message}`);
+        }
+    }
+
+    async serialFlashSelectedArtifact() {
+        if (!this._selectedArtifact) { alert('Select an artifact first'); return; }
+        const port = this.config.comPort || document.getElementById('com-port-select')?.value || 'COM10';
+        if (!port) { alert('Select a COM port first'); return; }
+        // Choose flashing method based on artifact type
+        const envSel = document.getElementById('artifacts-env');
+        const env = envSel ? envSel.value : 'OutdoorAP';
+        if (this._selectedArtifact.type === 'filesystem') {
+            // Upload filesystem image using PlatformIO target uploadfs
+            this.log(`Uploading filesystem (env ${env}) to ${port}...`, 'info');
+            this.showProgress('Uploading filesystem...');
+            this.currentProcess = 'uploadfs';
+            this.updateButtons();
+            this.socket.emit('run_command', {
+                command: 'pio',
+                args: ['run', '-e', env, '--target', 'uploadfs', '--upload-port', port]
+            });
+        } else if (this._selectedArtifact.type === 'firmware') {
+            // Upload firmware using compile.py upload-only path (skip build)
+            this.log(`Uploading firmware (env ${env}) to ${port}...`, 'info');
+            this.showProgress('Uploading firmware...');
+            this.currentProcess = 'upload';
+            this.updateButtons();
+            const args = this.buildCompileArgs({
+                environment: env,
+                comPort: port,
+                baudRate: 921600,
+                jobs: 0,
+                fastBuild: false,
+                clean: false,
+                verbose: false,
+                filesystemOnly: false,
+                skipUpload: false,
+                monitor: false
+            }, { skipBuild: true });
+            this.socket.emit('run_script', { script: 'compile.py', args });
+        } else {
+            alert('Unsupported artifact type for serial flashing. Select firmware.bin or littlefs.bin');
+        }
     }
 
     updateConnectionStatus() {
@@ -459,7 +655,7 @@ class ESP32DevUI {
             // Mirror to header and device selects if present
             try {
                 const header = document.getElementById('com-port-select');
-                const device = document.getElementById('device-com');
+                const device = document.getElementById('devCom');
                 if (header) { header.innerHTML = `<option value="${allowed}">${allowed}</option>`; header.value = allowed; }
                 if (device) { device.innerHTML = `<option value="${allowed}">${allowed}</option>`; device.value = allowed; }
             } catch (_) {}
@@ -506,7 +702,7 @@ class ESP32DevUI {
             if (sel) this.applySelectedDevice(sel);
         });
         // ensure COM dropdown for device form is hydrated by header COM list
-        try { this.refreshHeaderComListToDeviceForm(); } catch (e) {}
+    try { this.refreshHeaderComListToDeviceForm(); } catch (e) {}
     }
 
     async fetchDevices() {
@@ -546,26 +742,7 @@ class ESP32DevUI {
         }
     }
 
-    addDeviceFromForm() {
-        const nameEl = document.getElementById('device-name');
-        const ipEl = document.getElementById('device-ip');
-        const comEl = document.getElementById('device-com');
-        if (!nameEl || !ipEl || !comEl) return;
-        const name = (nameEl.value || '').trim();
-        const ip = (ipEl.value || '').trim();
-        const com = (comEl.value || '').trim();
-        if (!name) { alert('Enter a device name'); return; }
-        const id = `${name}`.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
-        const dev = { id, name, ip, com };
-        this.devices.push(dev);
-        this.selectedDeviceId = id;
-        this.saveDevices();
-        this.renderDevices();
-        this.applySelectedDevice(dev);
-        // clear form
-        nameEl.value = '';
-        // leave IP/COM as-is for convenience
-    }
+    // Inline add form removed; use modal via openDeviceModal('add')
 
     openDeviceModal(mode = 'add', device = null) {
         const modal = document.getElementById('device-modal');
@@ -595,6 +772,20 @@ class ESP32DevUI {
         if (cancel && !cancel.__wired) { cancel.addEventListener('click', () => modal.style.display = 'none'); cancel.__wired = true; }
         if (cancel2 && !cancel2.__wired) { cancel2.addEventListener('click', () => modal.style.display = 'none'); cancel2.__wired = true; }
         if (save && !save.__wired) { save.addEventListener('click', () => this.saveDeviceModal()); save.__wired = true; }
+
+        // Wire WiFi Setup launcher inside the modal
+        const wifiBtn = document.getElementById('modal-wifi-setup');
+        if (wifiBtn && !wifiBtn.__wired) {
+            wifiBtn.addEventListener('click', () => {
+                const devObj = device ? device : {
+                    id: modal.getAttribute('data-edit-id') || `temp_${Date.now()}`,
+                    name: (document.getElementById('devName')?.value || 'Device'),
+                    ip: (document.getElementById('devHost')?.value || '')
+                };
+                this.openWifiScanModal(devObj);
+            });
+            wifiBtn.__wired = true;
+        }
     }
 
     saveDeviceModal() {
@@ -764,8 +955,8 @@ class ESP32DevUI {
     }
 
     refreshHeaderComListToDeviceForm() {
-        const headerSel = document.getElementById('com-port-select');
-        const devSel = document.getElementById('device-com');
+    const headerSel = document.getElementById('com-port-select');
+    const devSel = document.getElementById('devCom');
         if (headerSel && devSel) {
             devSel.innerHTML = headerSel.innerHTML;
             if (headerSel.value) devSel.value = headerSel.value;
@@ -1135,7 +1326,7 @@ class ESP32DevUI {
     }
     loadLastPort() { try { return localStorage.getItem('oepl:lastPort') || null } catch (e) { return null } }
 
-    // Populate header (#com-port-select) and device form (#device-com) with ports
+    // Populate header (#com-port-select) and device modal (#devCom) with ports
     async refreshPorts() {
         try {
             this.log('Refreshing COM ports (header)...', 'info');
@@ -1144,7 +1335,7 @@ class ESP32DevUI {
             const ports = await r.json();
 
             const headerSelect = document.getElementById('com-port-select');
-            const deviceSelect = document.getElementById('device-com');
+            const deviceSelect = document.getElementById('devCom');
             if (headerSelect) headerSelect.innerHTML = '';
             if (deviceSelect) deviceSelect.innerHTML = '';
 
@@ -1187,7 +1378,7 @@ class ESP32DevUI {
         } catch (e) {
             this.log(`Failed to refresh header COM ports: ${e.message}`, 'error');
             const headerSelect = document.getElementById('com-port-select');
-            const deviceSelect = document.getElementById('device-com');
+            const deviceSelect = document.getElementById('devCom');
             if (headerSelect) headerSelect.innerHTML = '';
             if (deviceSelect) deviceSelect.innerHTML = '';
             const ports = (this.config.manualComOnly && this.config.allowedComPort) ? [this.config.allowedComPort] : ['COM1', 'COM3', 'COM10', 'COM13'];
@@ -1235,6 +1426,17 @@ class ESP32DevUI {
                 });
                 this.log('Serial ports refreshed', 'info');
                 try { this._updateFlashEraseButtons(); } catch (e) { }
+                // try align header dropdown
+                const headerSel = document.getElementById('com-port-select');
+                if (headerSel) {
+                    headerSel.innerHTML = '';
+                    this._availableSerialPorts.forEach(p => {
+                        const o = document.createElement('option');
+                        o.value = p.path || p.comName || p.path;
+                        o.textContent = o.value;
+                        headerSel.appendChild(o);
+                    });
+                }
             } else {
                 this.log('No serial ports returned', 'warning');
                 this._availableSerialPorts = [];
@@ -1245,10 +1447,25 @@ class ESP32DevUI {
         }
     }
 
+    sendSelectedSerialCommand() {
+        try {
+            const sel = document.getElementById('serial-cmd-list');
+            const input = document.getElementById('serial-send');
+            if (!sel || !input) return;
+            const cmd = sel.value || '';
+            if (!cmd) { this.log('Select a command to send', 'warning'); return; }
+            input.value = cmd;
+            this.sendSerial();
+        } catch (e) {
+            this.log(`Failed to send selected command: ${e.message}`, 'error');
+        }
+    }
+
     async openSerialPort() {
         const select = document.getElementById('serial-port-select');
-        if (!select) return;
-        const portPath = select.value;
+        // prefer explicit select if present, else use header or config
+        const portPath = select && select.value ? select.value : (document.getElementById('com-port-select')?.value || this.config.comPort || 'COM10');
+        if (!portPath) { this.log('No COM port selected', 'warning'); return; }
         try {
             const res = await fetch('/api/serial/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, baudRate: 115200 }) });
             const j = await res.json();
@@ -1264,8 +1481,8 @@ class ESP32DevUI {
 
     async closeSerialPort() {
         const select = document.getElementById('serial-port-select');
-        if (!select) return;
-        const portPath = select.value;
+        const portPath = select && select.value ? select.value : (document.getElementById('com-port-select')?.value || this.config.comPort || 'COM10');
+        if (!portPath) { this.log('No COM port selected', 'warning'); return; }
         try {
             const res = await fetch('/api/serial/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath }) });
             const j = await res.json();
@@ -1281,9 +1498,10 @@ class ESP32DevUI {
 
     async sendSerial() {
         const select = document.getElementById('serial-port-select');
-        const input = document.getElementById('serial-send');
-        if (!select || !input) return;
-        const portPath = select.value;
+        const input = document.getElementById('serial-send') || document.getElementById('serial-send-text');
+        const portPath = select && select.value ? select.value : (document.getElementById('com-port-select')?.value || this.config.comPort || 'COM10');
+        if (!input) { this.log('No serial input field found', 'warning'); return; }
+        if (!portPath) { this.log('No COM port selected', 'warning'); return; }
         const data = input.value || '';
         try {
             const res = await fetch('/api/serial/write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, data }) });
@@ -1298,6 +1516,29 @@ class ESP32DevUI {
         }
     }
 
+    // Quick COM health check
+    async checkCom() {
+        try {
+            const statusEl = document.getElementById('serial-check-status');
+            if (statusEl) statusEl.textContent = 'Checking...';
+            const portPath = (document.getElementById('serial-port-select')?.value) || (document.getElementById('com-port-select')?.value) || this.config.comPort || 'COM10';
+            if (!portPath) { if (statusEl) statusEl.textContent = 'No COM selected'; return; }
+            const r = await fetch('/api/com/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, testCmd: "\n", timeout: 800 }) });
+            const j = await r.json();
+            if (j.success) {
+                if (statusEl) statusEl.textContent = 'OK';
+                this.log(`COM check OK (${portPath})`, 'success');
+            } else {
+                if (statusEl) statusEl.textContent = 'Failed';
+                this.log(`COM check failed: ${j.error || 'unknown'}`, 'error');
+            }
+        } catch (e) {
+            const statusEl = document.getElementById('serial-check-status');
+            if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+            this.log(`COM check error: ${e.message}`, 'error');
+        }
+    }
+
     updateUI() {
         this.updateConnectionStatus();
         this.updateButtons();
@@ -1306,6 +1547,148 @@ class ESP32DevUI {
     this.attachToWindow();
         // populate advanced pages list if present on page
         try { this.renderAdvancedPages(); } catch (e) { /* ignore when element missing */ }
+    }
+
+    // --- Console tailing (SSE) ---
+    appendConsole(text, type = 'info') {
+        try {
+            const consoleEl = document.getElementById('console');
+            if (consoleEl) {
+                const line = document.createElement('div');
+                line.className = `console-line ${type}`;
+                line.textContent = text;
+                consoleEl.appendChild(line);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+                const lines = consoleEl.querySelectorAll('.console-line');
+                if (lines.length > 1000) lines[0]?.remove();
+            }
+            // buffer only (no server POST to avoid echo)
+            try {
+                this.logBuffer.push({ ts: new Date().toISOString(), type, message: text });
+                if (this.logBuffer.length > 5000) this.logBuffer.shift();
+            } catch (_) { }
+        } catch (_) { }
+    }
+
+    startTail() {
+        try {
+            const name = document.getElementById('log-source')?.value || 'node';
+            // stop existing
+            this.stopTail();
+            const url = `/api/log/stream?name=${encodeURIComponent(name)}`;
+            if (typeof EventSource === 'undefined') {
+                this.appendConsole(`[tail:${name}] EventSource not supported by this browser`, 'warning');
+                return;
+            }
+            const es = new EventSource(url);
+            this._eventSource = es;
+            this._tailActive = true;
+            // UI state
+            try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = true; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = false; } catch (_) {}
+
+            es.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    if (data.initial) {
+                        const lines = String(data.initial).split(/\r?\n/).filter(Boolean);
+                        lines.forEach(l => this.appendConsole(`[${name}] ${l}`, 'info'));
+                    }
+                    if (data.line) {
+                        this.appendConsole(`[${name}] ${String(data.line).replace(/\n$/, '')}`, 'info');
+                    }
+                } catch (e) {
+                    // raw
+                    if (ev.data) this.appendConsole(`[${name}] ${ev.data}`, 'info');
+                }
+            };
+            es.onerror = (e) => {
+                this.appendConsole(`[tail:${name}] error, stopping`, 'error');
+                this.stopTail();
+            };
+            this.appendConsole(`Tailing server log '${name}'...`, 'success');
+            // also fetch list of logs once (optional)
+            fetch('/api/log/list').then(r => r.json()).then(j => {
+                if (j && j.success && Array.isArray(j.logs)) {
+                    // could populate dropdown dynamically in future
+                }
+            }).catch(() => {});
+        } catch (e) {
+            this.appendConsole(`Tail start error: ${e.message}`, 'error');
+        }
+    }
+
+    stopTail() {
+        try {
+            if (this._eventSource) {
+                try { this._eventSource.close(); } catch (_) {}
+                this._eventSource = null;
+            }
+            this._tailActive = false;
+            try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = false; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = true; } catch (_) {}
+        } catch (_) { }
+    }
+
+    // Quick API tests for the inline panel
+    async testApiStatus() {
+        const host = (document.getElementById('test-host')?.value || '').trim();
+        const statusEl = document.getElementById('api-test-status');
+        if (statusEl) statusEl.textContent = 'Testing...';
+        try {
+            if (host) {
+                // Try device endpoints via proxy
+                const tryPaths = ['/api/status', '/sysinfo', '/api/telemetry'];
+                let ok = false, lastErr = '';
+                for (const p of tryPaths) {
+                    try {
+                        const r = await fetch(`/device${p}?host=${encodeURIComponent(host)}`);
+                        if (r.ok) { ok = true; break; }
+                        lastErr = `HTTP ${r.status}`;
+                    } catch (e) { lastErr = e.message; }
+                }
+                if (ok) {
+                    if (statusEl) statusEl.textContent = `OK (${host})`;
+                    this.log(`Device API reachable at ${host}`, 'success');
+                } else {
+                    if (statusEl) statusEl.textContent = `Failed (${lastErr})`;
+                    this.log(`Device API test failed for ${host}: ${lastErr}`, 'error');
+                }
+                return;
+            }
+            // Local server API
+            const r = await fetch('/api/status');
+            if (r.ok) {
+                if (statusEl) statusEl.textContent = 'OK (server)';
+                this.log('Local /api/status OK', 'success');
+            } else {
+                if (statusEl) statusEl.textContent = `Failed (HTTP ${r.status})`;
+                this.log(`Local /api/status failed: HTTP ${r.status}`, 'error');
+            }
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+            this.log(`API status test error: ${e.message}`, 'error');
+        }
+    }
+
+    async testWifiScan() {
+        const host = (document.getElementById('test-host')?.value || '').trim();
+        const statusEl = document.getElementById('api-test-status');
+        if (!host) { if (statusEl) statusEl.textContent = 'Set host/IP first'; return; }
+        if (statusEl) statusEl.textContent = 'Scanning...';
+        try {
+            const r = await fetch(`/api/device/wifi/scan?host=${encodeURIComponent(host)}`);
+            const j = await r.json();
+            if (j.success) {
+                const n = Array.isArray(j.networks) ? j.networks.length : 0;
+                if (statusEl) statusEl.textContent = `Scan OK (${n})`;
+                this.log(`WiFi scan on ${host}: ${n} networks`, 'success');
+            } else {
+                if (statusEl) statusEl.textContent = `Scan failed: ${j.error || 'unknown'}`;
+                this.log(`WiFi scan failed: ${j.error || 'unknown'}`, 'error');
+            }
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+            this.log(`WiFi scan error: ${e.message}`, 'error');
+        }
     }
 
     async renderAdvancedPages() {

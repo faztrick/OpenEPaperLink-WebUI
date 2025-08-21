@@ -2,6 +2,41 @@
 
 This directory contains the project documentation organized for easy reference.
 
+## Python Virtual Environment (venv)
+
+Helper scripts (fast build, upload, Wi‑Fi config, web file compression) use a few external Python packages (requests, pyserial, colorama). To keep your global Python clean and guarantee consistent versions, create a local virtual environment:
+
+Windows (PowerShell):
+
+```powershell
+pwsh -File ESP32_AP-Flasher/scripts/setup_venv.ps1
+# Then activate for interactive use
+./ESP32_AP-Flasher/.venv/Scripts/Activate.ps1
+```
+
+macOS / Linux:
+
+```bash
+cd ESP32_AP-Flasher
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Fast build / flash scripts automatically prefer `.venv` when present. You can also have `fast_compile.ps1` create it on the fly:
+
+```powershell
+pwsh -File ESP32_AP-Flasher/fast_compile.ps1 -AutoVenv
+```
+
+Key files:
+- `requirements.txt` – pinned dependency set
+- `scripts/setup_venv.ps1` – one‑shot bootstrap on Windows
+- `fast_compile.py` – prefers `.venv` Python (`python -m platformio`) if available
+
+If you need to force a different interpreter, set `PYTHON` or call the desired python explicitly for scripts.
+
 ## Main Documentation
 
 - **[AI Agent Instructions](../.github/copilot-instructions.md)** - Comprehensive guide for AI coding agents working on this project
@@ -82,3 +117,7 @@ Key HTTP endpoints in `src/web.cpp`:
 - `/ws` - WebSocket real-time updates
 
 For complete endpoint documentation, see the archived implementation summaries.
+
+## API References
+
+- Startup Modules Gating: `docs/api_startup_modules.md` (control which optional subsystems auto-start)

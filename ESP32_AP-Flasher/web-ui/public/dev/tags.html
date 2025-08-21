@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tags — OpenEPaperLink</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <div class="logo"><i class="fas fa-tags"></i><h1>Tags</h1></div>
+    </div>
+  </header>
+
+  <nav class="top-nav">
+    <div class="container">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="wifi.html" class="nav-link">WiFi</a>
+      <a href="tags.html" class="nav-link active">Tags</a>
+      <a href="ap-list.html" class="nav-link">AP List</a>
+      <a href="peers.html" class="nav-link">Peers</a>
+      <a href="flash.html" class="nav-link">Simple Flasher</a>
+  <a href="device.html" class="nav-link">Device</a>
+      <a href="settings.html" class="nav-link">Settings</a>
+      <a href="ai.html" class="nav-link">AI</a>
+    </div>
+  </nav>
+
+  <main class="container" style="max-width:1100px;padding:16px">
+    <div class="build-panel">
+      <h2><i class="fas fa-tags"></i> Tags</h2>
+      <p class="muted">This page will list all registered e-paper tags and their status. Coming soon.</p>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

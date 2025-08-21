@@ -29,6 +29,7 @@
 #include "oepl_udp.h"
 #include "util.h"
 #include "web.h"
+#include <ArduinoJson.h>
 #ifdef HAS_BLE_WRITER
 #include "ble_writer.h"
 #endif
@@ -48,6 +49,83 @@ util::Timer intervalVars(seconds(10));
 util::Timer intervalSaveDB(minutes(5));
 
 SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
+// --- Startup modules gating (default: only Web, Serial and WiFi auto-start) ---
+// These flags can be changed via /api/startup_modules and are persisted in
+// /current/startup_modules.json. If the file is missing, defaults apply (all false).
+bool gStart_APTask = false;
+bool gStart_BLEWriter = false;
+bool gStart_IRRemote = false;
+bool gStart_USBFlasher = false;
+bool gStart_WebFlasher = false;
+bool gStart_UDP = false;
+bool gStart_ContentRunner = false;
+
+static void loadStartupModulesConfig()
+{
+    // Initialize defaults
+    gStart_APTask = false;
+    gStart_BLEWriter = false;
+    gStart_IRRemote = false;
+    gStart_USBFlasher = false;
+    gStart_WebFlasher = false;
+    gStart_UDP = false;
+    gStart_ContentRunner = false;
+
+    if (!contentFS)
+        return;
+
+    File r = contentFS->open("/current/startup_modules.json", "r");
+    if (!r)
+        return;
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, r);
+    r.close();
+    if (err)
+        return;
+
+    // Accept either {"modules": { name: bool, ... }} or legacy array of objects
+    if (doc["modules"].is<JsonObject>())
+    {
+        JsonObject mods = doc["modules"].as<JsonObject>();
+        if (mods["APTask"].is<bool>())
+            gStart_APTask = mods["APTask"].as<bool>();
+        if (mods["BLEWriter"].is<bool>())
+            gStart_BLEWriter = mods["BLEWriter"].as<bool>();
+        if (mods["IRRemote"].is<bool>())
+            gStart_IRRemote = mods["IRRemote"].as<bool>();
+        if (mods["USBFlasher"].is<bool>())
+            gStart_USBFlasher = mods["USBFlasher"].as<bool>();
+        if (mods["WebFlasher"].is<bool>())
+            gStart_WebFlasher = mods["WebFlasher"].as<bool>();
+        if (mods["UDP"].is<bool>())
+            gStart_UDP = mods["UDP"].as<bool>();
+        if (mods["ContentRunner"].is<bool>())
+            gStart_ContentRunner = mods["ContentRunner"].as<bool>();
+    }
+    else if (doc["modules"].is<JsonArray>())
+    {
+        for (JsonObject m : doc["modules"].as<JsonArray>())
+        {
+            String name = m["name"].as<String>();
+            bool autoStart = m["autoStart"].is<bool>() ? m["autoStart"].as<bool>() : false;
+            if (name == "APTask")
+                gStart_APTask = autoStart;
+            else if (name == "BLEWriter")
+                gStart_BLEWriter = autoStart;
+            else if (name == "IRRemote")
+                gStart_IRRemote = autoStart;
+            else if (name == "USBFlasher")
+                gStart_USBFlasher = autoStart;
+            else if (name == "WebFlasher")
+                gStart_WebFlasher = autoStart;
+            else if (name == "UDP")
+                gStart_UDP = autoStart;
+            else if (name == "ContentRunner")
+                gStart_ContentRunner = autoStart;
+        }
+    }
+}
 
 void delayedStart(void *parameter)
 {
@@ -118,6 +196,8 @@ void setup()
     // NVS explicitly not used: partition table has no NVS and WiFi persistence is disabled
 
     Storage.begin();
+    // Load startup modules configuration (gates which subsystems auto-start)
+    loadStartupModulesConfig();
 
     /*
     Serial.println("\n\n##################################");
@@ -193,11 +273,15 @@ void setup()
     {
         cleanupCurrent();
     }
-    xTaskCreate(APTask, "AP Process", 6000, NULL, 5, NULL);
+    // Start AP processing only if enabled via config
+    if (gStart_APTask)
+    {
+        xTaskCreate(APTask, "AP Process", 6000, NULL, 5, NULL);
+    }
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
 #ifdef HAS_BLE_WRITER
-    if (config.ble)
+    if (gStart_BLEWriter && config.ble)
     {
         xTaskCreate(BLETask, "BLE Writer", 12000, NULL, 5, NULL);
     }
@@ -205,13 +289,16 @@ void setup()
 
 #ifdef HAS_IR_REMOTE
     // Initialize IR interface
-    if (irInterface.begin())
+    if (gStart_IRRemote)
     {
-        Serial.println("✅ IR Remote interface started");
-    }
-    else
-    {
-        Serial.println("❌ Failed to start IR Remote interface");
+        if (irInterface.begin())
+        {
+            Serial.println("✅ IR Remote interface started");
+        }
+        else
+        {
+            Serial.println("❌ Failed to start IR Remote interface");
+        }
     }
 #endif
 
@@ -228,7 +315,10 @@ void setup()
 
 #ifdef HAS_USB
     // We'll need to start the 'usbflasher' task for boards with a second (USB) port. This can be used as a 'flasher' interface, using a python script on the host
-    xTaskCreate(usbFlasherTask, "usbflasher", 10000, NULL, 5, NULL);
+    if (gStart_USBFlasher)
+    {
+        xTaskCreate(usbFlasherTask, "usbflasher", 10000, NULL, 5, NULL);
+    }
 #else
 
 #ifdef ETHERNET_CLK_MODE
@@ -239,7 +329,10 @@ void setup()
 #endif
 
 #ifdef HAS_EXT_FLASHER
-    xTaskCreate(webFlasherTask, "webflasher", 8000, NULL, 3, NULL);
+    if (gStart_WebFlasher)
+    {
+        xTaskCreate(webFlasherTask, "webflasher", 8000, NULL, 3, NULL);
+    }
 #endif
 
     esp_reset_reason_t resetReason = esp_reset_reason();
@@ -255,13 +348,19 @@ void setup()
     util::printHeap();
 
 #ifdef ENABLE_UDP_LOG_RECEIVER
-    extern void startUdpLogReceiver();
-    startUdpLogReceiver();
+    if (gStart_UDP)
+    {
+        extern void startUdpLogReceiver();
+        startUdpLogReceiver();
+    }
 #endif
 
-    // Defer UDP discovery init; will complete when WiFi is ready
-    extern void init_udp();
-    init_udp();
+    // Defer UDP discovery init; will complete when WiFi is ready (gated by config)
+    if (gStart_UDP)
+    {
+        extern void init_udp();
+        init_udp();
+    }
 }
 
 void loop()
@@ -272,8 +371,11 @@ void loop()
     wm.poll();
 
     // Opportunistically attempt starting deferred UDP subsystems when WiFi becomes ready
-    extern UDPcomm udpsync;
-    udpsync.init();
+    if (gStart_UDP)
+    {
+        extern UDPcomm udpsync;
+        udpsync.init();
+    }
 
     if (intervalSysinfo.doRun())
     {
@@ -287,7 +389,7 @@ void loop()
     {
         saveDB("/current/tagDB.json");
     }
-    if (intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO))
+    if (gStart_ContentRunner && intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO))
     {
         contentRunner();
     }

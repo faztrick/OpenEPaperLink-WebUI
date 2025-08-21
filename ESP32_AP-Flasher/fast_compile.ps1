@@ -13,8 +13,24 @@ param(
     [switch]$SkipUpload,
     [switch]$Monitor,
     [switch]$Clean,
-    [switch]$FilesystemOnly
+    [switch]$FilesystemOnly,
+    [switch]$AutoVenv
 )
+
+# Auto-detect and optionally bootstrap Python virtual environment
+$scriptRoot = $PSScriptRoot
+$venvPython = Join-Path $scriptRoot '.venv/Scripts/python.exe'
+if (Test-Path $venvPython) {
+    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts');$env:PATH +=";" + $env:PATH
+    Write-Host "[fast_compile] Using venv python: $venvPython" -ForegroundColor DarkCyan
+} elseif ($AutoVenv) {
+    Write-Host "[fast_compile] Creating virtual environment (.venv) ..." -ForegroundColor DarkCyan
+    python -m venv (Join-Path $scriptRoot '.venv')
+    & $venvPython -m pip install --upgrade pip
+    if (Test-Path (Join-Path $scriptRoot 'requirements.txt')) { & $venvPython -m pip install -r (Join-Path $scriptRoot 'requirements.txt') }
+    Write-Host "[fast_compile] Virtual environment ready." -ForegroundColor DarkCyan
+    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts');$env:PATH +=";" + $env:PATH
+}
 
 # Fast build configuration
 $ErrorActionPreference = "Stop"

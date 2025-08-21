@@ -475,6 +475,69 @@ void init_web()
     // Enhanced Module Management API Endpoints
     moduleManager.setupModuleManagementAPI(server);
 
+    // --- Startup modules gating API ---
+    // GET /api/startup_modules -> returns current persisted flags
+    server.on("/api/startup_modules", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc;
+        if (contentFS) {
+            File r = contentFS->open("/current/startup_modules.json", "r");
+            if (r) {
+                DeserializationError err = deserializeJson(doc, r);
+                r.close();
+                if (err) doc.clear();
+            }
+        }
+        // If empty, provide defaults (only web/serial/wifi implicitly started)
+        if (doc.isNull()) {
+            JsonObject mods = doc["modules"].to<JsonObject>();
+            mods["APTask"] = false;
+            mods["BLEWriter"] = false;
+            mods["IRRemote"] = false;
+            mods["USBFlasher"] = false;
+            mods["WebFlasher"] = false;
+            mods["UDP"] = false;
+            mods["ContentRunner"] = false;
+        }
+
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response); });
+
+    // POST /api/startup_modules -> set flags; body JSON { modules: { name: bool } }
+    server.on("/api/startup_modules", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        if (request->contentLength() == 0) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Empty body\"}");
+        } }, nullptr, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+        static String body = "";
+        if (index == 0) body = "";
+        for (size_t i = 0; i < len; i++) body += (char)data[i];
+        if (index + len == total) {
+            JsonDocument in;
+            DeserializationError err = deserializeJson(in, body);
+            bool ok = !err;
+            if (ok && contentFS) {
+                // Merge with existing file to retain unknown keys
+                JsonDocument existing;
+                File r = contentFS->open("/current/startup_modules.json", "r");
+                if (r) { deserializeJson(existing, r); r.close(); }
+                if (existing.isNull()) existing.to<JsonObject>();
+                if (in["modules"].is<JsonObject>()) {
+                    JsonObject src = in["modules"].as<JsonObject>();
+                    JsonObject dst = existing["modules"].to<JsonObject>();
+                    for (JsonPair kv : src) { dst[kv.key()] = kv.value(); }
+                }
+                xSemaphoreTake(fsMutex, portMAX_DELAY);
+                File w = contentFS->open("/current/startup_modules.json", "w");
+                if (w) { serializeJson(existing, w); w.close(); ok = true; } else { ok = false; }
+                xSemaphoreGive(fsMutex);
+            }
+            request->send(ok ? 200 : 400, "application/json", ok ? "{\"success\":true}" : "{\"success\":false}" );
+            body = "";
+        } });
+
     // --- System endpoints ---
 
     server.on("/reboot", HTTP_POST, [](AsyncWebServerRequest *request)

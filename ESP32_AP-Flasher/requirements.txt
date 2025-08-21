@@ -1,0 +1,5 @@
+# Consolidated Python dependencies for ESP32_AP-Flasher helper scripts
+# Pin to broadly compatible, stable versions. Adjust if project needs newer features.
+requests>=2.31.0,<3.0.0
+pyserial>=3.5,<4.0
+colorama>=0.4.6,<0.5

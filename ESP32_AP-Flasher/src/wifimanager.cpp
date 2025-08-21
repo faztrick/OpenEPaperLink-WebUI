@@ -867,21 +867,26 @@ void WifiManager::startManagementServer()
         {
             // AP explicitly disabled by config; don't start management AP
             terminalLog("Config AP disabled by configuration");
+            Serial.println("[WiFiManager] Config AP disabled by configuration (apEnabled=false)");
             return;
         }
 
         terminalLog("Starting config AP, ssid: " + apSsid);
         logLine("Starting configuration AP, ssid " + apSsid);
+        Serial.printf("[WiFiManager] Attempting to start AP: ssid=%s, channel=%d, max_clients=%d, hidden=%s, password='%s'\n", apSsid.c_str(), apChannel, apMaxClients, apHidden ? "true" : "false", apPassword.c_str());
 
         // Proper mode: keep STA available too
         // Avoid full disconnect if already in AP/dual to keep clients
         if ((WiFi.getMode() & WIFI_MODE_AP) == 0)
         {
+            terminalLog("Switching to AP mode (WIFI_AP_STA) for management server");
+            Serial.println("[WiFiManager] Switching to AP mode (WIFI_AP_STA)");
             WiFi.disconnect(true, true);
             vTaskDelay(pdMS_TO_TICKS(200));
         }
 
         // Optimized WiFi settings for ESP32-S3 AP mode
+        terminalLog("Configuring WiFi for ESP32-S3 AP mode with optimizations");
         WiFi.mode(WIFI_AP_STA); // Use dual mode to allow scanning while in AP mode
 
         // Configure WiFi performance settings
@@ -912,7 +917,9 @@ void WifiManager::startManagementServer()
         const char *apPassCStr = usePassword ? apPassword.c_str() : "";
         if (!WiFi.softAP(apSsid.c_str(), apPassCStr, apChannel, apHidden, apMaxClients))
         { // Allow up to apMaxClients connections
-            Serial.println("ERROR: Failed to start WiFi AP");
+            Serial.println("[WiFiManager] ERROR: Failed to start WiFi AP");
+            Serial.printf("[WiFiManager] softAP() params: ssid='%s', password='%s', channel=%d, hidden=%s, max_clients=%d\n", apSsid.c_str(), apPassCStr, apChannel, apHidden ? "true" : "false", apMaxClients);
+            Serial.printf("[WiFiManager] WiFi.getMode() = %d\n", WiFi.getMode());
             return;
         }
 

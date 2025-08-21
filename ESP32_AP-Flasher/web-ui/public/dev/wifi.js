@@ -36,16 +36,44 @@
     }catch(e){ setText('wifi-scan-status', `Error: ${e.message}`); log(`Scan error: ${e.message}`,'error'); }
   }
 
+  function getHeaderCom(){
+    const sel = document.getElementById('com-port-select');
+    return sel && sel.value ? sel.value : '';
+  }
+
+  function updateSelectedComLabel(){
+    const lbl = document.getElementById('wifi-selected-com');
+    const com = getHeaderCom();
+    if (lbl) lbl.textContent = com || '-';
+  }
+
   async function serialScan(){
-    const sel = document.getElementById('serial-port-select'); if(!sel||!sel.value){ alert('Select a COM port'); return; }
-    setText('wifi-serial-scan-status','Scanning via serial...'); log(`Serial WiFi scan on ${sel.value}...`);
+    const com = getHeaderCom(); if(!com){ alert('Select a COM port (header)'); return; }
+    setText('wifi-serial-scan-status','Scanning via serial...'); log(`Serial WiFi scan on ${com}...`);
     try{
-      const r = await fetch('/api/serial/wifi/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: sel.value }) });
+      const r = await fetch('/api/serial/wifi/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: com }) });
       const j = await r.json();
       if(!j.success) throw new Error(j.error||'serial scan failed');
       renderNetworks(j.networks||[]);
       setText('wifi-serial-scan-status',`Found ${Array.isArray(j.networks)?j.networks.length:0}`);
     }catch(e){ setText('wifi-serial-scan-status',`Error: ${e.message}`); log(`Serial scan error: ${e.message}`,'error'); }
+  }
+
+  async function serialCheck(){
+    const com = getHeaderCom(); if(!com){ alert('Select a COM port (header)'); return; }
+    setText('wifi-serial-check-status','Checking...'); log(`Checking COM health on ${com}...`);
+    try{
+      const r = await fetch('/api/com/check', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: com, testCmd: '\n', timeout: 800 }) });
+      const j = await r.json();
+      if(!j.success) throw new Error(j.error||'check failed');
+      const resp = (j.response||'').toString();
+      const preview = resp.length ? ` OK (resp ${Math.min(resp.length,40)}b)` : ' OK (no response)';
+      setText('wifi-serial-check-status', preview);
+      log(`COM check success on ${com}.${resp?` Response: ${resp.substring(0,120).replace(/\r?\n/g,'\\n')}`:''}`);
+    }catch(e){
+      setText('wifi-serial-check-status',`Error: ${e.message}`);
+      log(`COM check error on ${com}: ${e.message}`,'error');
+    }
   }
 
   function renderNetworks(list){
@@ -88,13 +116,13 @@
   }
 
   async function serialConnect(){
-    const sel = document.getElementById('serial-port-select'); if(!sel||!sel.value){ alert('Select a COM port'); return; }
+    const com = getHeaderCom(); if(!com){ alert('Select a COM port (header)'); return; }
     const ssid = document.getElementById('wifi-ssid').value.trim();
     const password = document.getElementById('wifi-pass').value;
     if(!ssid){ alert('Enter SSID'); return; }
-    setText('wifi-connect-status','Sending via serial...'); log(`Sending WiFi credentials via ${sel.value} for SSID='${ssid}' ...`);
+    setText('wifi-connect-status','Sending via serial...'); log(`Sending WiFi credentials via ${com} for SSID='${ssid}' ...`);
     try{
-      const r = await fetch('/api/serial/wifi/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: sel.value, ssid, password }) });
+      const r = await fetch('/api/serial/wifi/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: com, ssid, password }) });
       const j = await r.json();
       if(!j.success) throw new Error(j.error||'serial connect failed');
       setText('wifi-connect-status', j.acknowledged ? 'Acknowledged via serial.' : 'Sent via serial.');
@@ -106,33 +134,10 @@
   document.addEventListener('DOMContentLoaded', ()=>{
     populateDevices();
     const cur = getSelectedDevice(); if(cur && cur.ip){ document.getElementById('wifi-host').value = cur.ip; }
-    // populate serial ports selector via header list if available
-    try {
-      const headerSel = document.getElementById('com-port-select');
-      const serialSel = document.getElementById('serial-port-select');
-      if (headerSel && serialSel) {
-        serialSel.innerHTML = headerSel.innerHTML;
-        if (headerSel.value) serialSel.value = headerSel.value;
-      }
-    } catch(_) {}
-    // Fallback: fetch from server
-    (async () => {
-      try {
-        const serialSel = document.getElementById('serial-port-select');
-        if (!serialSel || serialSel.options.length > 0) return;
-        const r = await fetch('/api/com-ports');
-        if (r.ok) {
-          const ports = await r.json();
-          if (Array.isArray(ports) && ports.length > 0) {
-            serialSel.innerHTML = '';
-            ports.forEach(p => {
-              const val = p.path || p;
-              const o = document.createElement('option'); o.value = val; o.textContent = val; serialSel.appendChild(o);
-            });
-          }
-        }
-      } catch(_) {}
-    })();
+  updateSelectedComLabel();
+  // Keep label in sync when header COM changes
+  const headerSel = document.getElementById('com-port-select');
+  if (headerSel) headerSel.addEventListener('change', updateSelectedComLabel);
     document.getElementById('wifi-use-selected').addEventListener('click', ()=>{
       const devId = document.getElementById('wifi-device-select').value; const dev = devicesList().find(d=>d.id===devId);
       if(dev && dev.ip){ document.getElementById('wifi-host').value = dev.ip; log(`Using device ${dev.name||dev.id} (${dev.ip})`); }
@@ -140,9 +145,27 @@
     document.getElementById('wifi-scan').addEventListener('click', scan);
     const serialScanBtn = document.getElementById('wifi-serial-scan');
     if (serialScanBtn) serialScanBtn.addEventListener('click', serialScan);
+  const serialCheckBtn = document.getElementById('wifi-serial-check');
+  if (serialCheckBtn) serialCheckBtn.addEventListener('click', serialCheck);
     document.getElementById('wifi-connect').addEventListener('click', connect);
     const serialConnBtn = document.getElementById('wifi-serial-connect');
-    if (serialConnBtn) serialConnBtn.addEventListener('click', serialConnect);
+    if (serialConnBtn) serialConnBtn.addEventListener('click', () => {
+      const com = getHeaderCom(); if(!com){ alert('Select a COM port (header)'); return; }
+      // Wrap serialConnect to use header COM
+      (async () => {
+        const ssid = document.getElementById('wifi-ssid').value.trim();
+        const password = document.getElementById('wifi-pass').value;
+        if(!ssid){ alert('Enter SSID'); return; }
+        setText('wifi-connect-status','Sending via serial...'); log(`Sending WiFi credentials via ${com} for SSID='${ssid}' ...`);
+        try{
+          const r = await fetch('/api/serial/wifi/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: com, ssid, password }) });
+          const j = await r.json();
+          if(!j.success) throw new Error(j.error||'serial connect failed');
+          setText('wifi-connect-status', j.acknowledged ? 'Acknowledged via serial.' : 'Sent via serial.');
+          log('Serial WiFi settings sent successfully.');
+        }catch(e){ setText('wifi-connect-status',`Error: ${e.message}`); log(`Serial connect error: ${e.message}`,'error'); }
+      })();
+    });
     document.getElementById('wifi-clear').addEventListener('click', ()=>{ const el = logEl(); if(el) el.innerHTML=''; });
   });
 })();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>ESP32 DevWebUi — Device (moved)</title>
+    <title>ESP32 DevWebUi — Device</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="styles.css" rel="stylesheet">
@@ -378,6 +378,43 @@
         </main>
     </div>
 
+    <!-- Serial Console Section -->
+    <div class="container">
+        <div class="dev-section">
+            <div class="section-header">
+                <h3><i class="fas fa-usb"></i> Serial Console</h3>
+                <div class="console-controls" style="gap:8px;display:flex;flex-wrap:wrap;align-items:center">
+                    <label for="serial-port-select" style="font-size:12px;color:#6b7280">Port</label>
+                    <select id="serial-port-select" style="min-width:120px"></select>
+                    <button id="serial-refresh" class="btn btn-small" title="Refresh serial ports"><i class="fas fa-sync"></i></button>
+                    <button id="serial-check" class="btn btn-small" title="Quick health check">Check</button>
+                    <span id="serial-check-status" class="muted" style="min-width:80px"></span>
+                    <button id="serial-open" class="btn btn-small btn-success">Open</button>
+                    <button id="serial-close" class="btn btn-small btn-outline">Close</button>
+                </div>
+            </div>
+
+            <div class="console-input" style="margin-top:8px">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+                    <label for="serial-cmd-list" style="font-size:12px;color:#6b7280">Cmd</label>
+                    <select id="serial-cmd-list" class="form-control" style="min-width:220px">
+                        <option value="">-- Select a command --</option>
+                        <option value="help">help</option>
+                        <option value="version">version</option>
+                        <option value="reboot">reboot</option>
+                        <option value="sysinfo">sysinfo</option>
+                        <option value="wifi_scan">wifi_scan</option>
+                        <option value="heap">heap</option>
+                        <option value="tasks">tasks</option>
+                    </select>
+                    <button id="serial-send-selected" class="btn btn-small"><i class="fas fa-paper-plane"></i> Send Selected</button>
+                </div>
+                <input type="text" id="serial-send" placeholder="Type a command to send over serial..." />
+                <button id="serial-send-btn" class="btn btn-primary" style="margin-top:6px"><i class="fas fa-paper-plane"></i> Send</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Device Edit Modal -->
     <div id="device-edit-modal" class="modal" aria-hidden="true">
         <div class="modal-content">
@@ -410,12 +447,14 @@
         <!-- Use the same app logic as index.html so Devices behaves identically everywhere -->
         <script src="app.js"></script>
         <script>
-        // This page has been renamed. Redirect to device.html unless a debug flag is set.
+            // Optional soft-redirect: if a query flag is present, redirect to index.html
+            // Otherwise keep this page loaded but with unified behavior.
             (function(){
                 try {
                     const params = new URLSearchParams(location.search);
-            const noRedirect = params.get('noRedirect') === '1';
-            if (!noRedirect) location.replace('device.html');
+                    if (params.get('redirect') === '1') {
+                        location.replace('index.html');
+                    }
                 } catch (_) {}
             })();
         </script>

@@ -159,6 +159,11 @@ app.use(express.static(path.join(__dirname, 'public/dev')));
 // in web-ui/public/device will be reachable via /device/* as well.
 app.use('/device', express.static(path.join(__dirname, 'public', 'device')));
 
+// Legacy URL compatibility: redirect /development.html to /device.html
+app.get(['/development', '/development.html'], (req, res) => {
+    try { res.redirect(301, '/device.html'); } catch (e) { res.redirect('/device.html'); }
+});
+
 // Ensure uploads folder exists
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -1023,6 +1028,71 @@ app.post('/api/device/wifi/connect', async (req, res) => {
 app.get('/api/status', (req, res) => {
     const status = getProjectStatus();
     res.json(status);
+});
+
+// List build artifacts for a given environment (defaults to currentConfig.environment)
+// Returns a list of objects: { name, type, size, mtime, relPath, exists }
+app.get('/api/artifacts', (req, res) => {
+    try {
+        const env = (req.query.env || currentConfig.environment || 'OutdoorAP').toString();
+        const buildDir = path.join(__dirname, '..', '.pio', 'build', env);
+        const projectRoot = path.join(__dirname, '..');
+        const types = [
+            { name: 'firmware.bin', type: 'firmware' },
+            { name: 'littlefs.bin', type: 'filesystem' },
+            { name: 'bootloader.bin', type: 'bootloader' },
+            { name: 'partitions.bin', type: 'partitions' },
+            { name: 'app.elf', type: 'elf' }
+        ];
+
+        const out = [];
+        types.forEach(t => {
+            try {
+                const abs = path.join(buildDir, t.name);
+                const exists = fs.existsSync(abs);
+                let size = null, mtime = null;
+                if (exists) {
+                    const st = fs.statSync(abs);
+                    size = st.size;
+                    mtime = st.mtime;
+                }
+                const relPath = path.relative(projectRoot, abs).replace(/\\/g, '/');
+                out.push({ name: t.name, type: t.type, size, mtime, relPath, exists });
+            } catch (_) { /* ignore individual errors */ }
+        });
+
+        res.json({ success: true, env, artifacts: out });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
+// Host a local artifact by copying it into the public/uploads folder so it can be served via HTTP
+// body: { path: 'relative/path/from/project/root' }
+app.post('/api/firmware/host-local', (req, res) => {
+    try {
+        const rel = (req.body && req.body.path) ? String(req.body.path) : '';
+        if (!rel) return res.status(400).json({ success: false, error: 'path required' });
+        const projectRoot = path.join(__dirname, '..');
+        const src = path.resolve(projectRoot, rel);
+        // ensure src is inside projectRoot
+        if (!src.startsWith(path.resolve(projectRoot))) {
+            return res.status(400).json({ success: false, error: 'invalid path' });
+        }
+        if (!fs.existsSync(src)) return res.status(404).json({ success: false, error: 'file not found' });
+
+        const uploads = path.join(__dirname, 'public', 'uploads');
+        if (!fs.existsSync(uploads)) fs.mkdirSync(uploads, { recursive: true });
+        const baseName = path.basename(src);
+        const destName = `${Date.now()}-${baseName}`;
+        const dest = path.join(uploads, destName);
+        fs.copyFileSync(src, dest);
+        const st = fs.statSync(dest);
+        const relHosted = path.join('uploads', destName).replace(/\\/g, '/');
+        res.json({ success: true, path: relHosted, filename: destName, size: st.size });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
 });
 
 // Parse platformio.ini and return device environments
