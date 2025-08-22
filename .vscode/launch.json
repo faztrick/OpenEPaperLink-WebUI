@@ -11,10 +11,94 @@
       "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
       "externalConsole": false,
       "setupCommands": [
-        { "text": "file ${workspaceFolder}/ESP32_AP-Flasher/.pio/build/OutdoorAP/firmware.elf" },
-        { "text": "target remote 127.0.0.1:3333" },
-        { "text": "monitor reset halt" }
+        {
+          "text": "file ${workspaceFolder}/ESP32_AP-Flasher/.pio/build/OutdoorAP/firmware.elf"
+        },
+        {
+          "text": "target remote 127.0.0.1:3333"
+        },
+        {
+          "text": "monitor reset halt"
+        }
       ]
+    },
+    {
+      "name": "Node: Launch Web UI Server (web-ui/server.js)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/ESP32_AP-Flasher/web-ui/server.js",
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui",
+      "runtimeArgs": [
+        "--inspect=9229"
+      ],
+      "env": {
+        "PORT": "3000"
+      },
+      "console": "integratedTerminal",
+      "restart": true,
+      "autoAttachChildProcesses": true,
+      "outputCapture": "std"
+    },
+    {
+      "name": "Node: Attach to Running Web UI (9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": false,
+      "continueOnAttach": true
+    },
+    {
+      "name": "Python: fast_compile (Build+Upload OutdoorAP)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/ESP32_AP-Flasher/fast_compile.py",
+      "args": [
+        "--env",
+        "OutdoorAP",
+        "--jobs",
+        "8"
+      ],
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Python: configure_wifi (interactive)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/ESP32_AP-Flasher/configure_wifi.py",
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: WiFi Scan via API helper",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/ESP32_AP-Flasher/scripts/wifi_scan_api.py",
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher/scripts",
+      "env": {
+        "OEPL_API_BASE": "http://localhost:3000"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "PlatformIO: Monitor (COM10)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "platformio",
+      "args": [
+        "device",
+        "monitor",
+        "--baud",
+        "115200",
+        "--port",
+        "COM10"
+      ],
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
+      "console": "integratedTerminal",
+      "justMyCode": true
     }
   ]
 }

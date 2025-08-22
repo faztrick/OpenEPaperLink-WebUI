@@ -1,0 +1,41 @@
+### REST Client sample requests (use VS Code REST Client extension or Thunder Client)
+
+@base = http://localhost:3000
+
+### Get server status
+GET {{base}}/api/status
+
+### List API routes
+GET {{base}}/api/list
+
+### List COM ports (filtered by manual mode)
+GET {{base}}/api/com-ports
+
+### Serial WiFi scan (adjust path)
+POST {{base}}/api/serial/wifi/scan
+Content-Type: application/json
+
+{
+  "path": "COM10",
+  "baudRate": 115200,
+  "timeoutMs": 8000
+}
+
+### Device WiFi scan (networked device)
+GET {{base}}/api/device/wifi/scan?host=192.168.4.2
+
+### Device WiFi connect
+POST {{base}}/api/device/wifi/connect
+Content-Type: application/json
+
+{
+  "host": "192.168.4.2",
+  "ssid": "MySSID",
+  "password": "SecretPass"
+}
+
+### Tail server log (node)
+GET {{base}}/api/log/read?name=node&lines=100
+
+### Build artifacts
+GET {{base}}/api/artifacts
