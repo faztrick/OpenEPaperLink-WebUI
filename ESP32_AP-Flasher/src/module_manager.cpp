@@ -1,4 +1,5 @@
 #include "module_manager.h"
+#include "module_utils.h"
 
 #include <ArduinoJson.h>
 #include "storage.h"
@@ -13,18 +14,37 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
                                    bool autoStart,
                                    const std::vector<String> &dependencies)
 {
+    using namespace ModuleUtils;
+    
     if (!module)
     {
-        Serial.println("[MODULE_MANAGER] Cannot register null module");
+        LogUtils::logError("[MODULE_MANAGER] Cannot register null module");
         return false;
     }
 
     ModuleInfo info = module->getInfo();
 
-    // Check for duplicate module names
+    // Validate module information
+    if (!ValidationUtils::isValidModuleName(info.name)) {
+        LogUtils::logError("[MODULE_MANAGER] Invalid module name: " + info.name);
+        return false;
+    }
+
+    if (!ValidationUtils::isValidVersion(info.version)) {
+        LogUtils::logError("[MODULE_MANAGER] Invalid module version: " + info.version);
+        return false;
+    }
+
+    // Check for duplicate module names using optimized search
     if (findModule(info.name) != modules.end())
     {
-        Serial.printf("[MODULE_MANAGER] Module '%s' already registered\n", info.name.c_str());
+        LogUtils::logError("[MODULE_MANAGER] Module '" + info.name + "' already registered");
+        return false;
+    }
+
+    // Check memory availability for the module
+    if (!MemoryUtils::hasEnoughMemory(1024)) { // Assume 1KB minimum per module
+        LogUtils::logError("[MODULE_MANAGER] Insufficient memory to register module: " + info.name);
         return false;
     }
 
@@ -36,75 +56,118 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
 
     modules.push_back(std::move(regModule));
 
-    Serial.printf("[MODULE_MANAGER] Registered module '%s' v%s\n",
-                  info.name.c_str(), info.version.c_str());
+    LogUtils::logInfo("[MODULE_MANAGER] Registered module '" + info.name + "' v" + info.version);
+    MemoryUtils::logMemoryUsage("After module registration");
 
     return true;
 }
 
 bool ModuleManager::initializeAll()
 {
+    using namespace ModuleUtils;
+    
     if (initialized)
     {
-        Serial.println("[MODULE_MANAGER] Already initialized");
+        LogUtils::logWarning("[MODULE_MANAGER] Already initialized");
         return true;
     }
 
     startTime = millis();
-    Serial.println("[MODULE_MANAGER] Initializing all modules...");
+    LogUtils::logInfo("[MODULE_MANAGER] Initializing all modules...");
+
+    // Check system resources before initialization
+    if (!MemoryUtils::hasEnoughMemory(4096)) { // Minimum 4KB for initialization
+        LogUtils::logError("[MODULE_MANAGER] Insufficient memory for initialization");
+        return false;
+    }
 
     // Resolve dependencies first
     if (!resolveDependencies())
     {
-        Serial.println("[MODULE_MANAGER] Dependency resolution failed");
+        LogUtils::logError("[MODULE_MANAGER] Dependency resolution failed");
         return false;
     }
 
     bool allSuccess = true;
+    uint32_t successCount = 0;
+    uint32_t totalCount = 0;
 
     // Initialize modules in dependency order
     for (auto &regModule : modules)
     {
         if (regModule.info.state == ModuleState::UNINITIALIZED)
         {
-            Serial.printf("[MODULE_MANAGER] Initializing module '%s'\n",
-                          regModule.info.name.c_str());
+            totalCount++;
+            LogUtils::logInfo("[MODULE_MANAGER] Initializing module: " + regModule.info.name);
 
             regModule.info.state = ModuleState::INITIALIZING;
 
             uint32_t initStart = millis();
-            bool success = regModule.instance->initialize();
-            regModule.info.initTime = millis() - initStart;
+            
+            try {
+                bool success = regModule.instance->initialize();
+                regModule.info.initTime = millis() - initStart;
 
-            if (success)
-            {
-                regModule.info.state = ModuleState::INITIALIZED;
-                regModule.info.lastActivity = millis();
-                Serial.printf("[MODULE_MANAGER] Module '%s' initialized in %dms\n",
-                              regModule.info.name.c_str(), regModule.info.initTime);
-            }
-            else
-            {
+                if (success)
+                {
+                    regModule.info.state = ModuleState::INITIALIZED;
+                    regModule.info.lastActivity = millis();
+                    successCount++;
+                    LogUtils::logInfo("[MODULE_MANAGER] Module '" + regModule.info.name + 
+                                    "' initialized in " + String(regModule.info.initTime) + "ms");
+                }
+                else
+                {
+                    regModule.info.state = ModuleState::ERROR;
+                    regModule.info.errorMessage = "Initialization failed";
+                    LogUtils::logModuleError(regModule.info.name, "Initialization failed");
+                    
+                    // Check if this is a critical module
+                    if (!regModule.info.capabilities.isOptional) {
+                        allSuccess = false;
+                        LogUtils::logError("[MODULE_MANAGER] Critical module failed: " + regModule.info.name);
+                    }
+                }
+            } catch (const std::exception& e) {
                 regModule.info.state = ModuleState::ERROR;
-                regModule.info.errorMessage = "Initialization failed";
-                Serial.printf("[MODULE_MANAGER] Module '%s' initialization failed\n",
-                              regModule.info.name.c_str());
-                allSuccess = false;
+                regModule.info.errorMessage = String("Exception: ") + e.what();
+                LogUtils::logModuleError(regModule.info.name, "Exception during initialization: " + String(e.what()));
+                
+                if (!regModule.info.capabilities.isOptional) {
+                    allSuccess = false;
+                }
+            } catch (...) {
+                regModule.info.state = ModuleState::ERROR;
+                regModule.info.errorMessage = "Unknown exception during initialization";
+                LogUtils::logModuleError(regModule.info.name, "Unknown exception during initialization");
+                
+                if (!regModule.info.capabilities.isOptional) {
+                    allSuccess = false;
+                }
             }
+
+            // Small delay to allow system to breathe
+            delay(10);
         }
     }
 
+    uint32_t totalTime = millis() - startTime;
+    
     if (allSuccess)
     {
         initialized = true;
-        Serial.printf("[MODULE_MANAGER] All modules initialized successfully in %dms\n",
-                      millis() - startTime);
+        LogUtils::logInfo("[MODULE_MANAGER] All modules initialized successfully: " + 
+                         String(successCount) + "/" + String(totalCount) + 
+                         " in " + String(totalTime) + "ms");
     }
     else
     {
-        Serial.println("[MODULE_MANAGER] Some modules failed to initialize");
+        LogUtils::logError("[MODULE_MANAGER] Module initialization failed: " + 
+                          String(successCount) + "/" + String(totalCount) + " successful");
     }
 
+    MemoryUtils::logMemoryUsage("After module initialization");
+    
     return allSuccess;
 }
 

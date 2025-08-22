@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenEPL ESP32 Web UI</title>
+    <meta name="description" content="OpenEPaperLink ESP32 Access Point Web Interface">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="./src/module-loader.js" as="script">
+    <link rel="preload" href="./src/utils/common-utils.js" as="script">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/components.css">
+    <link rel="stylesheet" href="styles/responsive.css">
+    
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading indicator -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading OpenEPL Web UI...</div>
+    </div>
+
+    <!-- Main application container -->
+    <div id="app-container" class="app-container" style="display: none;">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1 class="app-title">OpenEPL ESP32</h1>
+                <div class="app-status">
+                    <span id="ap-status" class="status-indicator">Initializing...</span>
+                    <span id="connection-status" class="connection-status">Connecting...</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="system-info">
+                    <span id="version" class="version">v1.0.0</span>
+                    <span id="uptime" class="uptime">--</span>
+                </div>
+                <div class="header-actions">
+                    <button id="settings-btn" class="header-btn" title="Settings">
+                        <i class="material-icons">settings</i>
+                    </button>
+                    <button id="diagnostics-btn" class="header-btn" title="Run Diagnostics">
+                        <i class="material-icons">healing</i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation tabs -->
+        <nav class="tab-navigation">
+            <button class="tablinks active" data-target="dashboard">
+                <i class="material-icons">dashboard</i>
+                Dashboard
+            </button>
+            <button class="tablinks" data-target="tags">
+                <i class="material-icons">label</i>
+                Tags
+            </button>
+            <button class="tablinks" data-target="devices">
+                <i class="material-icons">devices</i>
+                Devices
+            </button>
+            <button class="tablinks" data-target="config">
+                <i class="material-icons">tune</i>
+                Configuration
+            </button>
+            <button class="tablinks" data-target="logs">
+                <i class="material-icons">article</i>
+                Logs
+            </button>
+        </nav>
+
+        <!-- Main content area -->
+        <main class="app-main">
+            <!-- Dashboard Tab -->
+            <section id="dashboard" class="tabcontent">
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <h3>System Status</h3>
+                        <div class="status-grid">
+                            <div class="status-item">
+                                <span class="label">AP State:</span>
+                                <span id="ap-state" class="value">--</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Uptime:</span>
+                                <span id="system-uptime" class="value">--</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Memory:</span>
+                                <span id="memory-usage" class="value">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Tag Statistics</h3>
+                        <div class="status-grid">
+                            <div class="status-item">
+                                <span class="label">Total Tags:</span>
+                                <span id="tag-count" class="value">0</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Online:</span>
+                                <span id="online-tags" class="value">0</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Last Update:</span>
+                                <span id="last-update" class="value">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Quick Actions</h3>
+                        <div class="action-buttons">
+                            <button id="refresh-data" class="action-btn">
+                                <i class="material-icons">refresh</i>
+                                Refresh Data
+                            </button>
+                            <button id="reboot-system" class="action-btn">
+                                <i class="material-icons">restart_alt</i>
+                                Reboot System
+                            </button>
+                            <button id="backup-config" class="action-btn">
+                                <i class="material-icons">backup</i>
+                                Backup Config
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tags Tab -->
+            <section id="tags" class="tabcontent" style="display: none;">
+                <div class="tab-header">
+                    <h2>Tag Management</h2>
+                    <div class="tab-actions">
+                        <button id="add-tag" class="primary-btn">
+                            <i class="material-icons">add</i>
+                            Add Tag
+                        </button>
+                    </div>
+                </div>
+                <div id="tags-container" class="content-container">
+                    <div id="tags-list" class="tags-list">
+                        <!-- Tags will be loaded here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Devices Tab -->
+            <section id="devices" class="tabcontent" style="display: none;">
+                <div class="tab-header">
+                    <h2>Device Management</h2>
+                    <div class="tab-actions">
+                        <button id="add-device" class="primary-btn">
+                            <i class="material-icons">add</i>
+                            Add Device
+                        </button>
+                        <button id="import-devices" class="secondary-btn">
+                            <i class="material-icons">upload</i>
+                            Import
+                        </button>
+                        <button id="export-devices" class="secondary-btn">
+                            <i class="material-icons">download</i>
+                            Export
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="devices-container">
+                    <div class="selected-device-panel">
+                        <h3>Selected Device</h3>
+                        <div id="selected-device" class="selected-device">
+                            <!-- Selected device info will be shown here -->
+                        </div>
+                    </div>
+                    
+                    <div class="device-list-panel">
+                        <h3>Available Devices</h3>
+                        <div id="device-list" class="device-list">
+                            <!-- Device list will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Device Form -->
+                <div id="add-device-modal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Add New Device</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <form id="add-device-form" class="device-form">
+                            <div class="form-group">
+                                <label for="device-name">Device Name *</label>
+                                <input type="text" id="device-name" name="name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="device-ip">IP Address *</label>
+                                <input type="text" id="device-ip" name="ip" required pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$">
+                            </div>
+                            <div class="form-group">
+                                <label for="device-port">Port</label>
+                                <input type="number" id="device-port" name="port" min="1" max="65535">
+                            </div>
+                            <div class="form-group">
+                                <label for="device-description">Description</label>
+                                <textarea id="device-description" name="description" rows="3"></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="secondary-btn modal-cancel">Cancel</button>
+                                <button type="submit" class="primary-btn">Add Device</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Tab -->
+            <section id="config" class="tabcontent" style="display: none;">
+                <div class="tab-header">
+                    <h2>Configuration</h2>
+                </div>
+                <div class="config-container">
+                    <div class="config-section">
+                        <h3>WiFi Configuration</h3>
+                        <div id="wifi-config" class="config-form">
+                            <!-- WiFi config form will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="config-section">
+                        <h3>System Settings</h3>
+                        <div id="system-config" class="config-form">
+                            <!-- System config form will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Tab -->
+            <section id="logs" class="tabcontent" style="display: none;">
+                <div class="tab-header">
+                    <h2>System Logs</h2>
+                    <div class="tab-actions">
+                        <button id="clear-logs" class="secondary-btn">
+                            <i class="material-icons">clear</i>
+                            Clear Logs
+                        </button>
+                        <button id="download-logs" class="secondary-btn">
+                            <i class="material-icons">download</i>
+                            Download
+                        </button>
+                    </div>
+                </div>
+                <div class="logs-container">
+                    <div id="logs-content" class="logs-content">
+                        <!-- Logs will be displayed here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification container -->
+    <div id="notifications" class="notifications"></div>
+
+    <!-- Status message -->
+    <div id="status-message" class="status-message"></div>
+
+    <!-- Scripts - Load module loader first, then let it handle the rest -->
+    <script src="./src/module-loader.js"></script>
+    
+    <!-- Optional: Legacy compatibility for existing code -->
+    <script>
+        // Global error handler
+        window.addEventListener('error', function(event) {
+            console.error('Global error:', event.error);
+            if (window.apiManager && window.apiManager.reportError) {
+                window.apiManager.reportError(event.error, event.filename, event.lineno, 'global');
+            }
+        });
+
+        // Hide loading overlay when modules are loaded
+        window.addEventListener('modulesLoaded', function() {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const appContainer = document.getElementById('app-container');
+            
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+            
+            if (appContainer) {
+                appContainer.style.display = 'block';
+            }
+            
+            console.log('OpenEPL Web UI: Application ready');
+        });
+
+        // Show error if modules fail to load
+        setTimeout(function() {
+            const loadingText = document.querySelector('.loading-text');
+            if (loadingText && !window.moduleLoader.initialized) {
+                loadingText.textContent = 'Failed to load application modules. Please refresh the page.';
+                loadingText.style.color = '#f44336';
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

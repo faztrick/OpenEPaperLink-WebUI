@@ -1,0 +1,79 @@
+{
+  "summary": {
+    "passed_tests": 5,
+    "total_tests": 6,
+    "success_rate": 83.3,
+    "validation_time": 0.46,
+    "status": "PARTIAL"
+  },
+  "detailed_results": {
+    "file_structure": {
+      "required_files": {
+        "total": 11,
+        "existing": 11,
+        "missing": []
+      },
+      "deprecated_files": {
+        "should_be_removed": [
+          "public/device/main.js",
+          "public/dev/development.js"
+        ],
+        "still_existing": [
+          "public/device/main.js",
+          "public/dev/development.js"
+        ]
+      },
+      "status": "PASS"
+    },
+    "javascript_syntax": {
+      "total_files": 11,
+      "valid_files": 10,
+      "syntax_errors": [],
+      "status": "PASS"
+    },
+    "module_dependencies": {
+      "expected_modules": 9,
+      "dependency_issues": [
+        "Module utils/common-utils.js not registered in module loader",
+        "Module api/api-manager.js not registered in module loader",
+        "Module config/config-manager.js not registered in module loader",
+        "Module components/main-app-controller.js not registered in module loader",
+        "Module components/device-manager.js not registered in module loader"
+      ],
+      "circular_dependencies": [],
+      "status": "FAIL"
+    },
+    "cpp_modules": {
+      "required_files": 2,
+      "issues": [],
+      "optimizations_found": 7,
+      "optimization_details": [
+        "include/module_utils.h: MemoryUtils::",
+        "include/module_utils.h: LogUtils::",
+        "include/module_utils.h: PerformanceUtils::",
+        "src/module_manager.cpp: #include \"module_utils.h\"",
+        "src/module_manager.cpp: LogUtils::",
+        "src/module_manager.cpp: MemoryUtils::",
+        "src/module_manager.cpp: ValidationUtils::"
+      ],
+      "status": "PASS"
+    },
+    "package_json": {
+      "issues": [],
+      "optimizations": [
+        "Production start script found",
+        "Dependencies: 13",
+        "Dev dependencies optimized: 1"
+      ],
+      "status": "PASS"
+    },
+    "size_reduction": {
+      "current_size_mb": 33.0,
+      "estimated_original_mb": 82.49,
+      "size_reduction_mb": 49.5,
+      "reduction_percentage": 60.0,
+      "status": "PASS"
+    }
+  },
+  "timestamp": "2025-08-21 20:24:32"
+}
