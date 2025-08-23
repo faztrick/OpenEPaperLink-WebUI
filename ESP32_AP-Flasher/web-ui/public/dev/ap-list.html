@@ -5,12 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AP List — OpenEPaperLink</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="styles.css" rel="stylesheet">
 </head>
 <body>
   <header class="header">
     <div class="header-content">
       <div class="logo"><i class="fas fa-network-wired"></i><h1>AP List</h1></div>
+      <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
+        <div class="status-item" style="display:flex;flex-direction:column;gap:4px" title="Active Device & Communication">
+          <label style="font-size:10px;color:#6b7280">Device</label>
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+            <select id="header-device-select" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:140px"></select>
+            <select id="header-comm-mode" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px">
+              <option value="serial">Serial</option>
+              <option value="wifi">WiFi</option>
+            </select>
+            <select id="header-comm-port" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:120px"></select>
+          </div>
+        </div>
+        <div class="status-item" title="API">
+          <span id="api-status-dot" class="status-dot disconnected"></span>
+          <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
+        </div>
+        <div class="status-item" title="WebSocket">
+          <span id="ws-status-dot" class="status-dot disconnected"></span>
+          <small id="ws-status-text" style="margin-left:6px;color:#9ca3af">WS(ip:port)</small>
+        </div>
+        <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
+          <span id="serial-status-dot" class="status-dot disconnected"></span>
+          <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
+          <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111;display:none"></select>
+          <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;display:none">⟳</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -22,20 +50,51 @@
       <a href="ap-list.html" class="nav-link active">AP List</a>
       <a href="peers.html" class="nav-link">Peers</a>
       <a href="flash.html" class="nav-link">Simple Flasher</a>
-  <a href="device.html" class="nav-link">Device</a>
+      <a href="device.html" class="nav-link">Device</a>
       <a href="settings.html" class="nav-link">Settings</a>
       <a href="ai.html" class="nav-link">AI</a>
     </div>
   </nav>
 
-  <main class="container" style="max-width:1100px;padding:16px">
+  <main class="container" style="max-width:1300px;padding:16px">
+    <h1 style="margin-top:0"><i class="fas fa-network-wired"></i> Access Point / Station Overview</h1>
+    <p class="muted">Summary of each saved device's WiFi + AP state (queried from /network_info). Use controls to change AP mode.</p>
+
     <div class="build-panel">
-      <h2><i class="fas fa-network-wired"></i> Access Points</h2>
-      <p class="muted">This page will show discovered APs and connected OutdoorAP nodes. Coming soon.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <h3 style="margin:0;display:flex;align-items:center;gap:8px"><i class="fas fa-list"></i> Device AP Status</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button id="ap-refresh" class="btn btn-small"><i class="fas fa-sync"></i> Refresh</button>
+          <span id="ap-refresh-status" class="muted"></span>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:12px">
+        <table class="data-table" style="min-width:1100px">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Host</th>
+              <th>Mode</th>
+              <th>AP Enabled</th>
+              <th>AP Clients</th>
+              <th>STA Connected</th>
+              <th>SSID</th>
+              <th>RSSI</th>
+              <th>IP</th>
+              <th>Error</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ap-summary-body"></tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin-top:8px;font-size:12px">Actions: AP = enable AP only, AP+STA = dual mode, STA = disable AP (station only). Actual effect depends on firmware support.</p>
     </div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
+  <script src="spa.js"></script>
+  <script src="ap-list.js"></script>
 </body>
 </html>

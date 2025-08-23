@@ -150,6 +150,17 @@ class ESP32DevUI {
                 this.log(`Serial error: ${err && err.message ? err.message : err}`, 'error');
             });
 
+            // Centralized serial manager status push
+            this.socket.on('serial-status', (status) => {
+                try {
+                    if (status && status.open) {
+                        this.updateSerialStatus(true, status.path || 'Serial');
+                    } else {
+                        this.updateSerialStatus(false);
+                    }
+                } catch (e) { /* ignore */ }
+            });
+
             this.socket.on('com_ports', (ports) => {
                 this.updateComPorts(ports);
                 this.log(`Received ${ports.length} COM ports`, 'info');
@@ -157,6 +168,62 @@ class ESP32DevUI {
 
             // Generic log passthrough
             this.socket.on('log', (msg) => { if (msg) this.log(msg, 'info'); });
+
+            // Centralized device events (DeviceManager)
+            this.socket.on('device-list', (payload) => {
+                try {
+                    if (payload && Array.isArray(payload.devices)) {
+                        this.devices = payload.devices.map(d => ({ id: d.id, name: d.name, ip: d.host || d.ip, com: d.port || d.com }));
+                        this.selectedDeviceId = payload.selectedId || null;
+                        this.renderDevices();
+                        const sel = this.getSelectedDevice();
+                        if (sel) this.applySelectedDevice(sel);
+                        this.updateHeaderDeviceSelect();
+                        this.updateHeaderCommControls();
+                    }
+                } catch (e) { /* ignore */ }
+            });
+            this.socket.on('device-selected', (dev) => {
+                try {
+                    this.selectedDeviceId = dev ? dev.id : null;
+                    this.renderDevices();
+                    const sel = this.getSelectedDevice();
+                    if (sel) this.applySelectedDevice(sel); else this.applySelectedDevice(null);
+                    this.updateHeaderDeviceSelect();
+                    this.updateHeaderCommControls();
+                } catch (e) { /* ignore */ }
+            });
+            this.socket.on('device-removed', (info) => {
+                try {
+                    if (info && info.id) {
+                        this.devices = this.devices.filter(d => d.id !== info.id);
+                        if (this.selectedDeviceId === info.id) this.selectedDeviceId = null;
+                        this.renderDevices();
+                        this.updateHeaderDeviceSelect();
+                        this.updateHeaderCommControls();
+                    }
+                } catch (e) { /* ignore */ }
+            });
+
+            // Server-pushed aggregated WiFi status: array of {id, host, status}
+            this.socket.on('device-wifi-status', (arr) => {
+                try {
+                    if (!Array.isArray(arr)) return;
+                    arr.forEach(item => {
+                        const el = document.getElementById(`wifi-status-${item.id}`);
+                        if (el && item.status) {
+                            const s = item.status;
+                            if (s.connected) {
+                                el.innerHTML = `<span class="wifi-ok">WiFi: ${s.ssid || ''} ${s.ip ? '('+s.ip+')' : ''}</span>`;
+                            } else if (s.error) {
+                                el.innerHTML = `<span class="wifi-err">WiFi: offline (${s.error.split(':')[0]})</span>`;
+                            } else {
+                                el.innerHTML = `<span class="wifi-off">WiFi: offline</span>`;
+                            }
+                        }
+                    });
+                } catch (e) { /* ignore */ }
+            });
         };
 
         // expose a reconnect helper so other code (like remote test) can trigger a reconnect
@@ -167,6 +234,17 @@ class ESP32DevUI {
 
         // initial connect
         tryConnect();
+
+        // also poll the REST status once after short delay (covers race when socket connects late)
+        setTimeout(async () => {
+            try {
+                const r = await fetch('/api/serial/status');
+                const j = await r.json();
+                if (j && j.success && j.status) {
+                    if (j.status.open) this.updateSerialStatus(true, j.status.path || 'Serial');
+                }
+            } catch (_) { /* ignore */ }
+        }, 750);
     }
 
     // --- Connection status helpers ---
@@ -841,6 +919,8 @@ class ESP32DevUI {
         const container = document.getElementById('saved-devices');
         if (!container) return;
         container.innerHTML = '';
+        // Ensure test controls container exists (only once)
+        this._ensureTestControls();
         if (!Array.isArray(this.devices) || this.devices.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'device-card';
@@ -898,7 +978,60 @@ class ESP32DevUI {
             this.updateDeviceWifiStatus(d).catch(() => {
                 // silent
             });
+
+            // Populate COM port select with current global header list (if any)
+            try {
+                const portSel = card.querySelector('select[data-role="comm-port"]');
+                if (portSel) {
+                    const headerSel = document.getElementById('com-port-select');
+                    portSel.innerHTML = '';
+                    if (headerSel && headerSel.options.length) {
+                        Array.from(headerSel.options).forEach(o => {
+                            const opt = document.createElement('option');
+                            opt.value = o.value; opt.textContent = o.textContent || o.value;
+                            if (d.com && d.com === o.value) opt.selected = true;
+                            portSel.appendChild(opt);
+                        });
+                    } else {
+                        const opt = document.createElement('option'); opt.value=''; opt.textContent='(no ports)'; portSel.appendChild(opt);
+                    }
+                }
+            } catch (e) { /* ignore */ }
         });
+
+        // Wire communication controls after all cards added
+        try {
+            container.querySelectorAll('button[data-act="apply-comm"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-id');
+                    const card = btn.closest('.device-card');
+                    if (!card) return;
+                    const modeSel = card.querySelector('select[data-role="comm-mode"]');
+                    const portSel = card.querySelector('select[data-role="comm-port"]');
+                    const commMode = modeSel ? modeSel.value : 'serial';
+                    const portVal = portSel ? portSel.value : '';
+                    const dev = this.devices.find(d => d.id === id);
+                    if (dev) {
+                        dev.com = portVal || null;
+                        dev.meta = dev.meta || {};
+                        dev.meta.commMode = commMode;
+                        // Persist to backend
+                        fetch(`/api/devices/${encodeURIComponent(id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port: portVal || null, meta: dev.meta }) })
+                            .then(r=>r.json()).then(j=>{
+                                if(!j.success) this.log(`Failed saving comm settings for ${id}: ${j.error}`,'error');
+                                else this.log(`Updated communication settings for ${id}`,'info');
+                                // If this is the selected device and mode=serial, apply COM immediately
+                                if (this.selectedDeviceId === id && commMode === 'serial' && portVal) {
+                                    this.config.comPort = portVal;
+                                    try { this.saveConfig(); } catch (e) {}
+                                }
+                            }).catch(e=>this.log('Comm save error: '+e.message,'error'));
+                        // Update label
+                        const lbl = card.querySelector('.dev-com-label'); if(lbl) lbl.textContent = portVal || '-';
+                    }
+                });
+            });
+        } catch (e) { /* ignore */ }
 
         // Start/refresh periodic WiFi status updates (every 30s)
         try {
@@ -909,11 +1042,106 @@ class ESP32DevUI {
         } catch (e) { /* ignore */ }
     }
 
+    updateHeaderDeviceSelect() {
+        try {
+            const sel = document.getElementById('header-device-select');
+            if (!sel) return; // not on a page with header selector
+            const prev = sel.value;
+            sel.innerHTML = '';
+            if (Array.isArray(this.devices)) {
+                this.devices.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = d.name || d.id;
+                    if (this.selectedDeviceId && this.selectedDeviceId === d.id) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            }
+            if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+            if (!sel.dataset.bound) {
+                sel.addEventListener('change', () => {
+                    const id = sel.value;
+                    fetch('/api/device/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+                });
+                sel.dataset.bound = '1';
+            }
+            // After populating device list, refresh comm header selects
+            this.updateHeaderCommControls();
+        } catch (e) { /* ignore */ }
+    }
+
+    updateHeaderCommControls() {
+        try {
+            const modeSel = document.getElementById('header-comm-mode');
+            const portSel = document.getElementById('header-comm-port');
+            if (!modeSel || !portSel) return;
+            const dev = this.getSelectedDevice();
+            // Populate port list from available ports (mirror main com-port-select if present)
+            const headerSerialSelect = document.getElementById('com-port-select');
+            portSel.innerHTML = '';
+            if (headerSerialSelect && headerSerialSelect.options.length) {
+                Array.from(headerSerialSelect.options).forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.value; opt.textContent = o.textContent || o.value;
+                    portSel.appendChild(opt);
+                });
+            }
+            if (dev) {
+                const commMode = dev.meta?.commMode || 'serial';
+                modeSel.value = commMode;
+                if (dev.port) portSel.value = dev.port;
+                else if (dev.com) portSel.value = dev.com;
+            } else {
+                modeSel.value = 'serial';
+            }
+            // Enable / disable
+            const disabled = !dev;
+            modeSel.disabled = disabled;
+            portSel.disabled = disabled || (modeSel.value !== 'serial');
+            // Bind events once
+            if (!modeSel.dataset.bound) {
+                modeSel.addEventListener('change', () => this._persistHeaderComm());
+                modeSel.dataset.bound = '1';
+            }
+            if (!portSel.dataset.bound) {
+                portSel.addEventListener('change', () => this._persistHeaderComm());
+                portSel.dataset.bound = '1';
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    _persistHeaderComm() {
+        const modeSel = document.getElementById('header-comm-mode');
+        const portSel = document.getElementById('header-comm-port');
+        const dev = this.getSelectedDevice();
+        if (!dev || !modeSel || !portSel) return;
+        const commMode = modeSel.value;
+        const port = portSel.value || null;
+        // Update local model
+        dev.meta = dev.meta || {}; dev.meta.commMode = commMode;
+        dev.port = port; // keep consistent with backend property name
+        if (commMode !== 'serial') {
+            // In WiFi mode, we do not require a port; disable port select
+            portSel.disabled = true;
+        } else {
+            portSel.disabled = false;
+        }
+        fetch(`/api/devices/${encodeURIComponent(dev.id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port, meta: dev.meta }) })
+            .then(r=>r.json()).then(j=>{
+                if (!j.success) this.log('Failed to persist comm settings: '+(j.error||'error'),'error');
+                else this.log('Comm settings updated for '+dev.id,'info');
+                // Re-apply device selection to update serial config if needed
+                if (dev.id === this.selectedDeviceId) this.applySelectedDevice(dev);
+                // Refresh header controls to reflect potential adjustments
+                this.updateHeaderCommControls();
+            }).catch(e=>this.log('Comm persist error: '+e.message,'error'));
+    }
+
     applySelectedDevice(dev) {
-        // Update config COM
-        if (dev && dev.com) {
+        // Determine communication mode (default serial) and update COM only if mode=serial
+        const commMode = dev?.meta?.commMode || 'serial';
+        if (commMode === 'serial' && dev && dev.com) {
             this.config.comPort = dev.com;
-            // reflect in header selector if present
             const headerSel = document.getElementById('com-port-select');
             if (headerSel) {
                 const opt = Array.from(headerSel.options).find(o => o.value === dev.com);
@@ -921,8 +1149,12 @@ class ESP32DevUI {
                 const statusText = document.getElementById('serial-status-text');
                 if (statusText) statusText.textContent = `Serial (${dev.com})`;
             }
-            // persist new COM to backend config
             try { this.saveConfig(); } catch (e) {}
+        }
+        if (commMode === 'wifi') {
+            // Clear serial indicator but keep selection
+            const statusText = document.getElementById('serial-status-text');
+            if (statusText) statusText.textContent = 'Serial (WiFi mode)';
         }
 
         // Update API hint in header if IP provided (WS remains local to this server)
@@ -961,6 +1193,73 @@ class ESP32DevUI {
             devSel.innerHTML = headerSel.innerHTML;
             if (headerSel.value) devSel.value = headerSel.value;
         }
+    }
+
+    _ensureTestControls() {
+        try {
+            if (document.getElementById('dev-test-controls')) return;
+            const host = document.getElementById('dev-actions') || document.body;
+            const wrap = document.createElement('div');
+            wrap.id = 'dev-test-controls';
+            wrap.style.margin = '12px 0';
+            wrap.innerHTML = `
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                    <button id="btn-run-api-tests" class="btn btn-outline btn-small">Run API Tests</button>
+                    <button id="btn-run-serial-test" class="btn btn-outline btn-small">Serial Status</button>
+                    <button id="btn-run-serial-poke" class="btn btn-outline btn-small">Serial Poke</button>
+                    <span id="dev-test-summary" class="muted" style="margin-left:4px;"></span>
+                </div>
+                <details id="dev-test-details" style="margin-top:6px;">
+                    <summary>Test Results</summary>
+                    <pre id="dev-test-output" style="max-height:260px;overflow:auto;background:#111;padding:8px;color:#ddd;font-size:12px;"></pre>
+                </details>`;
+            host.parentNode.insertBefore(wrap, host.nextSibling);
+            const out = () => document.getElementById('dev-test-output');
+            const summary = () => document.getElementById('dev-test-summary');
+            const append = (line) => { const o = out(); if (!o) return; o.textContent += line + "\n"; };
+            const clear = () => { const o = out(); if (o) o.textContent = ''; };
+            const setSummary = (t) => { const s = summary(); if (s) s.textContent = t; };
+
+            const apiBtn = document.getElementById('btn-run-api-tests');
+            apiBtn?.addEventListener('click', async () => {
+                clear(); setSummary('Running API tests...');
+                try {
+                    const r = await fetch('/api/tests/api');
+                    const j = await r.json();
+                    if (!j.success) throw new Error(j.error || 'failed');
+                    append(JSON.stringify(j, null, 2));
+                    const pass = j.results.filter(x=>x.ok).length;
+                    setSummary(`API: ${pass}/${j.results.length} reachable`);
+                    document.getElementById('dev-test-details').open = true;
+                } catch (e) { append('API test error: '+e.message); setSummary('API tests error'); }
+            });
+
+            const serialBtn = document.getElementById('btn-run-serial-test');
+            serialBtn?.addEventListener('click', async () => {
+                clear(); setSummary('Querying serial status...');
+                try {
+                    const r = await fetch('/api/tests/serial');
+                    const j = await r.json();
+                    if (!j.success) throw new Error(j.error || 'failed');
+                    append(JSON.stringify(j, null, 2));
+                    setSummary(j.available ? (j.status?.open ? 'Serial: OPEN' : 'Serial: CLOSED') : 'Serial: N/A');
+                    document.getElementById('dev-test-details').open = true;
+                } catch (e) { append('Serial status error: '+e.message); setSummary('Serial status error'); }
+            });
+
+            const pokeBtn = document.getElementById('btn-run-serial-poke');
+            pokeBtn?.addEventListener('click', async () => {
+                clear(); setSummary('Poking serial...');
+                try {
+                    const r = await fetch('/api/tests/serial?poke=1');
+                    const j = await r.json();
+                    if (!j.success) throw new Error(j.error || 'failed');
+                    append(JSON.stringify(j, null, 2));
+                    setSummary(j.available ? (j.status?.open ? (j.pokeSent ? 'Serial: POKE SENT' : 'Serial: OPEN (poke failed)') : 'Serial: CLOSED') : 'Serial: N/A');
+                    document.getElementById('dev-test-details').open = true;
+                } catch (e) { append('Serial poke error: '+e.message); setSummary('Serial poke error'); }
+            });
+        } catch (e) { /* ignore */ }
     }
 
     // Internal helper to enable/disable flash & erase buttons based on serial availability
@@ -1043,6 +1342,7 @@ class ESP32DevUI {
     }
 
     async updateDeviceWifiStatus(dev) {
+        if (this._serverWifiPushEnabled) return; // server push active; skip legacy fetch
         try {
             const el = document.getElementById(`wifi-status-${dev.id}`);
             if (!el) return;
@@ -1073,6 +1373,7 @@ class ESP32DevUI {
     }
 
     refreshAllDevicesWifiStatus() {
+        if (this._serverWifiPushEnabled) return; // skip when push active
         try {
             if (!Array.isArray(this.devices)) return;
             this.devices.forEach(d => {

@@ -12,6 +12,7 @@ const net = require('net');
 const ESP32AIAgent = require('./ai_agent');
 const RemoteServerManager = require('./remote_manager');
 const FileManager = require('./file_manager');
+const DeviceManager = require('./device_manager');
 // Resolve a Python executable preferring a local virtual environment (venv) when present.
 function resolvePythonExecutable() {
     const projectRoot = path.join(__dirname, '..');
@@ -59,20 +60,9 @@ function resolvePythonExecutable() {
     return fallback;
 }
 const PYTHON_EXEC = resolvePythonExecutable();
-let SerialPort;
-let serialAvailable = false;
-try {
-    // serialport v10+ exposes { SerialPort } named export; older versions exported the class directly
-    const sp = require('serialport');
-    SerialPort = sp.SerialPort || sp;
-    serialAvailable = typeof SerialPort === 'function';
-    if (!serialAvailable) {
-        console.warn('serialport module loaded but no SerialPort constructor found');
-    }
-} catch (err) {
-    console.warn('serialport not installed, serial features disabled');
-    serialAvailable = false;
-}
+// Centralized serial manager abstraction
+const SerialManager = require('./serial_manager');
+let serialAvailable = true; // final determination done by SerialManager instance
 
 const app = express();
 const server = http.createServer(app);
@@ -206,6 +196,21 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const devicesFile = path.join(dataDir, 'devices.json');
+// Initialize Device Manager
+const deviceManager = new DeviceManager(devicesFile);
+
+// DeviceManager event bridging
+try {
+    deviceManager.on('changed', (list) => {
+        io.emit('device-list', { devices: list, selectedId: deviceManager.selectedId });
+    });
+    deviceManager.on('selected', (dev) => {
+        io.emit('device-selected', dev ? { id: dev.id, host: dev.host, name: dev.name, port: dev.port } : null);
+    });
+    deviceManager.on('removed', (dev) => {
+        io.emit('device-removed', { id: dev.id });
+    });
+} catch (_) { /* ignore wiring issues */ }
 
 // Multer setup for firmware uploads
 const storage = multer.diskStorage({
@@ -282,20 +287,8 @@ app.all('/device/*', async (req, res) => {
 // Store for active processes
 const activeProcesses = new Map();
 
-// Serial port management
-const serialPorts = new Map(); // key: id (e.g., COM3) -> { port: SerialPort instance }
-
-// Helper: list system serial ports
-async function listSystemSerialPorts() {
-    if (!serialAvailable) return [];
-    try {
-    const ports = await SerialPort.list();
-        return ports;
-    } catch (err) {
-        console.error('Error listing serial ports:', err.message || err);
-        return [];
-    }
-}
+// Serial Manager instance (initialized after currentConfig definition to get manual COM settings)
+let serialManager = null;
 
 // ---- Improv Serial helpers (WiFi scan/connect over serial) ----
 // Frame structure: 'IMPROV' (6 bytes), version(1), type(1), len(1), payload(len), checksum(1)
@@ -411,6 +404,39 @@ const defaultConfig = {
 
 let currentConfig = { ...defaultConfig };
 
+// Initialize Serial Manager now that initial config is available
+serialManager = new SerialManager({
+    manualComOnly: currentConfig.manualComOnly,
+    allowedComPort: currentConfig.allowedComPort
+});
+
+// Bridge serial manager events to socket.io and logs
+try {
+    serialManager.on('open', (info) => {
+        appendLog('serial', `OPEN path=${info.path} baud=${info.baudRate}`);
+        io.emit('serial-opened', info.path);
+        io.emit('serial-status', serialManager.getStatus());
+    });
+    serialManager.on('close', (info) => {
+        appendLog('serial', `CLOSE path=${info.path}`);
+        io.emit('serial-closed', info.path);
+        io.emit('serial-status', serialManager.getStatus());
+    });
+    serialManager.on('data', (d) => {
+        const text = d.text || d.data?.toString() || '';
+        appendLog('serial', `port=${d.path} ${text.replace(/\r?\n/g,'\\n')}`);
+        io.emit('serial-data', { port: d.path, text });
+    });
+    serialManager.on('error', (e) => {
+        appendLog('serial', `ERROR path=${e.path} err=${e.error}`);
+        io.emit('serial-error', e);
+        io.emit('serial-status', serialManager.getStatus());
+    });
+    serialManager.on('status', (s) => {
+        io.emit('serial-status', s);
+    });
+} catch (_) { /* ignore wiring issues */ }
+
 // Helper function to get COM ports
 function getComPorts() {
     try {
@@ -479,30 +505,60 @@ app.get('/api/config', (req, res) => {
 });
 
 // Saved devices (name/ip/com) persistence
+// New unified device endpoints
 app.get('/api/devices', (req, res) => {
     try {
-        let devices = [];
-        let selectedId = null;
-        if (fs.existsSync(devicesFile)) {
-            const j = JSON.parse(fs.readFileSync(devicesFile, 'utf8'));
-            devices = Array.isArray(j.devices) ? j.devices : [];
-            selectedId = j.selectedId || null;
-        }
-        res.json({ success: true, devices, selectedId });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message, devices: [], selectedId: null });
+        res.json({ success: true, devices: deviceManager.list(), selectedId: deviceManager.selectedId });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
+// Backward compatible bulk replace (legacy behavior)
 app.post('/api/devices', (req, res) => {
     try {
         const { devices, selectedId } = req.body || {};
-        if (!Array.isArray(devices)) return res.status(400).json({ success: false, error: 'devices array required' });
-        const payload = { devices, selectedId: selectedId || null };
-        fs.writeFileSync(devicesFile, JSON.stringify(payload, null, 2), 'utf8');
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        const result = deviceManager.replaceAll(Array.isArray(devices) ? devices : [], selectedId || null);
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/device', (req, res) => {
+    try {
+        const dev = deviceManager.add(req.body || {});
+        res.json({ success: true, device: dev });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.put('/api/device/:id', (req, res) => {
+    try {
+        const dev = deviceManager.update(req.params.id, req.body || {});
+        res.json({ success: true, device: dev });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/device/:id', (req, res) => {
+    try {
+        const ok = deviceManager.remove(req.params.id);
+        res.json({ success: ok });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/device/select', (req, res) => {
+    try {
+        const { id } = req.body || {};
+        const dev = deviceManager.select(id === null ? null : id);
+        res.json({ success: true, selected: dev ? dev.id : null });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
     }
 });
 
@@ -544,66 +600,28 @@ app.post('/api/shutdown', async (req, res) => {
 
 app.get('/api/com-ports', async (req, res) => {
     try {
-        let ports = [];
-
-        // Try to get system serial ports first
-        if (serialAvailable) {
-            try {
-                const systemPorts = await listSystemSerialPorts();
-                ports = systemPorts.map(p => ({
-                    path: p.path || p.comName || p.vendorId || '',
-                    manufacturer: p.manufacturer || p.friendlyName || ''
-                }));
-            } catch (err) {
-                console.warn('Failed to list system serial ports:', err.message);
-            }
-        }
-
-        // If no ports found, try the Windows PowerShell method or provide fallbacks
-        if (ports.length === 0) {
-            try {
-                const fallbackPorts = await getComPorts();
-                ports = Array.isArray(fallbackPorts) ? fallbackPorts.map(p => ({
-                    path: p,
-                    manufacturer: ''
-                })) : [];
-            } catch (err) {
-                console.warn('Failed to get fallback COM ports:', err.message);
-                // Final fallback for common ports
-                ports = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({
-                    path: p,
-                    manufacturer: 'Fallback'
-                }));
-            }
-        }
-
-        // Manual COM mode: hide all but the allowed COM port
-        if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
-            const allowed = String(currentConfig.allowedComPort).toUpperCase();
-            const filtered = ports.filter(p => (p.path || '').toUpperCase() === allowed);
-            // If not present, still return only the allowed as a choice
-            ports = filtered.length > 0 ? filtered : [{ path: allowed, manufacturer: 'Manual' }];
-        }
-
-        appendLog('api', `com-ports returned ${ports.length} ports`);
+        const ports = await serialManager.listPorts();
+        appendLog('api', `com-ports returned ${ports.length} ports (centralized)`);
         res.json(ports);
-    } catch (error) {
-        console.error('COM ports API error:', error);
-        appendLog('api', `com-ports error: ${error.message}`);
-        // Return fallback ports on any error
-        let fallbackPorts = ['COM1', 'COM3', 'COM10', 'COM13'].map(p => ({ path: p, manufacturer: 'Fallback' }));
-        if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
-            const allowed = String(currentConfig.allowedComPort).toUpperCase();
-            fallbackPorts = [{ path: allowed, manufacturer: 'Manual' }];
-        }
-        res.json(fallbackPorts);
+    } catch (e) {
+        res.json([]);
     }
 });
 
 // Serial control endpoints
 app.get('/api/serial/list', async (req, res) => {
-    const ports = await listSystemSerialPorts();
-    res.json({ success: true, ports });
+    try {
+        const ports = await serialManager.listPorts();
+        res.json({ success: true, ports });
+    } catch (e) {
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// Serial centralized status
+app.get('/api/serial/status', (req, res) => {
+    try { res.json({ success: true, status: serialManager.getStatus() }); }
+    catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // Firmware upload endpoint
@@ -635,94 +653,49 @@ app.post('/api/firmware/trigger', async (req, res) => {
     }
 });
 
-app.post('/api/serial/open', (req, res) => {
-    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+app.post('/api/serial/open', async (req, res) => {
+    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
-
-    // Enforce manual COM mode if enabled
-    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
-        const allowed = String(currentConfig.allowedComPort).toUpperCase();
-        if (String(portPath).toUpperCase() !== allowed) {
-            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
-        }
-    }
-
     try {
-        if (serialPorts.has(portPath)) return res.json({ success: true, message: 'already open' });
-
-    // serialport v10+ expects an options object with path
-    const port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
-        port.on('data', (data) => {
-            const text = data.toString();
-            // broadcast to all sockets
-            io.emit('serial-data', { port: portPath, data: text, text });
-            // append to server-side serial log
-            appendLog('serial', `port=${portPath} ${text.replace(/\r?\n/g, '\\n')}`);
-        });
-        port.on('error', (err) => {
-            io.emit('serial-error', { port: portPath, error: err.message });
-            appendLog('serial', `port=${portPath} ERROR ${err.message}`);
-        });
-
-        serialPorts.set(portPath, { port });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message || String(err) });
+        const result = await serialManager.open(portPath, baudRate);
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/api/serial/close', (req, res) => {
+app.post('/api/serial/close', async (req, res) => {
     const { path: portPath } = req.body || {};
-    if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
-
-    // Enforce manual COM mode if enabled (only allow closing the allowed port)
-    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
-        const allowed = String(currentConfig.allowedComPort).toUpperCase();
-        if (String(portPath).toUpperCase() !== allowed) {
-            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} can be closed.` });
-        }
+    // If a different port provided than open one, just report state
+    if (portPath && serialManager.getStatus().path && portPath !== serialManager.getStatus().path) {
+        return res.json({ success: false, error: 'different port currently open', status: serialManager.getStatus() });
     }
-
-    const rec = serialPorts.get(portPath);
-    if (!rec) return res.json({ success: false, error: 'port not open' });
-
-    rec.port.close((err) => {
-        if (err) return res.status(500).json({ success: false, error: err.message });
-        serialPorts.delete(portPath);
-        res.json({ success: true });
-    });
+    try {
+        const result = await serialManager.close();
+        res.json({ success: !!result.success, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
-app.post('/api/serial/write', (req, res) => {
+app.post('/api/serial/write', async (req, res) => {
     const { path: portPath, data } = req.body || {};
     if (!portPath || data === undefined) return res.status(400).json({ success: false, error: 'path and data required' });
-
-    // Enforce manual COM mode if enabled
-    if (currentConfig.manualComOnly && currentConfig.allowedComPort) {
-        const allowed = String(currentConfig.allowedComPort).toUpperCase();
-        if (String(portPath).toUpperCase() !== allowed) {
-            return res.status(403).json({ success: false, error: `Manual COM mode active. Only ${allowed} is allowed.` });
-        }
-    }
-
-    const rec = serialPorts.get(portPath);
-    if (!rec) return res.status(400).json({ success: false, error: 'port not open' });
-
+    const status = serialManager.getStatus();
+    if (!status.open || status.path !== portPath) return res.status(400).json({ success: false, error: 'port not open' });
     try {
-        rec.port.write(data, (err) => {
-            if (err) return res.status(500).json({ success: false, error: err.message });
-            res.json({ success: true });
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message || String(err) });
+        await serialManager.write(data);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
 // Serial WiFi scan using Improv protocol
 // body: { path, baudRate? }
 app.post('/api/serial/wifi/scan', async (req, res) => {
-    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200, timeoutMs = 8000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
@@ -736,15 +709,17 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
 
     let tempPort = null;
     let usedExisting = false;
-    let portRec = serialPorts.get(portPath);
+    const status = serialManager.getStatus();
     try {
         let port;
-        if (portRec && portRec.port) {
-            port = portRec.port;
+        if (status.open && status.path === portPath) {
+            port = serialManager._port; // reuse existing (internal)
             usedExisting = true;
         } else {
-            // Add an error handler to avoid unhandled 'error' events when port cannot be opened
-            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            // open a temporary dedicated port (do not replace manager's open port)
+            const spLib = require('serialport');
+            const SP = spLib.SerialPort || spLib;
+            port = new SP({ path: portPath, baudRate: parseInt(baudRate, 10) });
             try { port.on('error', (e) => appendLog('serial', `wifi_scan error path=${portPath} err=${e.message || e}`)); } catch (_) {}
             tempPort = port;
         }
@@ -794,7 +769,7 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
 // Serial WiFi connect using Improv protocol
 // body: { path, ssid, password, baudRate? }
 app.post('/api/serial/wifi/connect', async (req, res) => {
-    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, ssid, password = '', baudRate = 115200 } = req.body || {};
     if (!portPath || !ssid) return res.status(400).json({ success: false, error: 'path and ssid required' });
 
@@ -808,13 +783,14 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
 
     let tempPort = null;
     try {
-        const portRec = serialPorts.get(portPath);
         let port;
-        if (portRec && portRec.port) {
-            port = portRec.port;
+        const status = serialManager.getStatus();
+        if (status.open && status.path === portPath) {
+            port = serialManager._port; // reuse shared port
         } else {
-            // Add an error handler to avoid unhandled 'error' events
-            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            const spLib = require('serialport');
+            const SP = spLib.SerialPort || spLib;
+            port = new SP({ path: portPath, baudRate: parseInt(baudRate, 10) });
             try { port.on('error', (e) => appendLog('serial', `wifi_connect error path=${portPath} err=${e.message || e}`)); } catch (_) {}
             tempPort = port;
         }
@@ -853,7 +829,7 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
 
 // Quick COM health check: write a test command and wait briefly for any response
 app.post('/api/com/check', async (req, res) => {
-    if (!serialAvailable) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200, testCmd = '\n', timeout = 1000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
@@ -865,17 +841,18 @@ app.post('/api/com/check', async (req, res) => {
         }
     }
 
-    let rec = serialPorts.get(portPath);
     let tempOpened = false;
     let port;
     let portErrored = null;
 
     try {
-        if (rec && rec.port) {
-            port = rec.port;
+        const status = serialManager.getStatus();
+        if (status.open && status.path === portPath) {
+            port = serialManager._port;
         } else {
-            // open temporary port
-            port = new SerialPort({ path: portPath, baudRate: parseInt(baudRate, 10) });
+            const spLib = require('serialport');
+            const SP = spLib.SerialPort || spLib;
+            port = new SP({ path: portPath, baudRate: parseInt(baudRate, 10) });
             // Guard against unhandled 'error' events that can crash the process
             try { port.on('error', (e) => { portErrored = e; appendLog('serial', `com_check error-event path=${portPath} err=${e.message || e}`); }); } catch (_) {}
             tempOpened = true;
@@ -1072,9 +1049,284 @@ app.post('/api/device/wifi/connect', async (req, res) => {
     }
 });
 
+// WiFi: status aggregator
+// GET /api/device/wifi/status?host=IP
+// Tries multiple known firmware endpoints to gather: connected, ssid, rssi, ip, channel, mode
+app.get('/api/device/wifi/status', async (req, res) => {
+    const host = req.query.host;
+    if (!host) return res.status(400).json({ success: false, error: 'host required' });
+    const base = `http://${host}`;
+    const result = { success: true, host, connected: false, ssid: null, rssi: null, ip: null, channel: null, mode: null, raw: {} };
+    const attempts = [
+        { path: '/network_info', tag: 'network_info' },
+        { path: '/sysinfo', tag: 'sysinfo' },
+        { path: '/api/telemetry', tag: 'telemetry' },
+        { path: '/api/status', tag: 'api_status' }
+    ];
+    for (const a of attempts) {
+        try {
+            const r = await axios.get(base + a.path, { timeout: 5000, validateStatus: () => true });
+            if (r.status >= 200 && r.status < 300 && r.data) {
+                result.raw[a.tag] = r.data;
+                // Normalize fields from various schemas
+                const d = r.data;
+                // wifi or nested wifi
+                const wifi = d.wifi || d.network || d;
+                if (wifi) {
+                    if (wifi.ssid && !result.ssid) result.ssid = wifi.ssid;
+                    if (typeof wifi.rssi === 'number' && result.rssi == null) result.rssi = wifi.rssi;
+                    if (wifi.localIP && !result.ip) result.ip = wifi.localIP;
+                    if (wifi.ip && !result.ip) result.ip = wifi.ip;
+                    if (wifi.channel && !result.channel) result.channel = wifi.channel;
+                }
+                if (d.localIP && !result.ip) result.ip = d.localIP;
+                if (d.wifiStatus !== undefined) {
+                    const ws = (typeof d.wifiStatus === 'string') ? parseInt(d.wifiStatus, 10) : d.wifiStatus;
+                    if (ws === 3) result.connected = true;
+                }
+                if (d.mode && !result.mode) result.mode = d.mode; // some firmwares
+                // Heuristic connected states
+                if (d.wifi && (d.wifi.connected || d.wifi.status === 'connected')) result.connected = true;
+                if (d.ap && d.ap.enabled && result.mode === null) result.mode = 'ap';
+            }
+        } catch (_) { /* ignore individual attempt */ }
+    }
+    // Fallback connectivity check (ping)
+    if (!result.connected) {
+        try {
+            const ping = await axios.get(base + '/api/ping', { timeout: 2000, validateStatus: () => true });
+            if (ping.status >= 200 && ping.status < 300 && ping.data && ping.data.ok) result.connected = true;
+        } catch (_) { /* ignore */ }
+    }
+    res.json(result);
+});
+
+// Convenience: perform WiFi status/scan/connect/disconnect operations by device id
+// These wrap the host-based endpoints so the browser can avoid duplicating host lookup logic.
+app.get('/api/device/:id/wifi/status', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        // Reuse existing aggregator via internal call (duplicate logic kept minimal for clarity)
+        req.query.host = dev.host || dev.ip; // mutate for reuse
+        return app._router.handle({ ...req, url: `/api/device/wifi/status?host=${encodeURIComponent(req.query.host)}`, path: '/api/device/wifi/status' }, res, () => {});
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/device/:id/wifi/scan', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        const host = dev.host || dev.ip;
+        req.query.host = host;
+        return app._router.handle({ ...req, url: `/api/device/wifi/scan?host=${encodeURIComponent(host)}`, path: '/api/device/wifi/scan' }, res, () => {});
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/device/:id/wifi/connect', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        const host = dev.host || dev.ip;
+        const { ssid, password = '' } = req.body || {};
+        if (!ssid) return res.status(400).json({ success: false, error: 'ssid required' });
+        req.body.host = host;
+        return app._router.handle({ ...req, url: `/api/device/wifi/connect`, path: '/api/device/wifi/connect', method: 'POST' }, res, () => {});
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/device/:id/wifi/disconnect', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        const host = dev.host || dev.ip;
+        req.body.host = host;
+        return app._router.handle({ ...req, url: `/api/device/wifi/disconnect`, path: '/api/device/wifi/disconnect', method: 'POST' }, res, () => {});
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// WiFi: disconnect attempt (best-effort)
+// POST /api/device/wifi/disconnect { host }
+// Tries multiple endpoints; returns first success
+app.post('/api/device/wifi/disconnect', async (req, res) => {
+    try {
+        const { host } = req.body || {};
+        if (!host) return res.status(400).json({ success: false, error: 'host required' });
+        const base = `http://${host}`;
+        const paths = [
+            { method: 'post', path: '/wifi_disconnect' },
+            { method: 'post', path: '/disconnect_wifi' },
+            { method: 'get', path: '/wifi_disconnect' },
+            { method: 'get', path: '/disconnect_wifi' },
+            { method: 'post', path: '/api/wifi/disconnect' },
+            { method: 'get', path: '/api/wifi/disconnect' }
+        ];
+        let lastErr = null;
+        for (const p of paths) {
+            try {
+                const fn = p.method === 'post' ? axios.post : axios.get;
+                const r = await fn(base + p.path, {}, { timeout: 5000, validateStatus: () => true });
+                if (r.status >= 200 && r.status < 300) return res.json({ success: true, endpoint: p.path, data: r.data });
+                lastErr = new Error(`HTTP ${r.status}`);
+            } catch (e) { lastErr = e; }
+        }
+        return res.status(502).json({ success: false, error: lastErr?.message || 'disconnect failed' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+});
+
 app.get('/api/status', (req, res) => {
     const status = getProjectStatus();
     res.json(status);
+});
+
+// AP/STA Summary: aggregate /network_info for all devices
+// GET /api/ap-summary -> { success, devices: [ { id, host, ap: { enabled, clients, ip }, wifi: { connected, ssid, rssi, ip, channel }, mode, error } ] }
+app.get('/api/ap-summary', async (req, res) => {
+    try {
+        const out = [];
+        const devs = deviceManager.list();
+        for (const d of devs) {
+            const host = d.host || d.ip;
+            const rec = { id: d.id, host, ap: null, wifi: null, mode: null, error: null };
+            if (!host) { rec.error = 'no-host'; out.push(rec); continue; }
+            try {
+                const r = await axios.get(`http://${host}/network_info`, { timeout: 5000, validateStatus: () => true });
+                if (r.status >= 200 && r.status < 300 && r.data) {
+                    const data = r.data;
+                    rec.ap = data.ap || null;
+                    rec.wifi = data.wifi || null;
+                    // derive mode
+                    if (data.ap && data.ap.enabled && data.wifi && data.wifi.connected) rec.mode = 'ap+sta';
+                    else if (data.ap && data.ap.enabled) rec.mode = 'ap';
+                    else if (data.wifi && data.wifi.connected) rec.mode = 'sta';
+                } else {
+                    rec.error = 'http-' + r.status;
+                }
+            } catch (e) {
+                rec.error = e.message || 'fetch-failed';
+            }
+            out.push(rec);
+        }
+        res.json({ success: true, devices: out });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// AP Mode Control (best-effort; tries possible endpoints exposed by firmware variants)
+// POST /api/device/:id/ap/enable { mode? }   (mode: 'ap','sta','ap+sta')
+app.post('/api/device/:id/ap/enable', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        const host = dev.host || dev.ip;
+        const desired = (req.body && req.body.mode) ? String(req.body.mode).toLowerCase() : 'ap';
+        // Attempt heuristic endpoints
+        const attempts = [];
+        // Hypothetical endpoints (future firmware): /api/wifi/mode {mode}, /wifi_mode?m=ap, /set_ap?enable=1
+        attempts.push(async () => axios.post(`http://${host}/api/wifi/mode`, { mode: desired }, { timeout: 6000, validateStatus: () => true }));
+        attempts.push(async () => axios.get(`http://${host}/wifi_mode?m=${encodeURIComponent(desired)}`, { timeout: 6000, validateStatus: () => true }));
+        attempts.push(async () => {
+            if (desired.startsWith('ap')) return axios.get(`http://${host}/set_ap?enable=1`, { timeout: 6000, validateStatus: () => true });
+            return { status: 599 }; // skip
+        });
+        let last = null;
+        for (const fn of attempts) {
+            try {
+                const r = await fn();
+                if (r && r.status >= 200 && r.status < 300) {
+                    return res.json({ success: true, mode: desired, endpoint: r.config?.url });
+                }
+                last = new Error('http-' + (r ? r.status : 'no'));
+            } catch (e) { last = e; }
+        }
+        return res.status(502).json({ success: false, error: last?.message || 'enable failed' });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Disable AP (best-effort)
+app.post('/api/device/:id/ap/disable', async (req, res) => {
+    try {
+        const dev = deviceManager.get(req.params.id);
+        if (!dev || !(dev.host || dev.ip)) return res.status(404).json({ success: false, error: 'device not found' });
+        const host = dev.host || dev.ip;
+        const attempts = [];
+        attempts.push(async () => axios.post(`http://${host}/api/wifi/mode`, { mode: 'sta' }, { timeout: 6000, validateStatus: () => true }));
+        attempts.push(async () => axios.get(`http://${host}/wifi_mode?m=sta`, { timeout: 6000, validateStatus: () => true }));
+        attempts.push(async () => axios.get(`http://${host}/set_ap?enable=0`, { timeout: 6000, validateStatus: () => true }));
+        let last = null;
+        for (const fn of attempts) {
+            try {
+                const r = await fn();
+                if (r && r.status >= 200 && r.status < 300) {
+                    return res.json({ success: true, mode: 'sta', endpoint: r.config?.url });
+                }
+                last = new Error('http-' + (r ? r.status : 'no'));
+            } catch (e) { last = e; }
+        }
+        return res.status(502).json({ success: false, error: last?.message || 'disable failed' });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Quick API connectivity test for all saved devices
+// GET /api/tests/api -> { success, tested: N, results: [ { id, host, ok, http, durationMs, endpointTried, note } ] }
+app.get('/api/tests/api', async (req, res) => {
+    const devices = deviceManager.list();
+    const results = [];
+    for (const d of devices) {
+        const host = d.host || d.ip;
+        if (!host) { results.push({ id: d.id, host: null, ok: false, http: null, durationMs: 0, endpointTried: null, note: 'no host' }); continue; }
+        const base = `http://${host}`;
+        const endpoints = ['/network_info', '/sysinfo', '/api/telemetry', '/api/status', '/api/ping'];
+        let ok = false; let http = null; let endpointTried = null; let note = '';
+        const start = Date.now();
+        for (const ep of endpoints) {
+            try {
+                const r = await axios.get(base + ep, { timeout: 4000, validateStatus: () => true });
+                http = r.status; endpointTried = ep;
+                if (r.status >= 200 && r.status < 300) {
+                    if (ep === '/api/ping' && !(r.data && r.data.ok)) { note = 'ping responded but ok flag missing'; } else { ok = true; }
+                    break;
+                }
+            } catch (e) {
+                http = null; endpointTried = ep; note = e.message;
+            }
+        }
+        const durationMs = Date.now() - start;
+        results.push({ id: d.id, host, ok, http, durationMs, endpointTried, note });
+    }
+    res.json({ success: true, tested: results.length, results });
+});
+
+// Serial test: attempts to report current serial status and optionally poke the device
+// GET /api/tests/serial?poke=1 -> uses SerialManager.getStatus(); if open and poke=1 sends a newline
+app.get('/api/tests/serial', async (req, res) => {
+    try {
+        if (!serialManager || !serialManager.isAvailable()) {
+            return res.json({ success: true, available: false, status: null, note: 'serial manager not available' });
+        }
+        const status = serialManager.getStatus();
+        let pokeSent = false;
+        if (req.query.poke === '1' && status && status.open) {
+            try {
+                await serialManager.write('\n');
+                pokeSent = true;
+            } catch (e) { /* ignore */ }
+        }
+        return res.json({ success: true, available: true, status, pokeSent });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 // List build artifacts for a given environment (defaults to currentConfig.environment)
@@ -2242,8 +2494,7 @@ io.on('connection', (socket) => {
 
     socket.on('get_com_ports', async () => {
         try {
-            const portsList = await getComPorts();
-            const ports = portsList.map(p => ({ path: p, manufacturer: '' }));
+            const ports = await serialManager.listPorts();
             socket.emit('com_ports', ports);
         } catch (err) {
             socket.emit('com_ports', []);
@@ -2357,6 +2608,30 @@ io.on('connection', (socket) => {
             command = PYTHON_EXEC;
             finalArgs = [scriptPath, ...args];
             socket.emit('output', { type: 'stdout', data: `Executing: ${command} ${finalArgs.join(' ')}\n` });
+        } else if (ext === '.ps1') {
+            // PowerShell script (Windows focused). Execute via pwsh / powershell.
+            let scriptPath;
+            if (path.isAbsolute(script)) {
+                scriptPath = script;
+            } else {
+                const possiblePaths = [
+                    path.join(__dirname, '..', script),
+                    path.join(__dirname, script),
+                    script
+                ];
+                scriptPath = possiblePaths.find(p => {
+                    try { return fs.existsSync(p); } catch { return false; }
+                });
+                if (!scriptPath) {
+                    socket.emit('output', { type: 'stderr', data: `PowerShell script not found: ${script}\nTried: ${possiblePaths.join(', ')}\n` });
+                    socket.emit('process_complete', { success: false, error: `Script not found: ${script}` });
+                    return;
+                }
+            }
+            // Prefer pwsh, fallback to powershell
+            command = (process.platform === 'win32') ? 'pwsh' : 'pwsh';
+            finalArgs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args];
+            socket.emit('output', { type: 'stdout', data: `Executing (PowerShell): ${command} ${finalArgs.join(' ')}\n` });
         } else {
             // treat as command (e.g., 'pio' or node script)
             command = script;
@@ -2584,6 +2859,11 @@ io.on('connection', (socket) => {
 
     // Send initial data
     socket.emit('config-update', currentConfig);
+    // Emit initial serial status
+    try { socket.emit('serial-status', serialManager.getStatus()); } catch (_) {}
+    // Emit initial devices
+    try { socket.emit('device-list', { devices: deviceManager.list(), selectedId: deviceManager.selectedId }); } catch (_) {}
+    try { socket.emit('device-selected', deviceManager.getSelected()); } catch (_) {}
     socket.emit('status-update', getProjectStatus());
     socket.emit('ai-status', {
         available: aiAgent.isAvailable(),
@@ -2592,9 +2872,23 @@ io.on('connection', (socket) => {
     socket.emit('remote-status', remoteManager.getConnectionStatus());
 });
 
-// Start server
-server.listen(PORT, () => {
-    console.log(`🚀 ESP32 Development UI Server running on http://localhost:${PORT}`);
+// Start server (retry on EADDRINUSE by incrementing port up to +10)
+function startServer(port, attempt=0){
+    server.listen(port, () => {
+        console.log(`🚀 ESP32 Development UI Server running on http://localhost:${port}`);
+        postListen(port);
+    }).on('error', (err) => {
+        if (err && err.code === 'EADDRINUSE' && attempt < 10) {
+            console.warn(`Port ${port} in use, trying ${port+1}...`);
+            setTimeout(()=>startServer(port+1, attempt+1), 300);
+        } else {
+            console.error('Failed to start server:', err);
+            process.exit(1);
+        }
+    });
+}
+
+function postListen(port){
     console.log(`📡 WebSocket server ready for real-time communication`);
     console.log(`🤖 AI Assistant: ${aiAgent.isAvailable() ? 'Available' : 'Configure API keys in web UI'}`);
     console.log(`🌐 Remote Servers: ${remoteManager.getServers().length} configured`);
@@ -2603,16 +2897,43 @@ server.listen(PORT, () => {
     const open = require('child_process').spawn;
     try {
         if (os.platform() === 'win32') {
-            open('start', [`http://localhost:${PORT}`], { shell: true });
+            open('start', [`http://localhost:${port}`], { shell: true });
         } else if (os.platform() === 'darwin') {
-            open('open', [`http://localhost:${PORT}`]);
+            open('open', [`http://localhost:${port}`]);
         } else {
-            open('xdg-open', [`http://localhost:${PORT}`]);
+            open('xdg-open', [`http://localhost:${port}`]);
         }
     } catch (error) {
-        console.log(`🌐 Open your browser to http://localhost:${PORT}`);
+        console.log(`🌐 Open your browser to http://localhost:${port}`);
     }
-});
+}
+
+startServer(PORT);
+
+// ---- WiFi Status Aggregator (server-pushed) ----
+let _wifiAggregatorInterval = null;
+async function _collectWifiStatus(){
+    const devices = deviceManager.list();
+    if(!Array.isArray(devices) || devices.length===0) return;
+    const payload = [];
+    await Promise.all(devices.map(async d => {
+        const host = d.host || d.ip;
+        if(!host) return;
+        try {
+            const r = await axios.get(`http://${host}/wifi/status`, { timeout: 2500 });
+            payload.push({ id: d.id, host, status: r.data });
+        } catch (e) {
+            payload.push({ id: d.id, host, status: { connected:false, error: e.message } });
+        }
+    }));
+    if(payload.length) io.emit('device-wifi-status', payload);
+}
+function startWifiAggregator(){
+    if(_wifiAggregatorInterval) clearInterval(_wifiAggregatorInterval);
+    _wifiAggregatorInterval = setInterval(_collectWifiStatus, 15000);
+    setTimeout(_collectWifiStatus, 4000);
+}
+startWifiAggregator();
 
 // Graceful shutdown
 process.on('SIGINT', () => {

@@ -1,4 +1,7 @@
-(function(){
+// wifi.js module can be re-initialized after SPA navigation.
+(function(global){
+  if(global.__OEPL_WIFI_MODULE__) return; // singleton pattern for helpers; init() still re-runs per page load
+  const WIFI = { initializedOnce:false };
   const logEl = () => document.getElementById('wifi-console');
   function log(msg, type='info'){
     const el = logEl(); if(!el) return; const ts = new Date().toLocaleTimeString();
@@ -12,11 +15,57 @@
 
   function populateDevices(){
     const sel = document.getElementById('wifi-device-select'); if(!sel) return;
-    sel.innerHTML = '';
+    const headerSel = document.getElementById('header-device-select');
+    const selects = [sel]; if(headerSel) selects.push(headerSel);
     const list = devicesList();
-    if(list.length === 0){ const o = document.createElement('option'); o.value = ''; o.textContent = 'No saved devices'; sel.appendChild(o); return; }
-    list.forEach(d=>{ const o = document.createElement('option'); o.value = d.id; o.textContent = `${d.name||d.id} (${d.ip||'-'})`; sel.appendChild(o); });
-    const cur = getSelectedDevice(); if(cur) sel.value = cur.id;
+    selects.forEach(s=>{
+      if(!s) return;
+      s.innerHTML='';
+      if(list.length === 0){ const o = document.createElement('option'); o.value=''; o.textContent='No saved devices'; s.appendChild(o); return; }
+      list.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.name||d.id}`; s.appendChild(o); });
+    });
+    const cur = getSelectedDevice();
+    if(cur){ selects.forEach(s=>{ try{ s.value = cur.id; }catch(_){ } }); }
+  }
+
+  async function refreshDevicesFromServer(autoSelect=true){
+    try {
+      const r = await fetch('/api/devices');
+      if(!r.ok) throw new Error('http '+r.status);
+      const j = await r.json();
+      if(j && Array.isArray(j.devices)) {
+        // If global app present update it, else keep local copy in window.wifiDevices
+        if(window.app){
+          window.app.devices = j.devices.map(d=>({ id:d.id, name:d.name, ip:d.host||d.ip, com:d.port||d.com }));
+          window.app.selectedDeviceId = j.selectedId || null;
+        } else {
+          window.wifiDevices = j.devices;
+          window.wifiSelectedId = j.selectedId || null;
+        }
+        populateDevices();
+        if(autoSelect && j.selectedId){
+          const selEl = document.getElementById('wifi-device-select');
+          if(selEl) selEl.value = j.selectedId;
+        }
+      }
+    } catch(e){ log('Device list load failed: '+e.message,'error'); }
+  }
+
+  async function selectDeviceFromWifiTab(){
+    const id = document.getElementById('wifi-device-select').value;
+    if(!id){ alert('Choose a saved device first'); return; }
+    try {
+      const r = await fetch('/api/device/select',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      const j = await r.json();
+      if(!j.success) throw new Error(j.error||'select failed');
+      log(`Device '${id}' selected.`);
+      // mirror selection into global app if present
+      if(window.app){ window.app.selectedDeviceId = id; }
+      // update host override field
+      const dev = devicesList().find(d=>d.id===id);
+      if(dev && dev.ip){ const h=document.getElementById('wifi-host'); if(h) h.value = dev.ip; }
+      fetchStatus(false);
+    } catch(e){ log('Select device error: '+e.message,'error'); }
   }
 
   function currentHost(){
@@ -26,10 +75,12 @@
   }
 
   async function scan(){
-    const host = currentHost(); if(!host){ alert('Set device host'); return; }
-    setText('wifi-scan-status', 'Scanning...'); log(`Scanning WiFi on ${host}...`);
+    // Prefer device-id based endpoint if a device is selected
+    const dev = getSelectedDevice();
+    if(!dev){ alert('Select a device first'); return; }
+    setText('wifi-scan-status', 'Scanning...'); log(`Scanning WiFi on device ${dev.name||dev.id} ...`);
     try{
-      const r = await fetch(`/api/device/wifi/scan?host=${encodeURIComponent(host)}`);
+      const r = await fetch(`/api/device/${encodeURIComponent(dev.id)}/wifi/scan`);
       const j = await r.json();
       if(!j.success){ throw new Error(j.error||'scan failed'); }
       renderNetworks(j.networks||[]); setText('wifi-scan-status', `Found ${Array.isArray(j.networks)?j.networks.length:0}`);
@@ -101,13 +152,13 @@
   }
 
   async function connect(){
-    const host = currentHost(); if(!host){ alert('Set device host'); return; }
+    const dev = getSelectedDevice(); if(!dev){ alert('Select a device first'); return; }
     const ssid = document.getElementById('wifi-ssid').value.trim();
     const password = document.getElementById('wifi-pass').value;
     if(!ssid){ alert('Enter SSID'); return; }
-    setText('wifi-connect-status','Connecting...'); log(`Connecting ${host} to SSID='${ssid}' ...`);
+    setText('wifi-connect-status','Connecting...'); log(`Connecting device ${dev.name||dev.id} to SSID='${ssid}' ...`);
     try{
-      const r = await fetch('/api/device/wifi/connect',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ host, ssid, password })});
+      const r = await fetch(`/api/device/${encodeURIComponent(dev.id)}/wifi/connect`,{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ssid, password })});
       const j = await r.json();
       if(!j.success){ throw new Error(j.error||'connect failed'); }
       setText('wifi-connect-status','Saved. Device will attempt to connect.');
@@ -130,18 +181,60 @@
     }catch(e){ setText('wifi-connect-status',`Error: ${e.message}`); log(`Serial connect error: ${e.message}`,'error'); }
   }
 
-  // events
-  document.addEventListener('DOMContentLoaded', ()=>{
+  // ---- Status Handling ----
+  async function fetchStatus(showLog=false){
+    const dev = getSelectedDevice(); if(!dev){ if(showLog) log('No device selected','warning'); return; }
+    try {
+      const r = await fetch(`/api/device/${encodeURIComponent(dev.id)}/wifi/status`);
+      const j = await r.json();
+      if(!j.success){ throw new Error(j.error||'status failed'); }
+      renderStatus(j);
+      if(showLog) log(`Status: ${j.connected?'connected':'offline'} ${j.ssid||''} ${j.ip||''}`);
+    } catch(e){ if(showLog) log(`Status error: ${e.message}`,'error'); }
+  }
+
+  function renderStatus(s){
+    const set = (id,val)=>{ const el=document.getElementById(id); if(el) el.textContent = (val==null||val==='')?'-':val; };
+    if(!s){ set('wifi-status-connected','?'); return; }
+    set('wifi-status-connected', s.connected? 'Yes':'No');
+    set('wifi-status-ssid', s.ssid);
+    set('wifi-status-ip', s.ip);
+    set('wifi-status-rssi', (s.rssi!=null)? s.rssi+' dBm': null);
+    set('wifi-status-channel', s.channel);
+    set('wifi-status-mode', s.mode);
+    set('wifi-status-updated', new Date().toLocaleTimeString());
+  }
+
+  async function disconnectWifi(){
+    const dev = getSelectedDevice(); if(!dev){ alert('Select a device first'); return; }
+    const stId = 'wifi-disconnect-status'; setText(stId,'Disconnecting...');
+    try {
+      const r = await fetch(`/api/device/${encodeURIComponent(dev.id)}/wifi/disconnect`,{ method:'POST', headers:{'Content-Type':'application/json'} });
+      const j = await r.json();
+      if(!j.success) throw new Error(j.error||'disconnect failed');
+      setText(stId,'Disconnect sent'); log('Disconnect command sent.');
+      setTimeout(()=>fetchStatus(false),1500);
+    }catch(e){ setText(stId,'Error: '+e.message); log('Disconnect error: '+e.message,'error'); }
+  }
+
+  async function initWifiPage(){
+    const rootMarker = document.getElementById('wifi-device-select') || document.getElementById('wifi-status-panel');
+    if(!rootMarker) return; // not on wifi page
+    if(rootMarker.dataset.bound === '1') return; // prevent double binding for same DOM
+    rootMarker.dataset.bound = '1';
+    (async () => {
+    // Ensure ESP32DevUI is attached (if app.js loaded). If not, create a minimal stub for device list use.
+    if(!window.app){ window.app = { devices: window.wifiDevices||[], selectedDeviceId: window.wifiSelectedId||null, getSelectedDevice(){ return this.devices.find(d=>d.id===this.selectedDeviceId)||null; } }; }
+    await refreshDevicesFromServer(true);
     populateDevices();
     const cur = getSelectedDevice(); if(cur && cur.ip){ document.getElementById('wifi-host').value = cur.ip; }
   updateSelectedComLabel();
   // Keep label in sync when header COM changes
   const headerSel = document.getElementById('com-port-select');
   if (headerSel) headerSel.addEventListener('change', updateSelectedComLabel);
-    document.getElementById('wifi-use-selected').addEventListener('click', ()=>{
-      const devId = document.getElementById('wifi-device-select').value; const dev = devicesList().find(d=>d.id===devId);
-      if(dev && dev.ip){ document.getElementById('wifi-host').value = dev.ip; log(`Using device ${dev.name||dev.id} (${dev.ip})`); }
-    });
+    document.getElementById('wifi-use-selected').addEventListener('click', selectDeviceFromWifiTab);
+    const devSel = document.getElementById('wifi-device-select');
+    if(devSel) devSel.addEventListener('change', ()=>{ /* passive change only; selection action explicit */ });
     document.getElementById('wifi-scan').addEventListener('click', scan);
     const serialScanBtn = document.getElementById('wifi-serial-scan');
     if (serialScanBtn) serialScanBtn.addEventListener('click', serialScan);
@@ -167,5 +260,17 @@
       })();
     });
     document.getElementById('wifi-clear').addEventListener('click', ()=>{ const el = logEl(); if(el) el.innerHTML=''; });
-  });
-})();
+    // Status buttons
+    const refreshBtn = document.getElementById('wifi-refresh-status'); if(refreshBtn) refreshBtn.addEventListener('click', ()=>fetchStatus(true));
+    const discBtn = document.getElementById('wifi-disconnect'); if(discBtn) discBtn.addEventListener('click', disconnectWifi);
+  // Initial status (single); ongoing updates come from server push via app.js socket
+  fetchStatus(false);
+    })();
+  }
+
+  // Hook events
+  document.addEventListener('DOMContentLoaded', initWifiPage);
+  window.addEventListener('spa:navigated', initWifiPage);
+  // expose for manual debug
+  global.__OEPL_WIFI_MODULE__ = { init: initWifiPage };
+})(window);

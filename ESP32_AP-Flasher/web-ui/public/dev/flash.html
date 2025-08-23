@@ -1,97 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Flasher — OpenEPaperLink</title>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link href="styles.css" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ESP32 DevWebUi — Flasher</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="styles.css" rel="stylesheet" />
 </head>
-
 <body>
-  <div id="app">
-    <!-- Header -->
-    <header class="header">
-      <div class="header-content">
-        <div class="logo">
-          <i class="fas fa-microchip"></i>
-          <h1>Simple Flasher</h1>
-        </div>
-        <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
-          <div class="status-item">
-            <span id="api-status-dot" class="status-dot disconnected"></span>
-            <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
+  <header class="header">
+    <div class="header-content">
+      <div class="logo">
+        <i class="fas fa-microchip"></i>
+        <h1>ESP32 DevWebUi</h1>
+      </div>
+      <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
+        <div class="status-item" style="display:flex;flex-direction:column;gap:4px" title="Active Device & Communication">
+          <label style="font-size:10px;color:#6b7280">Device</label>
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+            <select id="header-device-select" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:140px"></select>
+            <select id="header-comm-mode" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px">
+              <option value="serial">Serial</option>
+              <option value="wifi">WiFi</option>
+            </select>
+            <select id="header-comm-port" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:120px"></select>
           </div>
+        </div>
+        <div class="status-item" title="API">
+          <span id="api-status-dot" class="status-dot disconnected"></span>
+          <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
+        </div>
+        <div class="status-item" title="WebSocket">
+          <span id="ws-status-dot" class="status-dot disconnected"></span>
+          <small id="ws-status-text" style="margin-left:6px;color:#9ca3af">WS(ip:port)</small>
+        </div>
+        <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
+          <span id="serial-status-dot" class="status-dot disconnected"></span>
+          <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
+          <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111;display:none"></select>
+          <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;display:none">⟳</button>
         </div>
       </div>
-    </header>
-
-    <nav class="top-nav" role="navigation" aria-label="Main Navigation">
-      <div class="container">
-  <a href="index.html" class="nav-link">Dashboard</a>
-  <a href="wifi.html" class="nav-link">WiFi</a>
-  <a href="tags.html" class="nav-link">Tags</a>
-  <a href="ap-list.html" class="nav-link">AP List</a>
-  <a href="peers.html" class="nav-link">Peers</a>
-  <a href="flash.html" class="nav-link active">Simple Flasher</a>
-  <a href="device.html" class="nav-link">Device</a>
-  <a href="settings.html" class="nav-link">Settings</a>
-  <a href="ai.html" class="nav-link">AI</a>
-      </div>
-    </nav>
-
-    <div class="main-container container">
-      <aside class="sidebar">
-        <div class="project-info">
-          <h3><i class="fas fa-project-diagram"></i> Flash</h3>
-          <div class="info-item">
-            <span class="label">Preset:</span>
-            <span class="value" id="current-env">OutdoorAP</span>
-          </div>
-        </div>
-      </aside>
-
-      <main class="main-content">
-        <div class="build-panel">
-          <h2><i class="fas fa-bolt"></i> Simple Flasher</h2>
-          <div class="controls" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-            <select id="env">
-              <option value="OutdoorAP">OutdoorAP</option>
-              <option value="IndoorAP">IndoorAP</option>
-              <option value="Debug">Debug</option>
-            </select>
-            <input id="host" placeholder="Device host (optional)" style="padding:8px;font-size:14px;width:180px" />
-            <select id="port">
-              <option>COM10</option>
-            </select>
-            <select id="baud">
-              <option value="115200">115200</option>
-              <option value="921600" selected>921600</option>
-            </select>
-            <button id="buildUpload" class="btn btn-primary">Build + Upload</button>
-            <button id="monitor" class="btn">Serial Monitor</button>
-            <button id="clear" class="btn">Clear</button>
-          </div>
-
-          <div style="margin-bottom:8px">
-            <input type="file" id="firmware-file" accept=".bin">
-            <button id="upload-firmware" class="btn">Upload Firmware</button>
-            <button id="trigger-ota" class="btn">Trigger OTA</button>
-            <button id="preset-realtek" class="btn">Realtek Preset</button>
-            <label style="margin-left:12px"><input type="checkbox" id="smoke-test"> Smoke-test mode</label>
-          </div>
-
-          <div id="console" class="console console-tall" style="white-space:pre-wrap"></div>
-        </div>
-      </main>
     </div>
-
+  </header>
+  <nav class="top-nav" role="navigation" aria-label="Main Navigation">
+    <div class="container">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="wifi.html" class="nav-link">WiFi</a>
+      <a href="tags.html" class="nav-link">Tags</a>
+      <a href="ap-list.html" class="nav-link">AP List</a>
+      <a href="peers.html" class="nav-link">Peers</a>
+      <a href="flash.html" class="nav-link active">Simple Flasher</a>
+      <a href="device.html" class="nav-link">Device</a>
+      <a href="settings.html" class="nav-link">Settings</a>
+      <a href="ai.html" class="nav-link">AI</a>
+    </div>
+  </nav>
+  <div class="container" style="max-width:1300px;padding:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+      <h1 style="margin:0"><i class="fas fa-bolt"></i> Flasher</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="flash-action-bar">
+        <button id="flash-build-upload-py" class="btn btn-primary btn-small" title="Build + Upload (Python)"><i class="fas fa-play"></i> Build+Upload Py</button>
+        <button id="flash-build-py" class="btn btn-small" title="Build only (Python)"><i class="fas fa-hammer"></i> Build Py</button>
+        <button id="flash-fast-py" class="btn btn-small" title="Fast parallel build (Python fast_compile)"><i class="fas fa-rocket"></i> Fast Py</button>
+        <button id="flash-build-upload-ps" class="btn btn-outline btn-small" title="Build + Upload (PowerShell)"><i class="fas fa-play"></i> Build+Upload PS</button>
+        <button id="flash-fast-ps" class="btn btn-outline btn-small" title="Fast build (PowerShell fast_compile)"><i class="fas fa-bolt"></i> Fast PS</button>
+        <button id="flash-monitor" class="btn btn-small" title="Open serial monitor"><i class="fas fa-terminal"></i> Monitor</button>
+        <button id="flash-clean" class="btn btn-small" title="Clean build artifacts"><i class="fas fa-broom"></i> Clean</button>
+        <button id="flash-stop" class="btn btn-danger btn-small" title="Stop active process" disabled><i class="fas fa-stop"></i> Stop</button>
+        <button id="flash-clear" class="btn btn-small" title="Clear output"><i class="fas fa-eraser"></i> Clear</button>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:0">Unified flashing interface supporting Python (cross-platform) & PowerShell (Windows optimized) build pipelines. Select environment and port; use OTA for network devices.</p>
+    <div class="build-panel" id="flash-config-panel">
+      <h3 style="margin-top:0"><i class="fas fa-sliders-h"></i> Configuration</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end">
+        <div class="form-group">
+          <label for="flash-env">Environment</label>
+          <select id="flash-env"></select>
+        </div>
+        <div class="form-group">
+          <label for="flash-com">COM Port</label>
+          <select id="flash-com"></select>
+        </div>
+        <div class="form-group">
+          <label for="flash-baud">Baud</label>
+          <select id="flash-baud">
+            <option value="115200">115200</option>
+            <option value="460800">460800</option>
+            <option value="921600" selected>921600</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="flash-host">Device Host (OTA)</label>
+          <input id="flash-host" placeholder="192.168.4.1" />
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="flash-fs-only" /> FS Only</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="flash-skip-upload" /> Skip Upload</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="flash-skip-build" /> Skip Build</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="flash-fast-build" checked/> Fast</label>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+        <div>
+          <input type="file" id="flash-firmware-file" accept=".bin" />
+          <button id="flash-upload-firmware" class="btn btn-small">Upload File</button>
+          <button id="flash-trigger-ota" class="btn btn-small">Trigger OTA</button>
+        </div>
+        <div class="muted" id="flash-artifact-status" style="font-size:12px">Artifacts: <span id="flash-artifacts-meta">(none)</span></div>
+      </div>
+    </div>
+    <div class="console-panel" style="margin-top:16px">
+      <div class="console-header">
+        <h3><i class="fas fa-terminal"></i> Output</h3>
+        <div class="console-controls">
+          <button id="flash-copy" class="btn btn-small" title="Copy log"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+      </div>
+      <div id="flash-console" class="console console-tall"></div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="spa.js"></script>
   <script src="flash.js"></script>
 </body>
-
 </html>

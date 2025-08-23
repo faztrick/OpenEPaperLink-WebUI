@@ -17,6 +17,17 @@
   <h1>ESP32 DevWebUi</h1>
       </div>
       <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
+        <div class="status-item" style="display:flex;flex-direction:column;gap:4px" title="Active Device & Communication">
+          <label style="font-size:10px;color:#6b7280">Device</label>
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+            <select id="header-device-select" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:140px"></select>
+            <select id="header-comm-mode" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px">
+              <option value="serial">Serial</option>
+              <option value="wifi">WiFi</option>
+            </select>
+            <select id="header-comm-port" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:120px"></select>
+          </div>
+        </div>
         <div class="status-item" title="API">
           <span id="api-status-dot" class="status-dot disconnected"></span>
           <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
@@ -30,8 +41,8 @@
         <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
           <span id="serial-status-dot" class="status-dot disconnected"></span>
           <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
-          <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111"></select>
-          <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;">⟳</button>
+          <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111;display:none"></select>
+          <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;display:none">⟳</button>
         </div>
       </div>
     </div>
@@ -49,71 +60,83 @@
       <a href="ai.html" class="nav-link">AI</a>
     </div>
   </nav>
-  <div class="container" style="max-width:1100px;padding:16px">
-    <h1><i class="fas fa-wifi"></i> WiFi Manager</h1>
-    <p class="muted">Select device, scan networks, and connect. Uses saved devices from Dashboard.</p>
-
-    <div class="build-panel">
-      <h3><i class="fas fa-plug"></i> Device</h3>
-      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-        <div class="form-group">
-          <label for="wifi-device-select">Saved Device</label>
-          <select id="wifi-device-select"></select>
-        </div>
-        <div class="form-group">
-          <label for="wifi-host">Host (override)</label>
-          <input id="wifi-host" placeholder="192.168.4.1">
-        </div>
-        <button id="wifi-use-selected" class="btn btn-small"><i class="fas fa-link"></i> Use Selected</button>
+  <div class="container" style="max-width:1250px;padding:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+      <h1 style="margin:0"><i class="fas fa-wifi"></i> WiFi Manager</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="wifi-refresh-status" class="btn btn-small" title="Refresh status"><i class="fas fa-sync"></i> Status</button>
+        <button id="wifi-scan" class="btn btn-small btn-primary" title="Network scan"><i class="fas fa-wifi"></i> Scan</button>
+        <button id="wifi-serial-scan" class="btn btn-small" title="Serial scan"><i class="fas fa-usb"></i> Serial Scan</button>
+        <button id="wifi-disconnect" class="btn btn-small btn-outline" title="Disconnect from WiFi"><i class="fas fa-unlink"></i> Disconnect</button>
+        <button id="wifi-serial-check" class="btn btn-small" title="Check serial port"><i class="fas fa-stethoscope"></i> COM Check</button>
+        <button id="wifi-clear" class="btn btn-small" title="Clear console"><i class="fas fa-eraser"></i> Clear</button>
       </div>
     </div>
+    <p class="muted" style="margin-top:0">Select a saved device, view status, scan networks and push credentials. Central device & communication controls are in the header.</p>
 
-    <div class="build-panel">
-      <h3><i class="fas fa-search"></i> Scan</h3>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <button id="wifi-scan" class="btn btn-primary"><i class="fas fa-wifi"></i> Scan Networks</button>
-        <span id="wifi-scan-status" class="muted"></span>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
-        <button id="wifi-serial-scan" class="btn"><i class="fas fa-usb"></i> Scan via Serial</button>
-        <span id="wifi-serial-scan-status" class="muted"></span>
-  <button id="wifi-serial-check" class="btn btn-small"><i class="fas fa-stethoscope"></i> Check COM</button>
-  <span id="wifi-serial-check-status" class="muted"></span>
-  <span class="muted">Using COM: <strong id="wifi-selected-com">-</strong></span>
-      </div>
-      <div id="wifi-list" style="margin-top:12px"></div>
-    </div>
+    <div class="wifi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;align-items:start">
+      <!-- Left Column -->
+      <div class="col">
+        <div class="build-panel" id="wifi-status-panel">
+          <h3 style="margin-top:0"><i class="fas fa-signal"></i> Current Status</h3>
+          <div class="status-fields" id="wifi-status-fields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;font-size:13px">
+            <div><span class="muted">Connected</span><br><strong id="wifi-status-connected">?</strong></div>
+            <div><span class="muted">SSID</span><br><strong id="wifi-status-ssid">-</strong></div>
+            <div><span class="muted">IP</span><br><strong id="wifi-status-ip">-</strong></div>
+            <div><span class="muted">RSSI</span><br><strong id="wifi-status-rssi">-</strong></div>
+            <div><span class="muted">Channel</span><br><strong id="wifi-status-channel">-</strong></div>
+            <div><span class="muted">Mode</span><br><strong id="wifi-status-mode">-</strong></div>
+            <div><span class="muted">Updated</span><br><strong id="wifi-status-updated">-</strong></div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap" class="muted">
+            <span id="wifi-disconnect-status"></span>
+            <span id="wifi-scan-status"></span>
+            <span id="wifi-serial-scan-status"></span>
+            <span id="wifi-serial-check-status"></span>
+            <span id="wifi-connect-status"></span>
+          </div>
+          <div style="margin-top:6px;font-size:12px" class="muted">Using COM: <strong id="wifi-selected-com">-</strong></div>
+        </div>
 
-    <div class="build-panel">
-      <h3><i class="fas fa-key"></i> Connect</h3>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div class="form-group">
-          <label for="wifi-ssid">SSID</label>
-          <input id="wifi-ssid" placeholder="SSID">
+        <div class="build-panel">
+          <h3 style="margin-top:0"><i class="fas fa-key"></i> Credentials</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+            <div class="form-group" style="flex:1;min-width:200px">
+              <label for="wifi-ssid">SSID</label>
+              <input id="wifi-ssid" placeholder="SSID">
+            </div>
+            <div class="form-group" style="flex:1;min-width:200px">
+              <label for="wifi-pass">Password</label>
+              <input id="wifi-pass" placeholder="password (blank for open)" type="password">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="wifi-connect" class="btn btn-success btn-small"><i class="fas fa-plug"></i> Send</button>
+              <button id="wifi-serial-connect" class="btn btn-small"><i class="fas fa-usb"></i> Serial Send</button>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="wifi-pass">Password</label>
-          <input id="wifi-pass" placeholder="password (blank for open)" type="password">
-        </div>
-        <button id="wifi-connect" class="btn btn-success"><i class="fas fa-plug"></i> Connect</button>
-        <button id="wifi-serial-connect" class="btn"><i class="fas fa-usb"></i> Connect via Serial</button>
-        <span id="wifi-connect-status" class="muted"></span>
       </div>
-    </div>
 
-    <div class="console-panel">
-      <div class="console-header">
-        <h3><i class="fas fa-terminal"></i> Output</h3>
-        <div class="console-controls">
-          <button id="wifi-clear" class="btn btn-small"><i class="fas fa-eraser"></i> Clear</button>
+      <!-- Right Column -->
+      <div class="col">
+        <div class="build-panel" style="min-height:240px">
+          <h3 style="margin-top:0"><i class="fas fa-search"></i> Scan Results</h3>
+          <div id="wifi-list" style="margin-top:4px;min-height:140px"></div>
+        </div>
+        <div class="console-panel" style="margin-top:16px">
+          <div class="console-header">
+            <h3><i class="fas fa-terminal"></i> Output</h3>
+            <div class="console-controls"></div>
+          </div>
+          <div id="wifi-console" class="console"></div>
         </div>
       </div>
-      <div id="wifi-console" class="console"></div>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
+  <script src="spa.js"></script>
   <script src="wifi.js"></script>
 </body>
 </html>

@@ -16,8 +16,19 @@
                 <i class="fas fa-microchip"></i>
                 <h1 style="margin:0;font-size:18px">ESP32 DevWebUi</h1>
             </div>
-            <!-- connection status indicators -->
+            <!-- connection status indicators with centralized communication controls -->
             <div class="status-indicators" style="display:flex;gap:10px;align-items:center;margin-left:auto">
+                <div class="status-item" style="display:flex;flex-direction:column;gap:4px" title="Active Device & Communication">
+                    <label style="font-size:10px;color:#6b7280">Device</label>
+                    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                        <select id="header-device-select" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:140px"></select>
+                        <select id="header-comm-mode" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px">
+                            <option value="serial">Serial</option>
+                            <option value="wifi">WiFi</option>
+                        </select>
+                        <select id="header-comm-port" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:120px"></select>
+                    </div>
+                </div>
                 <div class="status-item" title="API">
                     <span id="api-status-dot" class="status-dot disconnected" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#cbd5e1;margin-right:6px"></span>
                     <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API (host)</small>
@@ -446,6 +457,7 @@
         <script src="/socket.io/socket.io.js"></script>
         <!-- Use the same app logic as index.html so Devices behaves identically everywhere -->
         <script src="app.js"></script>
+        <script src="spa.js"></script>
         <script>
             // Optional soft-redirect: if a query flag is present, redirect to index.html
             // Otherwise keep this page loaded but with unified behavior.
@@ -512,5 +524,4 @@
     </script>
 
 </body>
-
 </html>
