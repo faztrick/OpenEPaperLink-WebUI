@@ -1,0 +1,11 @@
+{
+  "modules": {
+    "APTask": true,
+    "BLEWriter": true,
+    "IRRemote": false,
+    "USBFlasher": false,
+    "WebFlasher": false,
+    "UDP": false,
+    "ContentRunner": false
+  }
+}

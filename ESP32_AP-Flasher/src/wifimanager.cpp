@@ -431,6 +431,93 @@ bool WifiManager::connectToWifi()
 
     terminalLog("Trying saved WiFi networks (" + String((int)candidates.size()) + ")...");
 
+    // If multiple candidate networks are available, perform a pre-scan and reorder
+    // them by current RSSI (strongest first). This increases initial connect success
+    // while keeping AP mode available for configuration.
+    if (candidates.size() > 1)
+    {
+        bool wasApStarted = _APstarted; // AP is normally up already
+        // Ensure STA is enabled for scanning without tearing down AP
+        wifi_mode_t currentMode;
+        if (esp_wifi_get_mode(&currentMode) == ESP_OK)
+        {
+            if (currentMode == WIFI_MODE_AP)
+            {
+                WiFi.mode(WIFI_AP_STA); // add STA interface
+            }
+        }
+
+        terminalLog("[WiFi] Scanning to rank candidate networks...");
+        int16_t found = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true);
+        if (found >= 0)
+        {
+            struct Ranked
+            {
+                String ssid;
+                String pass;
+                int rssi;
+                bool present;
+            };
+            std::vector<Ranked> ranked;
+            ranked.reserve(candidates.size());
+
+            for (auto &p : candidates)
+            {
+                int bestRssi = -300; // impossible low
+                bool present = false;
+                for (int i = 0; i < found; ++i)
+                {
+                    String scanned = WiFi.SSID(i);
+                    if (scanned == p.first)
+                    {
+                        int r = WiFi.RSSI(i);
+                        if (r > bestRssi)
+                        {
+                            bestRssi = r;
+                            present = true;
+                        }
+                    }
+                }
+                Ranked rnk{p.first, p.second, bestRssi, present};
+                ranked.push_back(rnk);
+            }
+
+            // Sort: present first (descending RSSI), then absent (retain original relative order among absent)
+            std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked &a, const Ranked &b)
+                             {
+                                 if (a.present != b.present)
+                                     return a.present && !b.present; // present comes first
+                                 if (a.present && b.present)
+                                     return a.rssi > b.rssi; // stronger RSSI first
+                                 return false;               // keep original order for both absent
+                             });
+
+            // Rebuild candidates vector in new order
+            std::vector<std::pair<String, String>> reordered;
+            reordered.reserve(ranked.size());
+            for (auto &r : ranked)
+            {
+                reordered.emplace_back(r.ssid, r.pass);
+                if (r.present)
+                {
+                    Serial.printf("[WiFi] Candidate SSID '%s' RSSI %d dBm\n", r.ssid.c_str(), r.rssi);
+                }
+                else
+                {
+                    Serial.printf("[WiFi] Candidate SSID '%s' not currently visible\n", r.ssid.c_str());
+                }
+            }
+            candidates.swap(reordered);
+        }
+        else
+        {
+            Serial.println("[WiFi] Scan failed or returned no networks; retaining original candidate order");
+        }
+
+        // Optionally clear scan results to reclaim memory
+        WiFi.scanDelete();
+    }
+
     String ip = "";
     String mask = "";
     String gw = "";

@@ -139,17 +139,29 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-// Serve advanced UI pages from the repo-level wwwroot (if present). Mount this first
-// so those pages take precedence when the file exists there.
-const repoWwwRoot = path.join(__dirname, '..', 'wwwroot');
+// Serve advanced UI pages from the new preferred path web-ui/public/device or legacy wwwroot (mount first)
+const newDeviceRoot = path.join(__dirname, 'web-ui', 'public', 'device');
+const repoWwwRoot = path.join(__dirname, '..', 'wwwroot'); // legacy location one level up
+
+let staticRootServed = false;
+if (fs.existsSync(newDeviceRoot)) {
+    console.log(`Serving device UI from ${newDeviceRoot}`);
+    app.use(express.static(newDeviceRoot));
+    app.use('/device', express.static(newDeviceRoot));
+    staticRootServed = true;
+}
 if (fs.existsSync(repoWwwRoot)) {
-    console.log(`Serving advanced UI from ${repoWwwRoot}`);
+    console.log(`Serving legacy UI from ${repoWwwRoot}`);
     app.use(express.static(repoWwwRoot));
-    // Also expose the repo-level wwwroot under the /device path so the web UI
-    // can load the advanced device UI from /device/* without copying files.
-    app.use('/device', express.static(repoWwwRoot));
-} else {
-    console.log('No repo wwwroot directory found; skipping');
+    app.use('/device-legacy', express.static(repoWwwRoot));
+    if (!staticRootServed) {
+        // Also alias /device to legacy if new path absent
+        app.use('/device', express.static(repoWwwRoot));
+    }
+    staticRootServed = true;
+}
+if (!staticRootServed) {
+    console.log('No UI static roots found (expected web-ui/public/device or ../wwwroot).');
 }
 
 // Fallback to the web-ui/public folder for the built-in UI assets
@@ -162,6 +174,29 @@ app.use('/device', express.static(path.join(__dirname, 'public', 'device')));
 // Legacy URL compatibility: redirect /development.html to /device.html
 app.get(['/development', '/development.html'], (req, res) => {
     try { res.redirect(301, '/device.html'); } catch (e) { res.redirect('/device.html'); }
+});
+
+// --- API Request Logging Middleware (logs all /api* requests) ---
+app.use((req, res, next) => {
+    if (!req.path.startsWith('/api')) return next();
+    const start = process.hrtime.bigint();
+    const method = req.method;
+    const pathPart = req.path;
+    const queryStr = Object.keys(req.query || {}).length ? `?${Object.entries(req.query).map(([k,v])=>`${k}=${v}`).join('&')}` : '';
+    const bodyPreview = (() => {
+        if (!req.body || typeof req.body !== 'object') return '';
+        try {
+            const json = JSON.stringify(req.body);
+            return json.length > 200 ? json.slice(0,200)+"…" : json;
+        } catch { return ''; }
+    })();
+    appendLog('api', `REQ ${method} ${pathPart}${queryStr} body=${bodyPreview}`);
+    res.on('finish', () => {
+        const durNs = Number(process.hrtime.bigint() - start);
+        const durMs = (durNs/1e6).toFixed(2);
+        appendLog('api', `RES ${method} ${pathPart} status=${res.statusCode} durMs=${durMs}`);
+    });
+    next();
 });
 
 // Ensure uploads folder exists
@@ -493,6 +528,18 @@ app.post('/api/config', (req, res) => {
         currentConfig.comPort = currentConfig.allowedComPort;
     }
     res.json({ success: true, config: currentConfig });
+});
+
+// Graceful shutdown endpoint: closes HTTP & socket server then exits process.
+app.post('/api/shutdown', async (req, res) => {
+    appendLog('api', 'Shutdown requested');
+    res.json({ success: true, message: 'Shutting down' });
+    // Allow response flush
+    setTimeout(() => {
+        try { io.close(() => appendLog('node', 'socket.io closed')); } catch (_) {}
+        try { server.close(() => appendLog('node', 'http server closed')); } catch (_) {}
+        setTimeout(() => process.exit(0), 250);
+    }, 50);
 });
 
 app.get('/api/com-ports', async (req, res) => {

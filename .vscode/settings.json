@@ -7,5 +7,15 @@
   "github.copilot.chat.codesearch.enabled": true,
   "github.copilot.chat.editor.temporalContext.enabled": true,
   "github.copilot.chat.notebook.followCellExecution.enabled": true,
-  "idf.portWin": "COM10"
+  "idf.portWin": "COM10",
+  "files.associations": {
+    "array": "cpp",
+    "ranges": "cpp",
+    "span": "cpp",
+    "vector": "cpp",
+    "xstring": "cpp",
+    "xutility": "cpp",
+    "string": "cpp",
+    "string_view": "cpp"
+  }
 }

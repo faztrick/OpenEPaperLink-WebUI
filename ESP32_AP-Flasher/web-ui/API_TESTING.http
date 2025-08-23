@@ -1,0 +1,300 @@
+### API Testing Collection for OpenEPaperLink Web UI Server
+### Usage: Install VS Code REST Client extension (humao.rest-client) then click 'Send Request'.
+### Base host variable (adjust port if different)
+@host = http://localhost:3000
+
+### CONFIG
+GET {{host}}/api/config
+
+### Update config (example - no change)
+POST {{host}}/api/config
+Content-Type: application/json
+
+{
+  "manualComOnly": true
+}
+
+### DEVICES persistence
+GET {{host}}/api/devices
+POST {{host}}/api/devices
+Content-Type: application/json
+
+{
+  "devices": [],
+  "selectedId": null
+}
+
+### COM PORTS (filtered when manualComOnly)
+GET {{host}}/api/com-ports
+GET {{host}}/api/serial/list
+
+### SERIAL basic
+POST {{host}}/api/serial/open
+Content-Type: application/json
+
+{
+  "path": "COM10",
+  "baudRate": 115200
+}
+
+POST {{host}}/api/serial/write
+Content-Type: application/json
+
+{
+  "path": "COM10",
+  "data": "help\n"
+}
+
+POST {{host}}/api/serial/close
+Content-Type: application/json
+
+{
+  "path": "COM10"
+}
+
+### SERIAL WiFi (Improv)
+POST {{host}}/api/serial/wifi/scan
+Content-Type: application/json
+
+{
+  "path": "COM10",
+  "timeoutMs": 8000
+}
+
+POST {{host}}/api/serial/wifi/connect
+Content-Type: application/json
+
+{
+  "path": "COM10",
+  "ssid": "YOUR_SSID",
+  "password": "YOUR_PASSWORD"
+}
+
+POST {{host}}/api/com/check
+Content-Type: application/json
+
+{
+  "path": "COM10"
+}
+
+### DEVICE direct (when device reachable via IP)
+POST {{host}}/api/device/cmd
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1",
+  "cmd": "reboot"
+}
+
+GET {{host}}/api/device/wifi/scan
+
+POST {{host}}/api/device/wifi
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1"
+}
+
+POST {{host}}/api/device/wifi/connect
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1",
+  "ssid": "YOUR_SSID",
+  "password": "YOUR_PASSWORD"
+}
+
+### Firmware upload (multipart) - requires manual file selection in REST Client
+# POST {{host}}/api/firmware/upload
+# Content-Type: multipart/form-data; boundary=---011000010111000001101001
+# ---011000010111000001101001
+# Content-Disposition: form-data; name="firmware"; filename="firmware.bin"
+# Content-Type: application/octet-stream
+# < ./firmware.bin
+# ---011000010111000001101001--
+
+POST {{host}}/api/firmware/trigger
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1",
+  "firmwarePath": "uploads/firmware.bin"
+}
+
+POST {{host}}/api/firmware/host-local
+Content-Type: application/json
+
+{
+  "environment": "OutdoorAP"
+}
+
+### Status & artifacts
+GET {{host}}/api/status
+GET {{host}}/api/artifacts
+
+### PlatformIO helper APIs
+GET {{host}}/api/platformio-devices
+GET {{host}}/api/platformio-raw
+POST {{host}}/api/platformio-write
+Content-Type: application/json
+
+{
+  "stdin": "help\n"
+}
+
+### Logging APIs
+GET {{host}}/api/log/list
+GET {{host}}/api/list
+GET {{host}}/api/log/read?name=server.log
+# Server Sent Events stream
+GET {{host}}/api/log/stream
+
+POST {{host}}/api/log
+Content-Type: application/json
+
+{
+  "channel": "test",
+  "message": "Hello log"
+}
+
+GET {{host}}/api/device/logs/tail?host=192.168.4.1&lines=100
+
+### Device file APIs
+GET {{host}}/api/device-files/list?host=192.168.4.1
+GET {{host}}/api/device-files/read?host=192.168.4.1&path=/staconfig.json
+POST {{host}}/api/device-files/write
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1",
+  "path": "/test.txt",
+  "content": "Hello"
+}
+
+POST {{host}}/api/device-files/create
+Content-Type: application/json
+
+{
+  "host": "192.168.4.1",
+  "path": "/new.txt"
+}
+
+DELETE {{host}}/api/device-files/delete?host=192.168.4.1&path=/new.txt
+
+### Source file / code analysis APIs
+GET {{host}}/api/source-files/tree
+GET {{host}}/api/source-files/stats
+GET {{host}}/api/source-files/recent
+GET {{host}}/api/source-files/read?path=ESP32_AP-Flasher/src/main.cpp
+GET {{host}}/api/source-files/search?q=wifi
+GET {{host}}/api/analyze-build
+
+### Build API
+POST {{host}}/api/build
+Content-Type: application/json
+
+{
+  "environment": "OutdoorAP",
+  "fast": true
+}
+
+### Execute arbitrary (sandboxed) command
+POST {{host}}/api/execute
+Content-Type: application/json
+
+{
+  "cmd": "echo",
+  "args": ["hello"],
+  "cwd": "."
+}
+
+### Devices status (multi)
+GET {{host}}/api/devices/status?hosts=192.168.4.1,192.168.4.2
+
+### AI Config / Chat (if enabled)
+GET {{host}}/api/ai/config
+POST {{host}}/api/ai/config
+Content-Type: application/json
+
+{
+  "provider": "openai"
+}
+
+POST {{host}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "messages": [{"role": "user", "content": "Hi"}],
+  "maxTokens": 64
+}
+
+GET {{host}}/api/ai/history
+DELETE {{host}}/api/ai/history
+
+POST {{host}}/api/ai/analyze-code
+Content-Type: application/json
+
+{
+  "path": "ESP32_AP-Flasher/src/main.cpp"
+}
+
+POST {{host}}/api/ai/suggestions
+Content-Type: application/json
+
+{
+  "snippet": "int x = 0;"
+}
+
+### Remote server management APIs
+GET {{host}}/api/remote/servers
+GET {{host}}/api/remote/status
+POST {{host}}/api/remote/server
+Content-Type: application/json
+
+{
+  "id": "srv1",
+  "host": "192.168.1.10",
+  "user": "user",
+  "path": "/home/user/opel"
+}
+
+GET {{host}}/api/remote/info/srv1
+POST {{host}}/api/remote/connect/srv1
+POST {{host}}/api/remote/disconnect/srv1
+POST {{host}}/api/remote/test/srv1
+POST {{host}}/api/remote/execute/srv1
+Content-Type: application/json
+
+{
+  "cmd": "ls",
+  "args": ["-l"]
+}
+
+POST {{host}}/api/remote/sync/srv1
+Content-Type: application/json
+
+{
+  "direction": "push"
+}
+
+POST {{host}}/api/remote/setup/srv1
+PUT {{host}}/api/remote/server/srv1
+Content-Type: application/json
+
+{
+  "host": "192.168.1.11"
+}
+
+DELETE {{host}}/api/remote/server/srv1
+POST {{host}}/api/remote/test-connection
+Content-Type: application/json
+
+{
+  "host": "192.168.1.11"
+}
+
+### Kill process (example)
+POST {{host}}/api/kill/12345
+
+### Misc
+GET {{host}}/wwwroot-list

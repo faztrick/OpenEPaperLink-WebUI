@@ -21,15 +21,16 @@ param(
 $scriptRoot = $PSScriptRoot
 $venvPython = Join-Path $scriptRoot '.venv/Scripts/python.exe'
 if (Test-Path $venvPython) {
-    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts');$env:PATH +=";" + $env:PATH
+    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts'); $env:PATH += ";" + $env:PATH
     Write-Host "[fast_compile] Using venv python: $venvPython" -ForegroundColor DarkCyan
-} elseif ($AutoVenv) {
+}
+elseif ($AutoVenv) {
     Write-Host "[fast_compile] Creating virtual environment (.venv) ..." -ForegroundColor DarkCyan
     python -m venv (Join-Path $scriptRoot '.venv')
     & $venvPython -m pip install --upgrade pip
     if (Test-Path (Join-Path $scriptRoot 'requirements.txt')) { & $venvPython -m pip install -r (Join-Path $scriptRoot 'requirements.txt') }
     Write-Host "[fast_compile] Virtual environment ready." -ForegroundColor DarkCyan
-    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts');$env:PATH +=";" + $env:PATH
+    $env:PATH = (Join-Path $scriptRoot '.venv/Scripts'); $env:PATH += ";" + $env:PATH
 }
 
 # Fast build configuration
@@ -67,6 +68,17 @@ function Write-FastOutput {
 Write-FastOutput "⚡ FAST ESP32 Build Tool - Maximum Speed Mode" "Info"
 Write-FastOutput "Environment: $Environment | Jobs: $jobCount | Mode: TURBO" "Info"
 Write-FastOutput "========================================" "Info"
+
+# Attempt to gracefully stop running web-ui server before flashing (optional)
+try {
+    Write-FastOutput "🔌 Checking for running web-ui server (localhost:3000)..." "Progress"
+    $shutdownResp = Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/shutdown" -TimeoutSec 2 -ErrorAction Stop
+    Write-FastOutput "🛑 Requested web-ui shutdown: $($shutdownResp.message)" "Info"
+    Start-Sleep 2
+}
+catch {
+    Write-FastOutput "ℹ️ No active web-ui server to stop (or request failed)" "Warning"
+}
 
 # Get PlatformIO path
 $pioPath = Join-Path $env:USERPROFILE '\.platformio\penv\Scripts\pio'
