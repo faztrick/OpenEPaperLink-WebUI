@@ -1922,18 +1922,52 @@ class ESP32DevUI {
         try {
             const consoleEl = document.getElementById('console');
             if (consoleEl) {
-                const line = document.createElement('div');
-                line.className = `console-line ${type}`;
-                line.textContent = text;
-                consoleEl.appendChild(line);
-                consoleEl.scrollTop = consoleEl.scrollHeight;
-                const lines = consoleEl.querySelectorAll('.console-line');
-                if (lines.length > 1000) lines[0]?.remove();
+                // Detect channel prefix like [node] or [api]
+                let chan = 'misc';
+                let raw = text;
+                const m = text.match(/^\[(\w+)\]\s+(.*)$/);
+                if (m) { chan = m[1]; raw = m[2]; }
+
+                // Filtering (channel chips) – skip rendering if channel disabled
+                if (this._channelFilter && this._channelFilter.length && !this._channelFilter.includes(chan)) {
+                    // Still keep in buffer but do not render
+                } else {
+                    const line = document.createElement('div');
+                    line.className = `console-line ${type}`;
+                    line.dataset.chan = chan;
+                    line.textContent = `[${chan}] ${raw}`;
+
+                    // Search highlighting (simple substring, case-insensitive)
+                    if (this._searchTerm && this._searchTerm.length > 1) {
+                        const term = this._searchTerm;
+                        const idx = raw.toLowerCase().indexOf(term.toLowerCase());
+                        if (idx !== -1) {
+                            const before = raw.slice(0, idx);
+                            const match = raw.slice(idx, idx + term.length);
+                            const after = raw.slice(idx + term.length);
+                            line.innerHTML = `[${chan}] ` + this._escapeHtml(before) + '<mark>' + this._escapeHtml(match) + '</mark>' + this._escapeHtml(after);
+                        }
+                    }
+
+                    consoleEl.appendChild(line);
+                    consoleEl.scrollTop = consoleEl.scrollHeight;
+
+                    // Bulk prune when exceeding threshold for performance
+                    const max = 1000;
+                    if (!this._consoleLineCount) this._consoleLineCount = 0;
+                    this._consoleLineCount++;
+                    if (this._consoleLineCount > max) {
+                        // remove oldest 100 lines in one pass
+                        let removed = 0;
+                        while (consoleEl.firstChild && removed < 100) { consoleEl.removeChild(consoleEl.firstChild); removed++; }
+                        this._consoleLineCount -= removed;
+                    }
+                }
             }
-            // buffer only (no server POST to avoid echo)
+            // Buffer retention (bulk slice instead of shift spam)
             try {
                 this.logBuffer.push({ ts: new Date().toISOString(), type, message: text });
-                if (this.logBuffer.length > 5000) this.logBuffer.shift();
+                if (this.logBuffer.length > 6000) this.logBuffer = this.logBuffer.slice(-5000);
             } catch (_) { }
         } catch (_) { }
     }
@@ -1952,48 +1986,64 @@ class ESP32DevUI {
         }
     }
 
+    _escapeHtml(str) {
+        try {
+            return String(str)
+                .replace(/&/g,'&amp;')
+                .replace(/</g,'&lt;')
+                .replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;')
+                .replace(/'/g,'&#39;');
+        } catch (_) { return str; }
+    }
+
     startTail() {
         try {
-            const name = document.getElementById('log-source')?.value || 'node';
-            // stop existing
+            const selected = document.getElementById('log-source')?.value || 'node';
+            // stop any existing streams
             this.stopTail();
-            const url = `/api/log/stream?name=${encodeURIComponent(name)}`;
+
             if (typeof EventSource === 'undefined') {
-                this.appendConsole(`[tail:${name}] EventSource not supported by this browser`, 'warning');
+                this.appendConsole(`[tail] EventSource not supported by this browser`, 'warning');
                 return;
             }
-            const es = new EventSource(url);
-            this._eventSource = es;
+
+            // Support multi-channel tail when 'all' selected
+            const channels = ['node','python','serial','api','ws','client'];
+            const targets = (selected === 'all') ? channels : [selected];
+            this._multiSources = [];
             this._tailActive = true;
-            // UI state
             try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = true; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = false; } catch (_) {}
 
-            es.onmessage = (ev) => {
+            targets.forEach(name => {
+                const url = `/api/log/stream?name=${encodeURIComponent(name)}`;
                 try {
-                    const data = JSON.parse(ev.data);
-                    if (data.initial) {
-                        const lines = String(data.initial).split(/\r?\n/).filter(Boolean);
-                        lines.forEach(l => this.appendConsole(`[${name}] ${l}`, 'info'));
-                    }
-                    if (data.line) {
-                        this.appendConsole(`[${name}] ${String(data.line).replace(/\n$/, '')}`, 'info');
-                    }
+                    const es = new EventSource(url);
+                    this._multiSources.push(es);
+                    es.onmessage = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.data);
+                            if (data.initial) {
+                                const lines = String(data.initial).split(/\r?\n/).filter(Boolean);
+                                lines.forEach(l => this.appendConsole(`[${name}] ${l}`, 'info'));
+                            }
+                            if (data.line) {
+                                this.appendConsole(`[${name}] ${String(data.line).replace(/\n$/, '')}`, 'info');
+                            }
+                        } catch (e) {
+                            if (ev.data) this.appendConsole(`[${name}] ${ev.data}`, 'info');
+                        }
+                    };
+                    es.onerror = () => {
+                        this.appendConsole(`[tail:${name}] error`, 'error');
+                    };
                 } catch (e) {
-                    // raw
-                    if (ev.data) this.appendConsole(`[${name}] ${ev.data}`, 'info');
+                    this.appendConsole(`[tail:${name}] failed to open: ${e.message}`, 'error');
                 }
-            };
-            es.onerror = (e) => {
-                this.appendConsole(`[tail:${name}] error, stopping`, 'error');
-                this.stopTail();
-            };
-            this.appendConsole(`Tailing server log '${name}'...`, 'success');
-            // also fetch list of logs once (optional)
-            fetch('/api/log/list').then(r => r.json()).then(j => {
-                if (j && j.success && Array.isArray(j.logs)) {
-                    // could populate dropdown dynamically in future
-                }
-            }).catch(() => {});
+            });
+            this.appendConsole(`Tailing ${targets.length === 1 ? `log '${targets[0]}'` : `${targets.length} logs (${targets.join(', ')})`}...`, 'success');
+            // optional fetch list (once)
+            fetch('/api/log/list').then(r => r.json()).then(j => {}).catch(()=>{});
         } catch (e) {
             this.appendConsole(`Tail start error: ${e.message}`, 'error');
         }
@@ -2001,13 +2051,146 @@ class ESP32DevUI {
 
     stopTail() {
         try {
-            if (this._eventSource) {
-                try { this._eventSource.close(); } catch (_) {}
-                this._eventSource = null;
+            // Close legacy single source if present
+            if (this._eventSource) { try { this._eventSource.close(); } catch (_) {} this._eventSource = null; }
+            // Close any multi-sources
+            if (this._multiSources && Array.isArray(this._multiSources)) {
+                this._multiSources.forEach(es => { try { es.close(); } catch(_){} });
+                this._multiSources = [];
             }
             this._tailActive = false;
             try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = false; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = true; } catch (_) {}
         } catch (_) { }
+    }
+
+    // --- Enhanced Console UI Setup (Filters, Search, Export, AI) ---
+    initConsoleEnhancements() {
+        // Channel filter chips
+        const container = document.getElementById('console-filters');
+        if (container && !container.dataset.bound) {
+            container.addEventListener('click', (e) => {
+                const chip = e.target.closest('.console-filter-chip');
+                if (!chip) return;
+                chip.classList.toggle('active');
+                const active = [...container.querySelectorAll('.console-filter-chip.active')].map(c=>c.dataset.chan);
+                this._channelFilter = active.length === 0 ? [] : active; // empty => render none until user re-enables
+                // Re-render from buffer
+                this.refreshConsoleFromBuffer();
+                try { localStorage.setItem('oepl.console.channels', JSON.stringify(this._channelFilter)); } catch(_){}
+            });
+            // Load persisted
+            try {
+                const saved = JSON.parse(localStorage.getItem('oepl.console.channels')||'null');
+                if (Array.isArray(saved) && saved.length) {
+                    [...container.querySelectorAll('.console-filter-chip')].forEach(ch=>{
+                        if (!saved.includes(ch.dataset.chan)) ch.classList.remove('active');
+                    });
+                    this._channelFilter = saved;
+                }
+            } catch(_){}
+            container.dataset.bound='1';
+        }
+
+        // Search input
+        const searchInput = document.getElementById('console-search');
+        if (searchInput && !searchInput.dataset.bound) {
+            const handler = () => {
+                this._searchTerm = searchInput.value.trim();
+                this.refreshConsoleFromBuffer();
+            };
+            searchInput.addEventListener('input', handler);
+            searchInput.dataset.bound='1';
+        }
+        const clearSearchBtn = document.getElementById('console-clear-search');
+        if (clearSearchBtn && !clearSearchBtn.dataset.bound) {
+            clearSearchBtn.addEventListener('click', ()=>{
+                const si = document.getElementById('console-search');
+                if (si) { si.value=''; this._searchTerm=''; this.refreshConsoleFromBuffer(); }
+            });
+            clearSearchBtn.dataset.bound='1';
+        }
+
+        // Collapse toggle
+        const collapseBtn = document.getElementById('console-collapse');
+        if (collapseBtn && !collapseBtn.dataset.bound) {
+            collapseBtn.addEventListener('click', ()=>{
+                const wrap = document.querySelector('.console-panel');
+                if (!wrap) return;
+                wrap.classList.toggle('console-collapsed');
+                const collapsed = wrap.classList.contains('console-collapsed');
+                collapseBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+                try { localStorage.setItem('oepl.console.collapsed', collapsed? '1':'0'); } catch(_){}
+            });
+            // load state
+            try { if (localStorage.getItem('oepl.console.collapsed')==='1') collapseBtn.click(); } catch(_){}
+            collapseBtn.dataset.bound='1';
+        }
+
+        // Export button
+        const exportBtn = document.getElementById('console-export');
+        if (exportBtn && !exportBtn.dataset.bound) {
+            exportBtn.addEventListener('click', ()=>{
+                try {
+                    const lines = [...document.querySelectorAll('#console .console-line')].map(l=>l.textContent);
+                    const blob = new Blob([lines.join('\n')], {type:'text/plain'});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'console-log-'+Date.now()+'.txt';
+                    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 100);
+                } catch (e) { this.log('Export failed: '+e.message, 'error'); }
+            });
+            exportBtn.dataset.bound='1';
+        }
+
+        // Explain Errors (AI)
+        const explainBtn = document.getElementById('console-explain-errors');
+        if (explainBtn && !explainBtn.dataset.bound) {
+            explainBtn.addEventListener('click', ()=> this.explainRecentErrors());
+            explainBtn.dataset.bound='1';
+        }
+
+        // Keyboard shortcuts
+        if (!this._kbBound) {
+            window.addEventListener('keydown', (e)=>{
+                if (e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='l') {
+                    const si = document.getElementById('console-search'); if (si) { si.focus(); si.select(); e.preventDefault(); }
+                } else if (e.key==='F2') {
+                    const btn = document.getElementById('start-tail');
+                    if (this._tailActive) this.stopTail(); else if (btn) this.startTail();
+                }
+            });
+            this._kbBound = true;
+        }
+
+        // Initial render from buffer if existed (e.g., after navigation resume)
+        this.refreshConsoleFromBuffer();
+    }
+
+    refreshConsoleFromBuffer() {
+        const consoleEl = document.getElementById('console');
+        if (!consoleEl) return;
+        consoleEl.innerHTML='';
+        this._consoleLineCount = 0;
+        (this.logBuffer||[]).forEach(entry => this.appendConsole(entry.message, entry.type));
+    }
+
+    explainRecentErrors() {
+        try {
+            const lines = [...document.querySelectorAll('#console .console-line')];
+            const recent = lines.slice(-400); // search last 400 lines
+            const errLines = recent.filter(l => /error|failed|exception|traceback/i.test(l.textContent)).slice(-25);
+            if (!errLines.length) { this.appendConsole('[ai] No recent errors found to analyze','info'); return; }
+            const payload = errLines.map(l=>l.textContent).join('\n');
+            const prompt = `Analyze these log lines and summarize root causes + suggested fixes (concise):\n\n${payload}`;
+            this.appendConsole('[ai] Analyzing recent errors...','info');
+            fetch('/api/ai/chat', {
+                method:'POST',
+                headers:{'Content-Type':'application/json','x-agent-token': (localStorage.getItem('agentToken')||'')},
+                body: JSON.stringify({ messages:[{role:'user', content: prompt}] })
+            }).then(r=>r.json()).then(j=>{
+                this.appendConsole('[ai] '+(j.reply||'No reply'), 'info');
+            }).catch(e=>{ this.appendConsole('[ai] Error calling AI: '+e.message,'error'); });
+        } catch (e) { this.appendConsole('[ai] Failed to prepare error analysis: '+e.message,'error'); }
     }
 
     // Quick API tests for the inline panel
@@ -3144,7 +3327,9 @@ class ESP32DevUI {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new ESP32DevUI();
+    const app = new ESP32DevUI();
+    try { window.App = app; } catch (e) {}
+    try { app.initConsoleEnhancements(); } catch (e) { console.error('Failed to init console enhancements', e); }
 });
 
 // Add some utility functions

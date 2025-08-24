@@ -36,16 +36,31 @@ class ESP32AIAgent {
 
         return {
             openai: {
-                apiKey: process.env.OPENAI_API_KEY || '',
-                model: 'gpt-4o',
+                // Accept multiple env var aliases for convenience / rotation
+                apiKey: process.env.OPENAI_API_KEY || process.env.OPEL_OPENAI_KEY || '',
+                model: 'gpt-4o', // Allow user to change to experimental like 'gpt-5' when available
                 enabled: false
             },
             anthropic: {
-                apiKey: process.env.ANTHROPIC_API_KEY || '',
+                apiKey: process.env.ANTHROPIC_API_KEY || process.env.OPEL_ANTHROPIC_KEY || '',
                 model: 'claude-3-5-sonnet-20241022',
                 enabled: false
             },
-            defaultProvider: 'openai',
+            ollama: {
+                url: process.env.OLLAMA_URL || 'http://localhost:11434',
+                model: process.env.OLLAMA_MODEL || 'llama3',
+                enabled: false,
+                timeoutMs: 45000
+            },
+            defaultProvider: 'openai', // 'openai' | 'anthropic' | 'ollama'
+            // Optional agent level settings (separate from feature toggles)
+            agent: {
+                allowDynamicProviderSwitch: true,
+                maxHistory: 25,
+                allowExperimentalModels: true,
+                // These models are not validated here – UI can surface placeholders
+                experimentalModels: ['gpt-5', 'gpt-4.1-experimental', 'claude-3-opus-latest']
+            },
             features: {
                 codeAnalysis: true,
                 errorDiagnosis: true,
@@ -95,19 +110,28 @@ class ESP32AIAgent {
     }
 
     isAvailable() {
-        return (this.openai || this.anthropic) &&
-            (this.config.openai.enabled || this.config.anthropic.enabled);
+        return (
+            (this.openai && this.config.openai.enabled) ||
+            (this.anthropic && this.config.anthropic.enabled) ||
+            (this.config.ollama && this.config.ollama.enabled)
+        );
     }
 
     getActiveClient() {
         if (this.config.defaultProvider === 'anthropic' && this.anthropic) {
             return { client: this.anthropic, type: 'anthropic' };
         }
+        if (this.config.defaultProvider === 'ollama' && this.config.ollama?.enabled) {
+            return { client: null, type: 'ollama' };
+        }
         if (this.openai) {
             return { client: this.openai, type: 'openai' };
         }
         if (this.anthropic) {
             return { client: this.anthropic, type: 'anthropic' };
+        }
+        if (this.config.ollama?.enabled) {
+            return { client: null, type: 'ollama' };
         }
         return null;
     }
@@ -169,7 +193,8 @@ Be concise but thorough in your explanations.`;
     }
 
     async sendMessage(activeClient, systemPrompt, message) {
-        const history = this.conversationHistory.slice(-10).map(h => [
+        const maxHist = Math.max(0, Math.min(this.config.agent?.maxHistory || 10, 50));
+        const history = this.conversationHistory.slice(-maxHist).map(h => [
             { role: 'user', content: h.message },
             { role: 'assistant', content: h.response }
         ]).flat();
@@ -188,7 +213,7 @@ Be concise but thorough in your explanations.`;
                     temperature: 0.7
                 }));
                 return response.choices?.[0]?.message?.content || '(no response)';
-            } else {
+            } else if (activeClient.type === 'anthropic') {
                 const model = this.config.anthropic.model || 'claude-3-5-haiku-20241022';
                 const response = await withTimeout(activeClient.client.messages.create({
                     model,
@@ -197,11 +222,52 @@ Be concise but thorough in your explanations.`;
                     messages: [ ...history, { role: 'user', content: message } ]
                 }));
                 return response.content?.[0]?.text || '(no response)';
+            } else if (activeClient.type === 'ollama') {
+                return await this._callOllamaChat(systemPrompt, history, message, timeoutMs);
             }
         } catch (e) {
             this._lastProviderError = { provider: activeClient.type, error: e.message };
             throw e;
         }
+    }
+
+    async _callOllamaChat(systemPrompt, history, message, timeoutMs) {
+        if (!this.config.ollama?.enabled) throw new Error('Ollama provider disabled');
+        const base = (this.config.ollama.url || 'http://localhost:11434').replace(/\/$/, '');
+        const url = base + '/api/chat';
+        const model = this.config.ollama.model || 'llama3';
+        const msgs = [
+            { role: 'system', content: systemPrompt },
+            ...history,
+            { role: 'user', content: message }
+        ].map(m => ({ role: m.role, content: m.content }));
+        const body = { model, messages: msgs, stream: false };
+        const controller = new AbortController();
+        const timer = setTimeout(()=>controller.abort(), Math.min(timeoutMs, this.config.ollama.timeoutMs || timeoutMs));
+        let fetchImpl = (typeof fetch !== 'undefined') ? fetch : null;
+        if (!fetchImpl) {
+            try { fetchImpl = require('node-fetch'); } catch (_) { throw new Error('fetch not available and node-fetch not installed'); }
+        }
+        let resp;
+        try {
+            resp = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
+        } catch (err) {
+            clearTimeout(timer);
+            throw new Error('Ollama request failed: ' + err.message);
+        }
+        clearTimeout(timer);
+        if (!resp.ok) {
+            const txt = await resp.text().catch(()=>resp.statusText);
+            throw new Error('Ollama HTTP ' + resp.status + ': ' + txt.slice(0,300));
+        }
+        let json; try { json = await resp.json(); } catch (e) { throw new Error('Invalid Ollama JSON: ' + e.message); }
+        // Ollama chat returns { message: { role, content }, done: bool }
+        let answer = '';
+        if (json?.message?.content) answer = json.message.content;
+        else if (Array.isArray(json?.message?.content)) answer = json.message.content.map(p=>p.text||p).join('\n');
+        else if (json.response) answer = json.response;
+        if (!answer) answer = '(no response)';
+        return answer;
     }
 
     async analyzeError(errorOutput, buildContext = {}) {
@@ -371,7 +437,23 @@ Format as a JSON array of objects with 'action', 'description', and 'priority' f
     }
 
     updateConfig(newConfig) {
-        this.config = { ...this.config, ...newConfig };
+        // Deep merge selected sections to avoid wiping nested defaults unintentionally
+        const mergeSection = (key) => {
+            if (newConfig[key]) this.config[key] = { ...this.config[key], ...newConfig[key] };
+        };
+        mergeSection('openai');
+        mergeSection('anthropic');
+        mergeSection('features');
+        mergeSection('editing');
+        mergeSection('agent');
+        mergeSection('ollama');
+        if (newConfig.defaultProvider) this.config.defaultProvider = newConfig.defaultProvider;
+        // Direct assignment for any other top-level primitive overrides
+        Object.keys(newConfig).forEach(k => {
+            if (!['openai','anthropic','features','editing','agent','defaultProvider'].includes(k)) {
+                this.config[k] = newConfig[k];
+            }
+        });
         this.saveConfig();
         this.initializeClients();
     }
@@ -435,12 +517,22 @@ Format as a JSON array of objects with 'action', 'description', and 'priority' f
             available: this.isAvailable(),
             providers: {
                 openai: { enabled: this.config.openai.enabled, model: this.config.openai.model, ok: !!this.openai },
-                anthropic: { enabled: this.config.anthropic.enabled, model: this.config.anthropic.model, ok: !!this.anthropic }
+                anthropic: { enabled: this.config.anthropic.enabled, model: this.config.anthropic.model, ok: !!this.anthropic },
+                ollama: { enabled: this.config.ollama.enabled, model: this.config.ollama.model, ok: !!this.config.ollama.enabled }
             },
             lastError: this._lastProviderError,
             features: this.config.features,
-            editing: this.config.editing
+            editing: this.config.editing,
+            agent: this.config.agent
         };
+    }
+
+    setProvider(provider) {
+        if (!this.config.agent?.allowDynamicProviderSwitch) return false;
+        if (!['openai','anthropic','ollama'].includes(provider)) return false;
+        this.config.defaultProvider = provider;
+        this.saveConfig();
+        return true;
     }
 }
 

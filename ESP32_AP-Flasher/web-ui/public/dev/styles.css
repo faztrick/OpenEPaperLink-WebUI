@@ -1,3 +1,27 @@
+/* --- Console Channel Colorization & Enhancements (Added) --- */
+.console-line { font-family: monospace; font-size:12px; line-height:1.35; padding:2px 4px; white-space:pre-wrap; word-break:break-word; }
+.console-line:hover { background: rgba(255,255,255,0.04); }
+.console-line[data-chan=node]   { color:#60a5fa; }
+.console-line[data-chan=python] { color:#eab308; }
+.console-line[data-chan=serial] { color:#f97316; }
+.console-line[data-chan=api]    { color:#10b981; }
+.console-line[data-chan=ws]     { color:#a855f7; }
+.console-line[data-chan=client] { color:#f472b6; }
+.console-line.error { color:#ef4444 !important; font-weight:500; }
+.console-line.warn  { color:#f59e0b !important; }
+
+.console-filters { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 8px 0; }
+.console-filter-chip { cursor:pointer; padding:2px 8px; border:1px solid #374151; border-radius:12px; font-size:11px; background:#1f2937; color:#9ca3af; user-select:none; transition:background .15s,border-color .15s,color .15s; }
+.console-filter-chip.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+.console-tools-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0 4px 0; }
+.console-search-input { background:#111827; border:1px solid #374151; border-radius:4px; padding:4px 6px; color:#e5e7eb; font-size:12px; width:180px; }
+.console-search-input:focus { outline:none; border-color:#60a5fa; box-shadow:0 0 0 2px rgba(96,165,250,0.2); }
+.console-collapsed #console { display:none; }
+.console-toggle-btn { background:#374151; border:1px solid #4b5563; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer; color:#e5e7eb; }
+.console-toggle-btn:hover { background:#4b5563; }
+
+/* Highlight for search matches */
+.console-line mark { background:#fbbf24; color:#111; padding:0 2px; border-radius:2px; }
 /* Reset and base styles */
 * {
     margin: 0;

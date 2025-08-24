@@ -10,11 +10,12 @@ const os = require('os');
 const multer = require('multer');
 const net = require('net');
 // Optional modules wrapped so server does not crash if dependencies or native builds are missing.
-let ESP32AIAgent, RemoteServerManager, FileManager, DeviceManager;
+let ESP32AIAgent, RemoteServerManager, FileManager, DeviceManager, AgentActionRunner;
 function safeRequire(name, localPath, onFailNote) {
     try { return require(localPath); } catch (e) { console.warn(`[startup] Optional module '${name}' disabled: ${e.message}${onFailNote? ' - '+onFailNote: ''}`); return null; }
 }
 ESP32AIAgent        = safeRequire('ai_agent', './ai_agent');
+AgentActionRunner   = safeRequire('agent_actions', './agent_actions');
 RemoteServerManager  = safeRequire('remote_manager', './remote_manager');
 FileManager          = safeRequire('file_manager', './file_manager');
 DeviceManager        = safeRequire('device_manager', './device_manager');
@@ -79,21 +80,27 @@ const io = socketIo(server, {
 });
 
 // Centralized logging utilities
-const { appendLog, tailLines, logEmitter, logsDir } = require('./logging');
+const { appendLog, tailLines, logEmitter, logsDir, setConsoleMirror, getConsoleMirrorState } = require('./logging');
 
 // Log server start
 appendLog('node', `server start pid=${process.pid} cwd=${process.cwd()}`);
 
 // (Removed early bare io.on connection logger; merged into main handler below)
 
-// Initialize AI Agent and Remote Server Manager
+// Initialize AI Agent, Action Runner and Remote Server Manager
 const aiAgent = ESP32AIAgent ? new ESP32AIAgent() : null;
+const agentActionRunner = AgentActionRunner ? new AgentActionRunner({
+    projectRoot: path.join(__dirname, '..'),
+    logFn: (name, line) => appendLog(name, line)
+}) : null;
 const remoteManager = RemoteServerManager ? new RemoteServerManager() : null;
 
 // Initialize File Manager for local operations (optional)
 const fileManager = FileManager ? new FileManager(path.join(__dirname, '..')) : { getFileTree:()=>[], getProjectStats:()=>({}), getRecentFiles:()=>[], readFile:()=>({}) };
 
 const PORT = process.env.PORT || 3000;
+// Simple shared auth token for agent endpoints (set OPEL_AGENT_TOKEN env). If unset, agent endpoints disabled.
+const AGENT_TOKEN = process.env.OPEL_AGENT_TOKEN || process.env.AGENT_TOKEN || '';
 
 // Middleware
 app.use(cors());
@@ -160,6 +167,59 @@ if (ENABLE_API_LOGGING) {
         next();
     });
 }
+
+    // --- Agent Endpoint Auth Middleware ---
+    function requireAgentAuth(req, res, next) {
+        if (!agentActionRunner) return res.status(501).json({ success:false, error:'agent runner disabled' });
+        if (!AGENT_TOKEN) return res.status(503).json({ success:false, error:'agent token not configured' });
+        // Accept token from header (x-agent-token) or bearer auth or query (?token=)
+        const header = req.headers['x-agent-token'] || req.headers['authorization'] || '';
+        const queryTok = req.query.token;
+        let token = '';
+        if (header.startsWith('Bearer ')) token = header.substring(7).trim(); else if (header && !header.toLowerCase().startsWith('bearer')) token = header.toString();
+        if (!token && queryTok) token = String(queryTok);
+        if (token !== AGENT_TOKEN) return res.status(403).json({ success:false, error:'forbidden' });
+        next();
+    }
+
+    // --- Agent Endpoints ---
+    // GET /api/agent/actions -> list available actions
+    app.get('/api/agent/actions', requireAgentAuth, (req, res) => {
+        try { res.json({ success:true, actions: agentActionRunner.listActions() }); } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    // POST /api/agent/run { action, config? }
+    app.post('/api/agent/run', requireAgentAuth, (req, res) => {
+        try {
+            const { action, config } = req.body || {};
+            if (!action) return res.status(400).json({ success:false, error:'action required' });
+            const result = agentActionRunner.execute(action, { config, aiAgent });
+            res.json({ success: !!result.started || result.success, result });
+        } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    // POST /api/agent/kill { processId }
+    app.post('/api/agent/kill', requireAgentAuth, (req, res) => {
+        try { const { processId } = req.body || {}; if (!processId) return res.status(400).json({ success:false, error:'processId required'}); res.json(agentActionRunner.kill(processId)); } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    // POST /api/agent/provider { provider }
+    app.post('/api/agent/provider', requireAgentAuth, (req, res) => {
+        try { const { provider } = req.body || {}; if (!provider) return res.status(400).json({ success:false, error:'provider required'}); if (!aiAgent) return res.status(503).json({ success:false, error:'ai agent disabled'}); const ok = aiAgent.setProvider(provider); res.json({ success: ok, provider, active: aiAgent.config.defaultProvider }); } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    // GET /api/agent/health
+    app.get('/api/agent/health', requireAgentAuth, (req, res) => {
+        try { res.json({ success:true, agent: aiAgent ? aiAgent.getHealth() : null, runner: !!agentActionRunner }); } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    // Runtime console log mirror control
+    app.get('/api/logging/console', requireAgentAuth, (req, res) => {
+        try { res.json({ success:true, state: getConsoleMirrorState() }); } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
+    app.post('/api/logging/console', requireAgentAuth, (req, res) => {
+        try {
+            const { enable, channels } = req.body || {};
+            const state = setConsoleMirror(!!enable, Array.isArray(channels)? channels : (channels === null ? null : undefined));
+            appendLog('node', `console-mirror ${state.enabled? 'enabled':'disabled'} channels=${state.channels? state.channels.join(','):'*'}`);
+            res.json({ success:true, state });
+        } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+    });
 
 // --- Simple in-memory rate limiting for heavy endpoints ---
 const _rateBuckets = new Map();
@@ -2408,12 +2468,33 @@ app.get('/api/ai/health', (req, res) => {
             success: true,
             providers: {
                 openai: { enabled: cfg.openai.enabled, model: cfg.openai.model, available: !!aiAgent.openai },
-                anthropic: { enabled: cfg.anthropic.enabled, model: cfg.anthropic.model, available: !!aiAgent.anthropic }
+                anthropic: { enabled: cfg.anthropic.enabled, model: cfg.anthropic.model, available: !!aiAgent.anthropic },
+                ollama: { enabled: !!cfg.ollama?.enabled, model: cfg.ollama?.model || null, available: !!cfg.ollama?.enabled }
             },
             features: cfg.features,
             editing: cfg.editing ? { ...cfg.editing, apiKeyMasked: true } : null,
             available: aiAgent.isAvailable()
         });
+    } catch (e) {
+        res.status(500).json({ success:false, error: e.message });
+    }
+});
+
+// List local Ollama models (if enabled)
+app.get('/api/ai/ollama/models', async (req, res) => {
+    try {
+        const cfg = aiAgent.getConfig();
+        if (!cfg.ollama || !cfg.ollama.enabled) return res.json({ success:true, enabled:false, models:[] });
+        const base = (cfg.ollama.url || 'http://localhost:11434').replace(/\/$/, '');
+        const url = base + '/api/tags';
+        let fetchImpl = (typeof fetch !== 'undefined') ? fetch : null;
+        if (!fetchImpl) { try { fetchImpl = require('node-fetch'); } catch (_) {} }
+        if (!fetchImpl) return res.status(500).json({ success:false, error:'fetch unavailable' });
+        const r = await fetchImpl(url, { timeout: 7000 }).catch(e => { throw new Error('request failed: '+e.message); });
+        if (!r.ok) return res.status(502).json({ success:false, error: 'ollama http '+r.status });
+        let j; try { j = await r.json(); } catch (e) { return res.status(500).json({ success:false, error:'bad json '+e.message }); }
+        const models = Array.isArray(j.models) ? j.models.map(m => ({ name: m.name, size: m.size, modified: m.modified })) : [];
+        res.json({ success:true, enabled:true, models });
     } catch (e) {
         res.status(500).json({ success:false, error: e.message });
     }
@@ -3181,19 +3262,31 @@ io.on('connection', (socket) => {
 });
 
 // Start server (retry on EADDRINUSE by incrementing port up to +10)
+let _serverListening = false;
 function startServer(port, attempt=0){
-    server.listen(port, () => {
-        console.log(`🚀 ESP32 Development UI Server running on http://localhost:${port}`);
-        postListen(port);
-    }).on('error', (err) => {
-        if (err && err.code === 'EADDRINUSE' && attempt < 10) {
-            console.warn(`Port ${port} in use, trying ${port+1}...`);
-            setTimeout(()=>startServer(port+1, attempt+1), 300);
-        } else {
-            console.error('Failed to start server:', err);
-            process.exit(1);
-        }
-    });
+    if (_serverListening) return; // already bound
+    try {
+        server.listen(port, () => {
+            if (_serverListening) return; // double-callback safety
+            _serverListening = true;
+            console.log(`🚀 ESP32 Development UI Server running on http://localhost:${port}`);
+            postListen(port);
+        }).on('error', (err) => {
+            if (_serverListening) return; // ignore errors after success
+            if (err && err.code === 'EADDRINUSE' && attempt < 10) {
+                console.warn(`Port ${port} in use, trying ${port+1}...`);
+                // Small backoff
+                setTimeout(()=>startServer(port+1, attempt+1), 250 + (attempt*50));
+            } else {
+                console.error('Failed to start server:', err);
+                process.exit(1);
+            }
+        });
+    } catch (e) {
+        if (_serverListening) return;
+        console.error('Unexpected start error:', e);
+        if (attempt < 10) setTimeout(()=>startServer(port+1, attempt+1), 300); else process.exit(1);
+    }
 }
 
 function postListen(port){

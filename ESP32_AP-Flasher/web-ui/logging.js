@@ -12,12 +12,40 @@ if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
 const logEmitter = new EventEmitter();
 
+// Console mirror configuration
+let consoleMirrorEnabled = ['1','true','yes','all'].includes(String(process.env.LOG_ALL_CONSOLE||'').toLowerCase());
+let consoleMirrorChannels = null; // null = all
+if (process.env.LOG_CONSOLE_CHANNELS) {
+    const lst = process.env.LOG_CONSOLE_CHANNELS.split(',').map(s=>s.trim()).filter(Boolean);
+    if (lst.length) consoleMirrorChannels = new Set(lst);
+}
+
+function setConsoleMirror(enabled, channels){
+    consoleMirrorEnabled = !!enabled;
+    if (Array.isArray(channels) && channels.length) {
+        consoleMirrorChannels = new Set(channels.map(c=>String(c).trim()).filter(Boolean));
+    } else if (channels === null) {
+        consoleMirrorChannels = null; // all
+    }
+    return getConsoleMirrorState();
+}
+
+function getConsoleMirrorState(){
+    return {
+        enabled: consoleMirrorEnabled,
+        channels: consoleMirrorChannels ? Array.from(consoleMirrorChannels) : null
+    };
+}
+
 function appendLog(name, msg) {
     try {
         const file = path.join(logsDir, `${name}.log`);
         const line = `[${new Date().toISOString()}] ${msg}\n`;
         fs.appendFileSync(file, line, { encoding: 'utf8' });
         logEmitter.emit(name, line);
+        if (consoleMirrorEnabled && (!consoleMirrorChannels || consoleMirrorChannels.has(name))) {
+            try { process.stdout.write(`[${name}] ${line}`); } catch(_) {}
+        }
     } catch (err) {
         // eslint-disable-next-line no-console
         console.error('appendLog error', err);
@@ -38,4 +66,4 @@ function tailLines(name, lines = 200) {
     }
 }
 
-module.exports = { appendLog, tailLines, logEmitter, logsDir };
+module.exports = { appendLog, tailLines, logEmitter, logsDir, setConsoleMirror, getConsoleMirrorState };

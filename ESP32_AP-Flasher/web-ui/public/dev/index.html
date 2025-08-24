@@ -122,6 +122,7 @@
                                     <option value="api">api</option>
                                     <option value="ws">ws</option>
                                     <option value="client">client</option>
+                                    <option value="all">all</option>
                                 </select>
                                 <button id="start-tail" class="btn btn-small" title="Start tailing selected log">
                                     <i class="fas fa-stream"></i> Tail
@@ -142,6 +143,21 @@
                         </div>
 
                         <div id="console" class="console"></div>
+                        <div class="console-tools-row">
+                            <button id="console-collapse" class="console-toggle-btn" title="Collapse / expand console">Collapse</button>
+                            <input id="console-search" class="console-search-input" placeholder="Search logs" title="Type to highlight" />
+                            <button id="console-clear-search" class="btn btn-small" style="padding:4px 8px">✕</button>
+                            <button id="console-export" class="btn btn-small" title="Download visible lines"><i class="fas fa-download"></i> Export</button>
+                            <button id="console-explain-errors" class="btn btn-small" title="AI analyze recent errors"><i class="fas fa-lightbulb"></i> Explain Errors</button>
+                        </div>
+                        <div id="console-filters" class="console-filters" aria-label="Channel filters">
+                            <div class="console-filter-chip active" data-chan="node">node</div>
+                            <div class="console-filter-chip active" data-chan="python">python</div>
+                            <div class="console-filter-chip active" data-chan="serial">serial</div>
+                            <div class="console-filter-chip active" data-chan="api">api</div>
+                            <div class="console-filter-chip active" data-chan="ws">ws</div>
+                            <div class="console-filter-chip active" data-chan="client">client</div>
+                        </div>
                         <div class="build-panel" style="margin-top:12px">
                             <h3 style="margin-bottom:8px"><i class="fas fa-vial"></i> Serial / API Tests</h3>
                             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -418,6 +434,8 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
     <script src="spa.js"></script>
+    <!-- Floating AI Assistant Widget -->
+    <script src="ai-agent-widget.js" defer></script>
 
 </body>
 
