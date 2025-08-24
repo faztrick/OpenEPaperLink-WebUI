@@ -14,7 +14,7 @@
 	<script src="main.js?3.0" defer></script>
 	<!-- Feature-specific modules -->
 	<script src="compact-ui.js?2.75" defer></script>
-	<script src="universal-menu.js" defer></script>
+	<script src="shared-nav.js" defer></script>
 	<script src="flash.js?2.74" type="module" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 	<link rel="stylesheet"
@@ -32,7 +32,7 @@
 			margin: 15px 0;
 			backdrop-filter: blur(10px);
 		}
-		
+
 		.flash-section h4 {
 			color: #4facfe;
 			margin-bottom: 15px;
@@ -40,12 +40,12 @@
 			align-items: center;
 			gap: 10px;
 		}
-		
+
 		.flash-section h4::before {
 			content: '⚡';
 			font-size: 1.2em;
 		}
-		
+
 		.file-upload-area {
 			border: 2px dashed rgba(79, 172, 254, 0.5);
 			border-radius: 8px;
@@ -55,50 +55,15 @@
 			margin: 10px 0;
 			transition: all 0.3s ease;
 		}
-		
+
 		.file-upload-area:hover {
 			border-color: rgba(79, 172, 254, 0.8);
 			background: rgba(79, 172, 254, 0.2);
 		}
-		
+
 		.file-upload-btn {
 			background: linear-gradient(135deg, #4facfe, #00f2fe);
-			border: none;
-			color: white;
-			padding: 12px 24px;
-			border-radius: 8px;
-			font-weight: 600;
-			cursor: pointer;
-			transition: all 0.3s ease;
-			margin: 10px 0;
-		}
-		
-		.file-upload-btn:hover {
-			transform: translateY(-2px);
-			box-shadow: 0 8px 25px rgba(79, 172, 254, 0.3);
-		}
-		
-		.file-upload-btn:disabled {
-			opacity: 0.5;
-			cursor: not-allowed;
-			transform: none !important;
-		}
-		
-		.flash-info {
-			font-size: 0.9em;
-			color: rgba(255, 255, 255, 0.8);
-			margin-top: 10px;
-			line-height: 1.4;
-		}
-		
-		.flash-info .supported-formats {
-			color: #4facfe;
-			font-weight: 500;
-		}
-		
-		/* Flash button styling */
-		.button {
-			background: linear-gradient(135deg, #4facfe, #00f2fe);
+			/* accidental <body> tag removed */
 			border: none;
 			color: white;
 			padding: 12px 24px;
@@ -110,22 +75,22 @@
 			font-size: 14px;
 			min-width: 140px;
 		}
-		
+
 		.button:hover {
 			transform: translateY(-2px);
 			box-shadow: 0 8px 25px rgba(79, 172, 254, 0.3);
 		}
-		
+
 		.button:disabled {
 			opacity: 0.5;
 			cursor: not-allowed;
 			transform: none !important;
 		}
-		
+
 		.button:active {
 			transform: translateY(0);
 		}
-		
+
 		/* Console styling */
 		#flashconsole {
 			background: rgba(0, 0, 0, 0.8);
@@ -140,32 +105,32 @@
 			white-space: pre-wrap;
 			word-wrap: break-word;
 		}
-		
+
 		#flashconsole div {
 			margin: 2px 0;
 			line-height: 1.4;
 		}
-		
+
 		.console {
 			flex: 1;
 			min-height: 400px;
 		}
-		
+
 		.flashCol1 {
 			flex: 1;
 			margin-right: 20px;
 		}
-		
+
 		#flashtab > div {
 			display: flex;
 			gap: 20px;
 		}
-		
+
 		@media (max-width: 768px) {
 			#flashtab > div {
 				flex-direction: column;
 			}
-			
+
 			.flashCol1 {
 				margin-right: 0;
 				margin-bottom: 20px;
@@ -175,41 +140,7 @@
 </head>
 
 <body>
-	<!-- Enhanced Compact Header with Menu and Status -->
-	<header class="advanced-header">
-		<div class="compact-header-content">
-			<div class="header-left">
-				<div class="logo-section">
-					<div class="logo-icon">⚡</div>
-					<div class="logo-text">
-						<h1>OpenEPL ESP32 Flasher</h1>
-					</div>
-				</div>
-			</div>
-			
-			<div class="header-status">
-				<div class="status-item">
-					<div class="status-dot" id="systemDot"></div>
-					<span id="systemStatus">Ready</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
-					<span id="tagCount">Tags</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
-					<span id="wifiStatus">WiFi</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
-					<span id="uptimeDisplay">--:--</span>
-				</div>
-			</div>
-			
-						<!-- Universal Menu Container -->
-			<div id="menu-container" class="menu-container"></div>
-		</div>
-	</header>
+	<!-- Header replaced by shared-nav.js injection -->
 
 	<div class="container">
 		<div class="window">
@@ -248,7 +179,7 @@ options:
 --exit Exit eeprom loader after sending data
 							</pre>
 						</div>
-						
+
 						<div class="flash-section">
 							<h4>Simple File Flash</h4>
 							<div class="file-upload-area">
@@ -262,7 +193,7 @@ options:
 								</div>
 							</div>
 						</div>
-						
+
 						<h4>Other actions</h4>
 						<div>
 							<button class="button" id="doPowerOn">Power on</button><br><br>
@@ -306,7 +237,7 @@ options:
 
 	<script type="module">
 		import { init, cleanup } from './flash.js';
-		
+
 		// Initialize flash module when page loads
 		document.addEventListener('DOMContentLoaded', function() {
 			// Wait for main.js to establish socket connection
@@ -324,14 +255,14 @@ options:
 				}
 			}, 1000);
 		});
-		
+
 		// Cleanup when leaving the page
 		window.addEventListener('beforeunload', function() {
 			if (window.flashmodule) {
 				cleanup();
 			}
 		});
-		
+
 		// Also cleanup when navigating to other tabs/pages
 		window.addEventListener('pagehide', function() {
 			if (window.flashmodule) {

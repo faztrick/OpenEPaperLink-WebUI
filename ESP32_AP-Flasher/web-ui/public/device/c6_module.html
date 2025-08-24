@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/vnd.icon" href="favicon.ico">
-    
+
     <!-- Core JavaScript modules -->
     <script src="constants.js?3.0" defer></script>
     <script src="utils.js?3.0" defer></script>
@@ -21,10 +21,10 @@
     <script src="ui-components.js?3.0" defer></script>
     <!-- Feature-specific modules -->
     <script src="main.js?3.0" defer></script>
-    <script src="universal-menu.js" defer></script>
+    <script src="shared-nav.js" defer></script>
     <script src="c6_module.js"></script>
     <script src="openai-agent-enhanced.js" defer></script>
-    
+
     <style>
         .module-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -233,7 +233,7 @@
             flex: 1;
             color: #495057;
         }
-        
+
         /* Fix for white text visibility issues */
         #availableVersions {
             color: #212529 !important;
@@ -241,15 +241,15 @@
             padding: 10px;
             border-radius: 4px;
         }
-        
+
         #availableVersions table {
             color: #212529 !important;
         }
-        
+
         #availableVersions td, #availableVersions th {
             color: #212529 !important;
         }
-        
+
         /* Ensure error messages are visible */
         .error-message {
             color: #dc3545 !important;
@@ -312,7 +312,7 @@
             font-weight: bold;
             color: #495057;
         }
-        
+
         /* Search functionality styles */
         .search-controls {
             background: #f8f9fa;
@@ -320,7 +320,7 @@
             border-radius: 4px;
             padding: 10px;
         }
-        
+
         .search-highlight {
             background-color: #ffff00 !important;
             color: #000000 !important;
@@ -328,28 +328,28 @@
             border-radius: 2px;
             padding: 0 2px;
         }
-        
+
         .search-highlight.current {
             background-color: #ff6b35 !important;
             color: #ffffff !important;
         }
-        
+
         .search-results-info {
             font-size: 12px;
             color: #495057;
             font-style: italic;
         }
-        
+
         .log-entry {
             border-bottom: 1px solid rgba(255,255,255,0.1);
             padding: 2px 0;
             margin: 1px 0;
         }
-        
+
         .log-entry:hover {
             background-color: rgba(255,255,255,0.05);
         }
-        
+
         /* Enhanced console styles for better readability */
         .console {
             background: #1e1e1e;
@@ -363,20 +363,20 @@
             border: 1px solid #ccc;
             line-height: 1.5;
         }
-        
+
         .console::-webkit-scrollbar {
             width: 8px;
         }
-        
+
         .console::-webkit-scrollbar-track {
             background: #2d2d2d;
         }
-        
+
         .console::-webkit-scrollbar-thumb {
             background: #555;
             border-radius: 4px;
         }
-        
+
         .console::-webkit-scrollbar-thumb:hover {
             background: #777;
         }
@@ -384,44 +384,7 @@
 </head>
 
 <body>
-    <!-- Enhanced Compact Header with Menu and Status -->
-    <header class="advanced-header">
-        <div class="compact-header-content">
-            <div class="header-left">
-                <div class="logo-section">
-                    <div class="logo-icon">🔧</div>
-                    <div class="logo-text">
-                        <h1>OpenEPL ESP32-C6 Elecrow Module</h1>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="header-status">
-                <div class="status-item">
-                    <div class="status-dot" id="systemDot"></div>
-                    <span id="systemStatus">Ready</span>
-                </div>
-                <div class="status-item">
-                    <span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
-                    <span id="tagCount">Tags</span>
-                </div>
-                <div class="status-item">
-                    <span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
-                    <span id="wifiStatus">WiFi</span>
-                </div>
-                <div class="status-item">
-                    <span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
-                    <span id="uptimeDisplay">--:--</span>
-                </div>
-            </div>
-            
-            			<!-- Universal Menu Container -->
-			<div id="menu-container" class="menu-container"></div>
-                    C6 Module
-                </button>
-            </div>
-        </div>
-    </header>
+    <!-- Header replaced by shared-nav.js injection -->
 
     <div class="container">
         <div class="module-header">
@@ -446,12 +409,12 @@
                     <span class="status-indicator status-offline" id="moduleStatus"></span>
                     <span id="moduleStatusText">Checking connection...</span>
                 </div>
-                
+
                 <div id="moduleDetails" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
                     <h4 style="margin-top: 0;">Device Information</h4>
                     <div id="deviceInfo">Loading device details...</div>
                 </div>
-                
+
                 <div class="info-grid">
                     <div class="info-card">
                         <div class="value" id="moduleVersion">--</div>
@@ -493,7 +456,7 @@
         <div id="firmware" class="tab-content">
             <div class="config-section">
                 <h3>Firmware Management</h3>
-                
+
                 <div class="form-group">
                     <label>Current Version:</label>
                     <div style="padding: 8px; background: #f8f9fa; border-radius: 4px;" id="currentFirmware">
@@ -528,7 +491,7 @@
                         <div id="fileInfo" style="margin-top: 8px; font-size: 12px; color: #6c757d;"></div>
                         <div id="fileError" style="margin-top: 5px; font-size: 12px; color: #dc3545; display: none;"></div>
                     </div>
-                    
+
                     <div class="checkbox-group">
                         <label>
                             <input type="checkbox" id="verifyChecksum" checked>
@@ -566,7 +529,7 @@
             <div class="config-section">
                 <h3>🔌 External OTA Flash</h3>
                 <p>Flash C6 module using external tools via serial connection</p>
-                
+
                 <div class="info-grid">
                     <div class="info-card">
                         <div class="value" id="availableDrives">--</div>
@@ -581,7 +544,7 @@
 
             <div class="config-section">
                 <h3>📁 File Manager Integration</h3>
-                
+
                 <div class="form-group">
                     <label for="driveSelect">Select Drive:</label>
                     <select id="driveSelect">
@@ -589,13 +552,13 @@
                     </select>
                     <button class="btn btn-primary" onclick="refreshDrives()" style="margin-left: 10px;">🔄 Refresh</button>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="firmwareFilePath">Firmware File Path:</label>
                     <input type="text" id="firmwareFilePath" placeholder="Select a firmware file from file manager" readonly>
                     <button class="btn btn-primary" onclick="openFileManager()" style="margin-left: 10px;">📁 Browse</button>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="comPortSelect">COM Port:</label>
                     <select id="comPortSelect">
@@ -607,7 +570,7 @@
 
             <div class="config-section">
                 <h3>⚙️ Flash Configuration</h3>
-                
+
                 <div class="checkbox-group">
                     <label>
                         <input type="checkbox" id="eraseFlash" checked>
@@ -622,7 +585,7 @@
                         Reset module after flashing
                     </label>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="baudRate">Baud Rate:</label>
                     <select id="baudRate">
@@ -669,7 +632,7 @@
                         📄 Export
                     </button>
                 </div>
-                
+
                 <!-- OTA Search Results Summary -->
                 <div id="otaSearchResults"
                     style="display: none; margin-bottom: 10px; padding: 8px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 4px; font-size: 12px;">
@@ -693,7 +656,7 @@
         <div id="settings" class="tab-content">
             <div class="config-section">
                 <h3>Radio Settings</h3>
-                
+
                 <div class="form-group">
                     <label for="radioChannel">Radio Channel:</label>
                     <select id="radioChannel">
@@ -724,7 +687,7 @@
 
             <div class="config-section">
                 <h3>Power Management</h3>
-                
+
                 <div class="form-group">
                     <label for="sleepMode">Sleep Mode:</label>
                     <select id="sleepMode">
@@ -751,7 +714,7 @@
         <div id="diagnostics" class="tab-content">
             <div class="config-section">
                 <h3>System Diagnostics</h3>
-                
+
                 <div class="btn-group">
                     <button class="btn btn-primary" onclick="runDiagnostics()">🔍 Run Full Diagnostics</button>
                     <button class="btn btn-primary" onclick="testRadio()">📡 Test Radio</button>
@@ -777,7 +740,7 @@
                             📄 Export
                         </button>
                     </div>
-                    
+
                     <!-- Search Results Summary -->
                     <div id="searchResults"
                         style="display: none; margin-bottom: 10px; padding: 8px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 4px; font-size: 12px;">

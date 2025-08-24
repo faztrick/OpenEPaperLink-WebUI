@@ -1,3 +1,5 @@
+// Load environment variables early
+try { require('dotenv').config(); } catch (_) { /* dotenv optional */ }
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -139,6 +141,27 @@ if (!staticRootServed) {
 // POST /api/ai/chat-tool { message, sessionId?, stream? }
 // Returns: { success, responseText, toolCalls:[...], toolResults:[...], model }
 // If OPENAI_API_KEY missing, returns mock echo.
+// Helper: choose AI tool model. Priority:
+// 1. OPEL_AI_TOOL_MODEL (explicit)
+// 2. First entry in OPEL_AI_TOOL_MODELS (comma list)
+// 3. Fallback 'gpt-4.1-mini'
+function selectAiToolModel() {
+    const explicit = process.env.OPEL_AI_TOOL_MODEL && process.env.OPEL_AI_TOOL_MODEL.trim();
+    if (explicit) return explicit;
+    const list = process.env.OPEL_AI_TOOL_MODELS;
+    if (list) {
+        const parts = list.split(',').map(s=>s.trim()).filter(Boolean);
+        if (parts.length) return parts[0];
+    }
+    return 'gpt-4.1-mini';
+}
+
+app.get('/api/ai/tool-model', (req, res) => {
+    try {
+        res.json({ success:true, model: selectAiToolModel(), explicit: !!process.env.OPEL_AI_TOOL_MODEL, list: process.env.OPEL_AI_TOOL_MODELS || null, mock: !process.env.OPENAI_API_KEY });
+    } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+});
+
 app.post('/api/ai/chat-tool', async (req, res) => {
     try {
         const { message, sessionId = 'default', stream = false } = req.body || {};
@@ -158,7 +181,7 @@ app.post('/api/ai/chat-tool', async (req, res) => {
         // Append user message
         inputList.push({ role: 'user', content: message });
         const tools = ToolSchemas.toolSchemas;
-        const model = process.env.OPEL_AI_TOOL_MODEL || 'gpt-4.1-mini';
+    const model = selectAiToolModel();
         const basePayload = { model, tools, input: inputList };
         let response = await client.responses.create(basePayload);
         inputList.push(...response.output); // keep raw tool call objects

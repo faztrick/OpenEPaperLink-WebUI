@@ -249,6 +249,45 @@ Troubleshooting:
 
 Future Enhancements (tracked separately): artifact selection for OTA directly, progress % parsing, integrated diff for filesystem-only uploads.
 
+### 3.4 Unified Navigation (shared-nav.js) Migration
+
+All active Web UI pages now rely on a single injected navigation/header supplied by `shared-nav.js` instead of duplicating a per-page `<header class="advanced-header">` and `universal-menu.js` script.
+
+Rationale:
+
+- Eliminate UI drift and repeated DOM/state initialization logic.
+- Provide consistent device/method status pills and link set across every page.
+- Centralize future enhancements (role-based link visibility, live status badges, notifications) in one place.
+
+Migration Pattern (legacy page → unified nav):
+
+1. Remove the entire legacy header block (usually `<header class="advanced-header">…</header>`).
+2. Remove any `<script src="universal-menu.js">` reference.
+3. Add `<script src="shared-nav.js" defer></script>` in `<head>`.
+4. (Optional) Insert a comment right after `<body>`: `<!-- Header replaced by shared-nav.js injection -->` for clarity.
+5. Verify page scripts do not assume `#menu-container` or `.advanced-header` exist; add null guards if needed.
+
+When Adding a New Page:
+
+- Include core shared modules you need (e.g. `constants.js`, `utils.js`, `app-core.js`, `main.js`).
+- Include `shared-nav.js` (only once — it self-guards injection).
+- Put your content inside a `<div class="container">` for consistent spacing.
+- Reuse shared device/method state (localStorage keys, helper functions) instead of redeclaring selectors.
+
+Deprecation Plan for `universal-menu.js`:
+
+- Phase 1 (complete): Migrate primary production pages.
+- Phase 2 (pending): Migrate remaining legacy/test/demo pages (`index.html`, `tags.html`, `nrf52_swd.html`, menu-test variants) or mark explicitly deprecated.
+- Phase 3: Replace `universal-menu.js` with a stub logging a warning directing developers to use `shared-nav.js` (or delete after a grace period).
+
+Troubleshooting:
+
+- Navigation missing: Open dev tools → Network tab to confirm `shared-nav.js` loaded; check console for earlier script errors.
+- Double headers: Remove stray static `<header>` in the HTML file.
+- Active link not highlighted: Ensure link href exactly matches filename (case‑sensitive on some hosts) and page not being served under an unexpected sub-path.
+
+This guide supersedes older instructions referencing `universal-menu.js`.
+
 PM2 Note: If you use PM2 and run frequent fast firmware rebuilds, the PowerShell `fast_compile.ps1` script attempts to call the shutdown endpoint. When running under PM2 you can choose either approach:
 
 1. Allow script to hit `/api/shutdown` (PM2 will detect exit and can restart if `--watch` is enabled – currently off by default), or

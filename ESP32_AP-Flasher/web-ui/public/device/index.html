@@ -27,6 +27,8 @@
 	<script src="universal-menu.js?3.2" defer></script>
 	<script src="module-manager-ui.js?3.2" defer></script>
 	<script src="module-status-icons.js" defer></script>
+	<script src="device-card.js?1.0" defer></script>
+	<script src="shared-nav.js" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
 	<!--<link rel="icon" type="image/vnd.icon" href="favicon.ico">-->
 	<link rel="stylesheet"
@@ -174,73 +176,7 @@
 </head>
 
 <body>
-	<!-- Compact Single-Line Header: Logo + Navigation + Status -->
-	<header class="advanced-header compact-header">
-		<div class="compact-header-content">
-			<!-- Single Line: Logo + Menu + Status -->
-			<div class="header-single-line">
-				<!-- Left: Logo -->
-				<div class="header-left">
-					<div class="logo-section">
-						<div class="logo-icon">📱</div>
-						<div class="logo-text">
-							<h1>OpenEPL ESP32</h1>
-							<span class="version">v3.1</span>
-						</div>
-					</div>
-				</div>
-
-				<!-- Center: Navigation Menu -->
-				<div class="header-center">
-					<div id="menu-container" class="menu-container"></div>
-				</div>
-
-				<!-- Right: Compact Status -->
-				<div class="header-right">
-					<div class="compact-status">
-						<div class="status-group">
-							<div class="status-dot" id="systemDot"></div>
-							<span id="systemStatus">Ready</span>
-						</div>
-						<div class="status-separator">|</div>
-						<div class="status-group">
-							<span class="material-symbols-outlined">devices</span>
-							<span id="tagCount">0</span>
-						</div>
-						<div class="status-separator">|</div>
-						<div class="status-group">
-							<span class="material-symbols-outlined">wifi</span>
-							<span id="wifiStatus">WiFi</span>
-						</div>
-						<div class="status-separator">|</div>
-						<div class="status-group">
-							<span class="material-symbols-outlined">schedule</span>
-							<span id="uptimeDisplay">--:--</span>
-						</div>
-					</div>
-
-					<!-- Quick Actions -->
-					<div class="quick-actions">
-						<button class="action-btn" onclick="refreshData()" title="Refresh Data">
-							<span class="material-symbols-outlined">refresh</span>
-						</button>
-						<button class="action-btn" onclick="findAllTags()" title="Find All Tags">
-							<span class="material-symbols-outlined">search</span>
-						</button>
-						<button class="action-btn" onclick="window.open('settings.html')" title="Settings">
-							<span class="material-symbols-outlined">settings</span>
-						</button>
-						<button class="action-btn" onclick="if(window.openAIAgentEnhanced) openAIAgentEnhanced.togglePanel()" title="AI Assistant">
-							<span class="material-symbols-outlined">smart_toy</span>
-						</button>
-						<button class="action-btn" id="ping-device-btn" title="Ping Device">
-							<span class="material-symbols-outlined">network_check</span>
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	</header>
+<!-- Header replaced by shared-nav.js injection -->
 
 	<div class="container">
 		<!-- Enhanced Dashboard -->
@@ -353,6 +289,22 @@
 							</div>
 						</div>
 					</div>
+				</div>
+			</div>
+
+			<!-- Device Communication Card (shared module) -->
+			<div class="dashboard-card device-comm-card">
+				<div class="card-header">
+					<span class="material-symbols-outlined">serial_port</span>
+					<h3>Device Communication</h3>
+					<div class="card-actions">
+						<button onclick="if(window.initDeviceCard) initDeviceCard({containerId:'device-card-container'})" class="icon-btn" title="Reinitialize">
+							<span class="material-symbols-outlined">refresh</span>
+						</button>
+					</div>
+				</div>
+				<div class="card-content">
+					<div id="device-card-container">Loading device card…</div>
 				</div>
 			</div>
 
@@ -1217,7 +1169,6 @@
 		}
 
 		// small HTML escape to avoid injection if the endpoints return strings
-+
 		function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 		function refreshAllTags() {
@@ -1622,7 +1573,6 @@
 		});
 
 		// Wire up new quick-action buttons
-+
 		document.addEventListener('DOMContentLoaded', function() {
 			const scanBtn = document.getElementById('scan-wi-btn');
 			if (scanBtn) scanBtn.addEventListener('click', scanWifiNetworksFromDashboard);

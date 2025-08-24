@@ -123,4 +123,36 @@ When making changes, be mindful of the interactions between these components. Fo
 
 ## Operational reminder for agents
 
-- Before running actions from the web UI or automation, check the repository `PROJECT_STATUS.md` for current status, blockers, and device list and update its `Last updated` timestamp if you change the state. Use PowerShell `Get-Date -Format o` when logging command timestamps.
+Before running actions from the web UI or automation, check the repository `PROJECT_STATUS.md` for current status, blockers, and device list and update its `Last updated` timestamp if you change the state. Use PowerShell `Get-Date -Format o` when logging command timestamps.
+
+## Unified Navigation & Device Card (shared-nav.js)
+
+The Web UI now uses a single consolidated navigation/header injected by `shared-nav.js` across all modern pages under `web-ui/public/device/`.
+
+Key points:
+
+1. One Header Everywhere: Legacy per‑page `<header class="advanced-header">` blocks and `universal-menu.js` are being deprecated. New pages should not include them.
+2. Automatic Injection: Include `<script src="shared-nav.js" defer></script>` in the `<head>` (before other page‑specific scripts is fine). The script injects the nav bar at the start of `<body>` along with dynamic status pills (current comms method & target).
+3. Device Card Centralization: Device/method selection is owned by the shared nav + device card logic (see `device-card.js`). Do not duplicate selector widgets inside individual pages.
+4. Link Set Source of Truth: Modify the `LINKS` array inside `shared-nav.js` to add/remove global pages. Avoid hard‑coding nav links in individual HTML files.
+5. Exclusive Communication Method: Only one communication method (e.g., serial, network) should be active at a time—coordination logic lives in shared scripts; pages should read state rather than re‑implement toggles.
+6. Styling: Shared nav injects its own scoped styles. Page CSS should not rely on the old `.advanced-header` class. If leftover CSS definitions exist they will be removed after full deprecation.
+7. Migration Pattern: To migrate an old page: (a) remove the legacy header & any `<script src="universal-menu.js">`, (b) add `shared-nav.js`, (c) optionally insert a marker comment `<!-- Header replaced by shared-nav.js injection -->` for clarity.
+8. Deprecation Notice: `universal-menu.js` will be replaced by a lightweight stub (or removed) once remaining test/demo pages are migrated. Do not add new dependencies on it.
+
+Adding a New Page Checklist:
+
+- Create the HTML file under `web-ui/public/device/`.
+- Add core shared scripts you need (e.g., `constants.js`, `utils.js`, `app-core.js`, `main.js`).
+- Add `<script src="shared-nav.js" defer></script>`.
+- Implement page content inside a top‑level `<div class="container">` (consistent layout spacing).
+- Avoid redefining global state or device selection controls.
+- If the page needs periodic status display, read from existing localStorage keys or reuse helper functions instead of polling endpoints redundantly.
+
+Troubleshooting:
+
+- Nav Missing? Ensure `shared-nav.js` loaded (network tab) and no JavaScript error before DOMContentLoaded.
+- Duplicate Headers? Remove any leftover static `<header>` markup from the file.
+- Link Not Highlighted? The active link match uses `window.location.pathname` – ensure the file name matches the link href exactly (case sensitive on some hosts).
+
+This section supersedes any older documentation referring to `universal-menu.js` or multiple per‑page headers.

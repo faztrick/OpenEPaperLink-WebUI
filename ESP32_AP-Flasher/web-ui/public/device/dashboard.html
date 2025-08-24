@@ -18,7 +18,7 @@
 	<!-- Feature-specific modules -->
 	<script src="g5decoder.js?2.74"></script>
 	<script src="dashboard.js?3.0" defer></script>
-	<script src="universal-menu.js" defer></script>
+	<script src="shared-nav.js" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 	<link rel="stylesheet"
 		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -30,41 +30,7 @@
 </head>
 
 <body>
-	<!-- Enhanced Compact Header with Menu and Status -->
-	<header class="advanced-header">
-		<div class="compact-header-content">
-			<div class="header-left">
-				<div class="logo-section">
-					<div class="logo-icon">📊</div>
-					<div class="logo-text">
-						<h1>OpenEPL ESP32 Dashboard</h1>
-					</div>
-				</div>
-			</div>
-
-			<div class="header-status">
-				<div class="status-item">
-					<div class="status-dot" id="systemDot"></div>
-					<span id="systemStatus">Ready</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">devices</span>
-					<span id="tagCount">Tags</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">wifi</span>
-					<span id="wifiStatus">WiFi</span>
-				</div>
-				<div class="status-item">
-					<span class="material-symbols-outlined" style="font-size: 12px;">schedule</span>
-					<span id="uptimeDisplay">--:--</span>
-				</div>
-			</div>
-
-			<!-- Universal Menu Container -->
-			<div id="menu-container" class="menu-container"></div>
-		</div>
-	</header>
+	<!-- Header replaced by shared-nav.js injection -->
 
 	<div class="container">
 		<div class="window">

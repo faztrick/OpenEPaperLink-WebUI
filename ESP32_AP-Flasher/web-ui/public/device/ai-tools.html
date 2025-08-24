@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Tools Assistant</title>
+  <script src="system-prompt.js?1.0" defer></script>
+  <script src="device-card.js" defer></script>
+  <script src="shared-nav.js" defer></script>
+  <link rel="stylesheet" href="merged-styles.css" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin:0; padding:0; background:#0e1117; color:#e6e6e6; }
+    header { background:#161b22; padding:10px 16px; display:flex; align-items:center; gap:16px; }
+    header h1 { font-size:18px; margin:0; }
+    #model-indicator { font-size:12px; opacity:0.7; }
+    main { display:flex; height:calc(100vh - 52px); }
+    .sidebar { width:260px; border-right:1px solid #30363d; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; gap:12px; }
+    .sidebar h2 { font-size:14px; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.08em; opacity:0.8; }
+    .tool-list { font-size:12px; line-height:1.4; max-height:220px; overflow:auto; border:1px solid #30363d; padding:6px; border-radius:4px; background:#1c2128; }
+    .tool-list code { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .status-box { font-size:12px; background:#1c2128; border:1px solid #30363d; padding:6px 8px; border-radius:4px; line-height:1.5; }
+    .status-box.good { border-color:#238636; }
+    .status-box.warn { border-color:#9e6a03; }
+    .status-box.bad { border-color:#da3633; }
+    .chat-pane { flex:1; display:flex; flex-direction:column; }
+    #transcript { flex:1; overflow:auto; padding:16px; box-sizing:border-box; display:flex; flex-direction:column; gap:12px; }
+    .msg { max-width:780px; border:1px solid #30363d; padding:10px 12px; border-radius:8px; line-height:1.45; font-size:14px; background:#1c2128; position:relative; }
+    .msg.user { background:#21262d; border-color:#30363d; }
+    .msg.assistant { background:#161b22; }
+    .msg .meta { font-size:11px; opacity:0.6; margin-bottom:4px; display:flex; gap:6px; flex-wrap:wrap; }
+    .msg pre { background:#0d1117; padding:8px; border-radius:6px; overflow:auto; font-size:12px; }
+    .tool-call { border-left:3px solid #58a6ff; padding-left:8px; margin-top:6px; font-size:12px; }
+    .tool-result { border-left:3px solid #3fb950; padding-left:8px; margin-top:4px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+    form { display:flex; gap:8px; padding:12px 16px; border-top:1px solid #30363d; background:#161b22; }
+    form textarea { flex:1; resize:vertical; min-height:54px; max-height:180px; background:#0d1117; color:#e6e6e6; border:1px solid #30363d; border-radius:6px; padding:8px; font-family:inherit; font-size:14px; }
+    form button { background:#238636; color:#fff; border:none; padding:10px 18px; font-size:14px; border-radius:6px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:6px; }
+    form button:disabled { opacity:.5; cursor:not-allowed; }
+    .mini { font-size:11px; opacity:.7; }
+    .flex-row { display:flex; gap:6px; align-items:center; }
+    .badge { background:#30363d; padding:2px 6px; border-radius:4px; font-size:11px; }
+    a { color:#58a6ff; }
+    .hidden { display:none !important; }
+    .panel { border:1px solid #30363d; background:#1c2128; border-radius:6px; padding:10px; }
+    .panel h3 { margin:0 0 6px; font-size:13px; letter-spacing:.05em; text-transform:uppercase; opacity:.75; }
+    .quick-buttons { display:flex; flex-wrap:wrap; gap:6px; }
+    .quick-buttons button { background:#30363d; color:#e6e6e6; border:1px solid #3a4149; padding:6px 10px; font-size:12px; border-radius:4px; cursor:pointer; }
+    .quick-buttons button:hover { background:#3a424c; }
+    .inline-field { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+    .inline-field label { font-size:11px; opacity:.7; }
+    select, input[type=number], input[type=range] { background:#0d1117; color:#e6e6e6; border:1px solid #30363d; border-radius:4px; padding:4px 6px; font-size:12px; }
+    #prompt-container { max-height:140px; overflow:auto; font-size:11px; line-height:1.35; white-space:pre-wrap; background:#0d1117; padding:8px; border:1px solid #30363d; border-radius:4px; }
+    .actions-row { display:flex; gap:6px; flex-wrap:wrap; }
+    .btn-small { background:#238636; color:#fff; border:none; padding:4px 10px; font-size:11px; border-radius:4px; cursor:pointer; font-weight:600; }
+    .btn-small.secondary { background:#30363d; font-weight:500; }
+    .tag { background:#30363d; padding:2px 6px; border-radius:4px; font-size:11px; }
+    .collapse-toggle { cursor:pointer; font-size:11px; color:#58a6ff; }
+    .metrics { font-size:11px; opacity:.65; margin-left:auto; }
+    #project-log-list { max-height:160px; overflow:auto; font-size:11px; line-height:1.35; background:#0d1117; border:1px solid #30363d; border-radius:4px; padding:6px; }
+    .log-entry { border-bottom:1px solid #262c33; padding:4px 0; }
+    .log-entry:last-child { border-bottom:none; }
+    .log-entry .ts { color:#58a6ff; font-family:monospace; font-size:10px; display:block; }
+    .log-entry .cat { background:#30363d; padding:2px 4px; border-radius:3px; margin-right:4px; font-size:10px; }
+    #log-add-form textarea { width:100%; background:#0d1117; color:#e6e6e6; border:1px solid #30363d; border-radius:4px; padding:4px 6px; font-size:11px; resize:vertical; min-height:50px; }
+    #log-add-form select { width:100%; margin-top:4px; }
+    .log-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+    .log-actions button { background:#30363d; border:1px solid #3a4149; color:#e6e6e6; padding:4px 8px; font-size:11px; border-radius:4px; cursor:pointer; }
+    .log-actions button.primary { background:#238636; border-color:#238636; }
+    .log-actions button.danger { background:#8e2624; border-color:#a13330; }
+    .truncate-note { font-size:10px; opacity:.55; margin-top:4px; }
+    #console-panel-log { max-height:180px; overflow:auto; background:#0d1117; border:1px solid #30363d; border-radius:4px; padding:6px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; line-height:1.3; white-space:pre-wrap; }
+    .console-line { border-bottom:1px solid #1f242b; padding:2px 0; }
+    .console-line:last-child { border-bottom:none; }
+    .c-ts { color:#58a6ff; margin-right:4px; }
+    .c-type { color:#e3b341; margin-right:4px; }
+    .c-type.MODEL { color:#3fb950; }
+    .c-type.SEND { color:#58a6ff; }
+    .c-type.RESPONSE { color:#a371f7; }
+    .c-type.ERROR { color:#f85149; }
+    .c-type.TOOL { color:#f0883e; }
+  /* Device card wrapper (shared module handles internal styles) */
+  #device-card-wrapper.collapsed #device-card-container { display:none; }
+  #device-card-wrapper h3 { display:flex; justify-content:space-between; align-items:center; }
+  </style>
+</head>
+<body>
+<!-- Header replaced by shared-nav.js injection -->
+<main>
+  <aside class="sidebar">
+    <div>
+      <h2>Tools</h2>
+      <div class="tool-list" id="tool-list"></div>
+    </div>
+    <div class="panel" id="model-panel">
+      <h3>Model & Parameters</h3>
+      <div class="inline-field"><label for="modelSelect">Model</label>
+        <select id="modelSelect">
+          <option value="gpt-4.1">gpt-4.1</option>
+          <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+          <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+          <option value="gpt-4o">gpt-4o</option>
+          <option value="gpt-5" data-experimental="1">gpt-5 (exp)</option>
+        </select>
+      </div>
+      <div class="actions-row" style="margin-bottom:4px;">
+        <button class="btn-small secondary" id="refreshModelsBtn" type="button">Refresh Models</button>
+      </div>
+      <div class="inline-field" style="align-items:flex-start; flex-direction:column;">
+        <label for="temperatureRange">Temperature <span id="tempVal" class="tag">0.7</span></label>
+        <input id="temperatureRange" type="range" min="0" max="2" step="0.1" value="0.7" style="width:100%;">
+      </div>
+      <div class="inline-field">
+        <label for="maxTokensInput">Max Tokens</label>
+        <input id="maxTokensInput" type="number" min="128" max="32768" value="4096" style="width:100%;">
+      </div>
+      <div class="inline-field">
+        <label><input id="structuredChk" type="checkbox" checked> Struct Out</label>
+        <label><input id="toolCallChk" type="checkbox" checked> Tools</label>
+        <label><input id="reasonChk" type="checkbox"> Reason</label>
+      </div>
+    </div>
+    <div>
+      <h2>Session</h2>
+      <div class="status-box" id="session-status">Idle</div>
+    </div>
+    <div class="panel" id="prompt-panel">
+      <h3>System Prompt <span class="collapse-toggle" id="promptToggle" data-state="expanded">(collapse)</span></h3>
+      <div id="prompt-container"></div>
+      <div class="actions-row" style="margin-top:6px;">
+        <button class="btn-small" id="copyPromptBtn" type="button">Copy</button>
+        <button class="btn-small secondary" id="expandPromptBtn" type="button">Expand</button>
+        <button class="btn-small secondary" id="resetPromptBtn" type="button">Reset</button>
+      </div>
+    </div>
+    <div class="panel" id="agents-panel">
+      <h3>Agents <span class="collapse-toggle" id="agentsToggle" data-state="expanded">(collapse)</span></h3>
+      <div id="agents-content">
+        <div class="inline-field" style="width:100%;">
+          <label for="agentSelect" style="flex:0 0 42px;">Use</label>
+          <select id="agentSelect" style="flex:1 1 auto;"></select>
+        </div>
+        <div class="actions-row" style="margin-top:4px;">
+          <button class="btn-small secondary" id="agentNewBtn" type="button">New</button>
+          <button class="btn-small secondary" id="agentSaveBtn" type="button">Save</button>
+          <button class="btn-small secondary" id="agentDeleteBtn" type="button">Delete</button>
+          <button class="btn-small secondary" id="agentCloneBtn" type="button">Clone</button>
+        </div>
+        <div style="margin-top:6px;">
+          <label style="font-size:11px; opacity:.7;">Agent Prompt Override</label>
+          <textarea id="agentPromptOverride" style="width:100%; min-height:80px; resize:vertical; background:#0d1117; color:#e6e6e6; border:1px solid #30363d; border-radius:4px; padding:6px; font-size:11px;" placeholder="Optional custom system prompt for this agent (leave blank to inherit global system prompt)."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="panel" id="quick-panel">
+      <h3>Quick Actions</h3>
+      <div class="quick-buttons" id="quick-buttons">
+        <button data-msg="build firmware fast for OutdoorAP">Fast Build</button>
+        <button data-msg="flash firmware on COM10 and open monitor">Flash+Monitor</button>
+        <button data-msg="list serial ports">List Ports</button>
+        <button data-msg="optimize web assets (minify + gzip)">Optimize Assets</button>
+        <button data-msg="scan wifi networks and recommend best channel">WiFi Scan</button>
+        <button data-msg="run full system diagnostic and summarize P1 issues">Full Diagnostic</button>
+        <button data-msg="generate structured JSON file inventory">File Inventory</button>
+        <button data-msg="analyze memory usage and suggest optimizations">Memory Analyze</button>
+      </div>
+    </div>
+    <div class="panel" id="device-card-wrapper">
+      <h3>Device Comm <span class="collapse-toggle" id="deviceCardToggle" data-state="expanded">(collapse)</span></h3>
+      <div id="device-card-container"></div>
+    </div>
+    <div class="panel" id="project-log-panel">
+      <h3>Project Log <span class="collapse-toggle" id="logToggle" data-state="expanded">(collapse)</span></h3>
+      <div id="project-log-list"></div>
+      <form id="log-add-form" style="margin-top:6px;">
+        <select id="logCategory">
+          <option value="INFO">INFO</option>
+          <option value="BUILD">BUILD</option>
+          <option value="FLASH">FLASH</option>
+          <option value="DIAG">DIAG</option>
+          <option value="NET">NET</option>
+          <option value="OPTIM">OPTIM</option>
+          <option value="TASK">TASK</option>
+          <option value="RISK">RISK</option>
+        </select>
+        <textarea id="logMessage" placeholder="Add log entry (what changed, why, results)..." required></textarea>
+        <div class="log-actions">
+          <button type="submit" class="primary">Add Entry</button>
+          <button type="button" id="exportLogBtn">Export JSON</button>
+          <button type="button" id="copyLogBtn">Copy</button>
+          <button type="button" id="clearLogBtn" class="danger">Clear</button>
+          <button type="button" id="trimLogBtn">Trim 200</button>
+        </div>
+        <div class="truncate-note" id="logMeta"></div>
+      </form>
+    </div>
+    <div class="panel" id="console-panel">
+      <h3>Console Output <span class="collapse-toggle" id="consoleToggle" data-state="expanded">(collapse)</span></h3>
+      <div id="console-panel-log"></div>
+      <div class="actions-row" style="margin-top:6px;">
+        <button class="btn-small secondary" id="clearConsoleBtn" type="button">Clear</button>
+        <button class="btn-small secondary" id="copyConsoleBtn" type="button">Copy</button>
+      </div>
+    </div>
+    <div>
+      <h2>Hints</h2>
+      <div class="status-box">
+        <strong>Examples:</strong><br>
+        "build firmware fast"<br>
+        "list serial ports"<br>
+        "flash firmware on COM10 then open monitor"<br>
+        "optimize assets (minify + gzip)"
+      </div>
+    </div>
+    <div class="mini">Mock mode echoes only. Set OPENAI_API_KEY to enable real function calling.</div>
+  </aside>
+  <section class="chat-pane">
+    <div id="transcript" aria-live="polite"></div>
+    <form id="chat-form">
+      <textarea id="chat-input" placeholder="Type a request…" required></textarea>
+      <button id="send-btn" type="submit">Send</button>
+    </form>
+  </section>
+</main>
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+  const transcript = $('#transcript');
+  const chatForm = $('#chat-form');
+  const chatInput = $('#chat-input');
+  const sendBtn = $('#send-btn');
+  const modelIndicator = $('#model-indicator');
+  const modeIndicator = $('#mode-indicator');
+  const toolListDiv = $('#tool-list');
+  const sessionStatus = $('#session-status');
+  const sessionId = 'ui-' + Math.random().toString(36).slice(2,9);
+  const promptContainer = document.getElementById('prompt-container');
+  const copyPromptBtn = document.getElementById('copyPromptBtn');
+  const resetPromptBtn = document.getElementById('resetPromptBtn');
+  const expandPromptBtn = document.getElementById('expandPromptBtn');
+  const promptToggle = document.getElementById('promptToggle');
+  const quickButtonsWrap = document.getElementById('quick-buttons');
+  const modelSelect = document.getElementById('modelSelect');
+  const temperatureRange = document.getElementById('temperatureRange');
+  const tempVal = document.getElementById('tempVal');
+  const maxTokensInput = document.getElementById('maxTokensInput');
+  const structuredChk = document.getElementById('structuredChk');
+  const toolCallChk = document.getElementById('toolCallChk');
+  const reasonChk = document.getElementById('reasonChk');
+  // Device card wrapper elements (shared module provides internal UI)
+  const deviceCardToggle = document.getElementById('deviceCardToggle');
+  // Agents panel elements
+  const agentsToggle = document.getElementById('agentsToggle');
+  const agentSelect = document.getElementById('agentSelect');
+  const agentNewBtn = document.getElementById('agentNewBtn');
+  const agentSaveBtn = document.getElementById('agentSaveBtn');
+  const agentDeleteBtn = document.getElementById('agentDeleteBtn');
+  const agentCloneBtn = document.getElementById('agentCloneBtn');
+  const agentPromptOverride = document.getElementById('agentPromptOverride');
+  // Model refresh & console elements
+  const refreshModelsBtn = document.getElementById('refreshModelsBtn');
+  const consoleLogDiv = document.getElementById('console-panel-log');
+  const consoleToggle = document.getElementById('consoleToggle');
+  const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+  const copyConsoleBtn = document.getElementById('copyConsoleBtn');
+  // Project Log elements
+  const logList = document.getElementById('project-log-list');
+  const logForm = document.getElementById('log-add-form');
+  const logCategory = document.getElementById('logCategory');
+  const logMessage = document.getElementById('logMessage');
+  const exportLogBtn = document.getElementById('exportLogBtn');
+  const copyLogBtn = document.getElementById('copyLogBtn');
+  const clearLogBtn = document.getElementById('clearLogBtn');
+  const trimLogBtn = document.getElementById('trimLogBtn');
+  const logToggle = document.getElementById('logToggle');
+  const logMeta = document.getElementById('logMeta');
+
+  // Project Log state & helpers
+  const LOG_KEY = 'oepl_project_log_v1';
+  let projectLog = [];
+  function loadLog(){
+    try { projectLog = JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); } catch(e){ projectLog = []; }
+    renderLog();
+  }
+  function saveLog(){
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(projectLog)); } catch(e){ console.warn('Log save failed', e); }
+  }
+  function isoNow(){ return new Date().toISOString(); }
+  function addLogEntry(cat, msg, meta={}){
+    const entry = { ts: isoNow(), category: cat, message: msg, meta };
+    projectLog.push(entry);
+    if(projectLog.length > 5000){ projectLog = projectLog.slice(-5000); }
+    saveLog();
+    renderLog();
+  }
+  function renderLog(){
+    logList.innerHTML = projectLog.slice(-500).map(e => `<div class="log-entry"><span class="ts">${e.ts}</span><span class="cat">${e.category}</span>${escapeHtml(e.message)}</div>`).join('');
+    logMeta.textContent = `${projectLog.length} entries stored (showing last ${Math.min(500, projectLog.length)})`;
+  }
+  function escapeHtml(str){ return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  loadLog();
+
+  logForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const msg = logMessage.value.trim();
+    if(!msg) return;
+    addLogEntry(logCategory.value, msg, { user: true });
+    logMessage.value='';
+  });
+  exportLogBtn.addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(projectLog, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'project-log.json'; a.click();
+    URL.revokeObjectURL(url);
+  });
+  copyLogBtn.addEventListener('click', ()=>{
+    navigator.clipboard.writeText(JSON.stringify(projectLog, null, 2)).then(()=>{
+      copyLogBtn.textContent='Copied!'; setTimeout(()=>copyLogBtn.textContent='Copy', 1200);
+    });
+  });
+  clearLogBtn.addEventListener('click', ()=>{
+    if(confirm('Clear entire project log? This cannot be undone.')){ projectLog = []; saveLog(); renderLog(); }
+  });
+  trimLogBtn.addEventListener('click', ()=>{
+    if(projectLog.length > 200){ projectLog = projectLog.slice(-200); saveLog(); renderLog(); }
+  });
+  logToggle.addEventListener('click', ()=>{
+    const state = logToggle.getAttribute('data-state');
+    if(state === 'expanded'){
+      logList.classList.add('hidden');
+      logForm.classList.add('hidden');
+      logToggle.textContent='(expand)';
+      logToggle.setAttribute('data-state','collapsed');
+    } else {
+      logList.classList.remove('hidden');
+      logForm.classList.remove('hidden');
+      logToggle.textContent='(collapse)';
+      logToggle.setAttribute('data-state','expanded');
+    }
+  });
+
+  // Console output system
+  const CONSOLE_MAX = 600;
+  function consoleOut(type, message, obj){
+    const line = document.createElement('div');
+    line.className='console-line';
+    const ts = new Date().toISOString().split('T')[1].replace('Z','');
+    const payload = typeof message === 'string' ? message : JSON.stringify(message);
+    let objStr = '';
+    if(obj !== undefined){
+      try { objStr = ' '+JSON.stringify(obj); } catch(e){ objStr = ' [unserializable]'; }
+    }
+    line.innerHTML = `<span class="c-ts">${ts}</span><span class="c-type ${type}">${type}</span>${escapeHtml(payload)}${escapeHtml(objStr)}`;
+    consoleLogDiv.appendChild(line);
+    while(consoleLogDiv.childElementCount > CONSOLE_MAX){ consoleLogDiv.removeChild(consoleLogDiv.firstChild); }
+    consoleLogDiv.scrollTop = consoleLogDiv.scrollHeight;
+  }
+  clearConsoleBtn.addEventListener('click', ()=>{ consoleLogDiv.innerHTML=''; });
+  copyConsoleBtn.addEventListener('click', ()=>{
+    const text = Array.from(consoleLogDiv.children).map(li=>li.textContent).join('\n');
+    navigator.clipboard.writeText(text).then(()=>{ copyConsoleBtn.textContent='Copied!'; setTimeout(()=>copyConsoleBtn.textContent='Copy', 1200); });
+  });
+  consoleToggle.addEventListener('click', ()=>{
+    const state = consoleToggle.getAttribute('data-state');
+    if(state==='expanded'){
+      consoleLogDiv.classList.add('hidden');
+      clearConsoleBtn.classList.add('hidden');
+      copyConsoleBtn.classList.add('hidden');
+      consoleToggle.textContent='(expand)';
+      consoleToggle.setAttribute('data-state','collapsed');
+    } else {
+      consoleLogDiv.classList.remove('hidden');
+      clearConsoleBtn.classList.remove('hidden');
+      copyConsoleBtn.classList.remove('hidden');
+      consoleToggle.textContent='(collapse)';
+      consoleToggle.setAttribute('data-state','expanded');
+    }
+  });
+
+  // Agents feature implementation
+  const AGENTS_KEY = 'oepl_agents_v1';
+  const ACTIVE_AGENT_KEY = 'oepl_active_agent';
+  let agents = {};
+  function loadAgents(){
+    try { agents = JSON.parse(localStorage.getItem(AGENTS_KEY)||'{}'); } catch(e){ agents={}; }
+    if(Object.keys(agents).length === 0){
+      // seed with a default
+      agents = {
+        'Default': {
+          model: localStorage.getItem('oepl_selected_model') || 'gpt-4.1',
+          temperature: parseFloat(temperatureRange.value),
+          max_tokens: parseInt(maxTokensInput.value)||4096,
+          structured: structuredChk.checked,
+            tool_calling: toolCallChk.checked,
+          reasoning: reasonChk.checked,
+          prompt_override: ''
+        }
+      };
+      persistAgents();
+    }
+    renderAgentSelect();
+    const active = localStorage.getItem(ACTIVE_AGENT_KEY) || Object.keys(agents)[0];
+    if(active && agents[active]){ agentSelect.value = active; applyAgent(active); }
+  }
+  function persistAgents(){ try { localStorage.setItem(AGENTS_KEY, JSON.stringify(agents)); } catch(e){} }
+  function renderAgentSelect(){
+    agentSelect.innerHTML = Object.keys(agents).sort().map(name => `<option value="${name}">${name}</option>`).join('');
+  }
+  function applyAgent(name){
+    const a = agents[name]; if(!a) return;
+    modelSelect.value = a.model;
+    temperatureRange.value = a.temperature; tempVal.textContent = a.temperature;
+    maxTokensInput.value = a.max_tokens;
+    structuredChk.checked = !!a.structured;
+    toolCallChk.checked = !!a.tool_calling;
+    reasonChk.checked = !!a.reasoning;
+    agentPromptOverride.value = a.prompt_override || '';
+    customPromptOverride = a.prompt_override || null;
+    loadPrompt();
+    persistSelectedModel();
+    localStorage.setItem(ACTIVE_AGENT_KEY, name);
+    addLogEntry('INFO', `Switched agent to ${name}`);
+    consoleOut('MODEL','Applied agent '+name, a);
+  }
+  function collectCurrentSettings(){
+    return {
+      model: modelSelect.value,
+      temperature: parseFloat(temperatureRange.value),
+      max_tokens: parseInt(maxTokensInput.value)||4096,
+      structured: structuredChk.checked,
+      tool_calling: toolCallChk.checked,
+      reasoning: reasonChk.checked,
+      prompt_override: agentPromptOverride.value.trim()
+    };
+  }
+  agentSelect.addEventListener('change', ()=> applyAgent(agentSelect.value));
+  agentNewBtn.addEventListener('click', ()=>{
+    const base = 'Agent';
+    let n=1; let name;
+    while(true){ name = base + n; if(!agents[name]) break; n++; }
+    agents[name] = collectCurrentSettings();
+    persistAgents();
+    renderAgentSelect();
+    agentSelect.value = name;
+    applyAgent(name);
+  });
+  agentCloneBtn.addEventListener('click', ()=>{
+    const current = agentSelect.value; if(!current) return;
+    let n=1; let cloneName;
+    while(true){ cloneName = current + '_copy' + (n>1? n:''); if(!agents[cloneName]) break; n++; }
+    agents[cloneName] = { ...agents[current] };
+    persistAgents(); renderAgentSelect(); agentSelect.value = cloneName; applyAgent(cloneName);
+  });
+  agentSaveBtn.addEventListener('click', ()=>{
+    const name = agentSelect.value || 'Unnamed';
+    agents[name] = collectCurrentSettings();
+    persistAgents();
+    addLogEntry('INFO', `Saved agent ${name}`);
+    consoleOut('MODEL','Saved agent '+name, agents[name]);
+  });
+  agentDeleteBtn.addEventListener('click', ()=>{
+    const name = agentSelect.value;
+    if(!name) return;
+    if(!confirm('Delete agent '+name+'?')) return;
+    delete agents[name];
+    persistAgents();
+    renderAgentSelect();
+    const fallback = Object.keys(agents)[0];
+    if(fallback){ agentSelect.value = fallback; applyAgent(fallback); }
+  });
+  // Auto-save changes to current agent (except prompt which has explicit save via Save button?) -> we include prompt on save only
+  [modelSelect, temperatureRange, maxTokensInput, structuredChk, toolCallChk, reasonChk].forEach(ctrl => {
+    ctrl.addEventListener('change', ()=>{
+      const name = agentSelect.value; if(!name || !agents[name]) return;
+      const prevOverride = agents[name].prompt_override; // keep existing override
+      agents[name] = { ...collectCurrentSettings(), prompt_override: prevOverride };
+      persistAgents();
+    });
+  });
+  agentPromptOverride.addEventListener('change', ()=>{ /* not auto saved until Save */ });
+  agentsToggle.addEventListener('click', ()=>{
+    const state = agentsToggle.getAttribute('data-state');
+    const container = document.getElementById('agents-content');
+    if(state==='expanded'){
+      container.classList.add('hidden');
+      agentsToggle.textContent='(expand)';
+      agentsToggle.setAttribute('data-state','collapsed');
+    } else {
+      container.classList.remove('hidden');
+      agentsToggle.textContent='(collapse)';
+      agentsToggle.setAttribute('data-state','expanded');
+    }
+  });
+  deviceCardToggle.addEventListener('click', ()=>{
+    const wrapper = document.getElementById('device-card-wrapper');
+    const state = deviceCardToggle.getAttribute('data-state');
+    if(state==='expanded'){
+      wrapper.classList.add('collapsed');
+      deviceCardToggle.textContent='(expand)';
+      deviceCardToggle.setAttribute('data-state','collapsed');
+    } else {
+      wrapper.classList.remove('collapsed');
+      deviceCardToggle.textContent='(collapse)';
+      deviceCardToggle.setAttribute('data-state','expanded');
+    }
+  });
+
+  // (Legacy inline device panel removed – using shared device-card.js)
+  initDeviceCard({ containerId: 'device-card-container' });
+
+  let customPromptOverride = null;
+  function loadPrompt(){
+    const base = window.OEPL_SYSTEM_PROMPT || '(system prompt not loaded)';
+    promptContainer.textContent = (customPromptOverride || base).split('\n').slice(0,60).join('\n');
+  }
+  loadPrompt();
+
+  copyPromptBtn.addEventListener('click', ()=>{
+    const full = customPromptOverride || window.OEPL_SYSTEM_PROMPT || '';
+    navigator.clipboard.writeText(full).then(()=>{
+      copyPromptBtn.textContent = 'Copied!';
+      setTimeout(()=> copyPromptBtn.textContent='Copy', 1200);
+    });
+  });
+  resetPromptBtn.addEventListener('click', ()=>{ customPromptOverride = null; loadPrompt(); });
+  expandPromptBtn.addEventListener('click', ()=>{
+    const full = (customPromptOverride || window.OEPL_SYSTEM_PROMPT || '');
+    const currentlyShort = promptContainer.textContent.length < full.length;
+    promptContainer.textContent = currentlyShort ? full : full.split('\n').slice(0,60).join('\n');
+    expandPromptBtn.textContent = currentlyShort ? 'Collapse' : 'Expand';
+  });
+  promptToggle.addEventListener('click', ()=>{
+    const state = promptToggle.getAttribute('data-state');
+    if(state === 'expanded'){
+      document.getElementById('prompt-container').classList.add('hidden');
+      expandPromptBtn.classList.add('hidden');
+      copyPromptBtn.classList.add('hidden');
+      resetPromptBtn.classList.add('hidden');
+      promptToggle.textContent = '(expand)';
+      promptToggle.setAttribute('data-state','collapsed');
+    } else {
+      document.getElementById('prompt-container').classList.remove('hidden');
+      expandPromptBtn.classList.remove('hidden');
+      copyPromptBtn.classList.remove('hidden');
+      resetPromptBtn.classList.remove('hidden');
+      promptToggle.textContent = '(collapse)';
+      promptToggle.setAttribute('data-state','expanded');
+    }
+  });
+
+  quickButtonsWrap.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-msg]');
+    if(!btn) return;
+    chatInput.value = btn.getAttribute('data-msg');
+    chatInput.focus();
+  });
+
+  temperatureRange.addEventListener('input', ()=>{ tempVal.textContent = temperatureRange.value; });
+
+  let toolsCache = null;
+  let mockMode = true;
+
+  async function fetchModelInfo(){
+    try {
+      const r = await fetch('/api/ai/tool-model');
+      if(!r.ok) throw new Error('model http '+r.status);
+      const j = await r.json();
+      modelIndicator.textContent = 'Model: ' + j.model;
+      mockMode = !!j.mock;
+      modeIndicator.textContent = mockMode ? 'MOCK' : 'LIVE';
+      modeIndicator.style.background = mockMode ? '#9e6a03' : '#238636';
+      consoleOut('MODEL','Current tool-model endpoint returned', j);
+    } catch(e){
+      modelIndicator.textContent = 'Model: (error)';
+      console.error(e);
+      consoleOut('ERROR','fetchModelInfo error', { message: e.message });
+    }
+  }
+
+  const MODEL_LIST_KEY = 'oepl_model_list_cache_v1';
+  const SELECTED_MODEL_KEY = 'oepl_selected_model';
+  function persistSelectedModel(){ try { localStorage.setItem(SELECTED_MODEL_KEY, modelSelect.value); } catch(_){} }
+  function restoreSelectedModel(){ const v = localStorage.getItem(SELECTED_MODEL_KEY); if(v){ const opt = [...modelSelect.options].find(o=>o.value===v); if(opt){ modelSelect.value = v; }} }
+  modelSelect.addEventListener('change', persistSelectedModel);
+
+  async function fetchAvailableModels(force=false){
+    if(!force){ // attempt cache
+      try { const cached = JSON.parse(localStorage.getItem(MODEL_LIST_KEY)||'null'); if(cached && (Date.now()-cached.ts)< 10*60*1000){ applyModelList(cached.models); consoleOut('MODEL','Using cached model list'); return; } } catch(_){}
+    }
+    consoleOut('MODEL','Fetching models list');
+    let models = [];
+    try {
+      const r = await fetch('/api/ai/models'); // backend proxy expected
+      if(r.ok){
+        const j = await r.json();
+        if(Array.isArray(j.models)) models = j.models.map(m=> (typeof m === 'string'? m : m.id)).filter(Boolean);
+        consoleOut('MODEL','Fetched models', { count: models.length });
+      } else {
+        consoleOut('ERROR','/api/ai/models status '+r.status);
+      }
+    } catch(e){
+      consoleOut('ERROR','Model fetch failed, falling back', { message: e.message });
+    }
+    if(models.length === 0){ // fallback baseline list
+      models = ['gpt-5','gpt-4.1','gpt-4.1-mini','gpt-4.1-nano','gpt-4o'];
+    } else if(!models.includes('gpt-5')){
+      models.unshift('gpt-5'); // ensure gpt-5 placeholder at top
+    }
+    try { localStorage.setItem(MODEL_LIST_KEY, JSON.stringify({ ts: Date.now(), models })); } catch(_){}
+    applyModelList(models);
+  }
+  function applyModelList(list){
+    const current = modelSelect.value;
+    modelSelect.innerHTML = '';
+    list.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m === 'gpt-5' ? 'gpt-5 (exp)' : m; if(m==='gpt-5') opt.dataset.experimental='1';
+      modelSelect.appendChild(opt);
+    });
+    if(list.includes(current)) modelSelect.value = current; else modelSelect.value = list[0];
+    persistSelectedModel();
+  }
+  refreshModelsBtn.addEventListener('click', ()=> fetchAvailableModels(true));
+
+  async function fetchTools(){
+    // Tools definitions available only server-side, so we craft a static mirror here for display
+    // If endpoint for schema exposure added later, replace this with fetch.
+    const staticTools = [
+      'build_firmware(environment, fast, clean)',
+      'flash_firmware(environment, port, baud, monitor)',
+      'upload_filesystem(environment, port, baud, skipBuild)',
+      'list_serial_ports(refresh)',
+      'optimize_www_assets(minify, gzip)',
+      'query_device_status(identifier, detail)',
+      'run_emulation(environment, headless)'
+    ];
+    toolsCache = staticTools;
+    toolListDiv.innerHTML = staticTools.map(t => '<code>'+t+'</code>').join('');
+  }
+
+  function addMessage(role, text, extra){
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = role === 'user' ? 'You' : (role === 'assistant' ? 'Assistant' : role);
+    div.appendChild(meta);
+    if(text){
+      const p = document.createElement('div');
+      p.textContent = text;
+      div.appendChild(p);
+    }
+    if(extra && extra.toolCalls){
+      extra.toolCalls.forEach(tc => {
+        const tDiv = document.createElement('div');
+        tDiv.className = 'tool-call';
+        tDiv.textContent = 'Tool call: '+tc.name+' '+JSON.stringify(tc.arguments);
+        div.appendChild(tDiv);
+      });
+    }
+    if(extra && extra.toolResults){
+      extra.toolResults.forEach(tr => {
+        const rDiv = document.createElement('div');
+        rDiv.className = 'tool-result';
+        rDiv.textContent = 'Result: '+JSON.stringify(tr.result, null, 2);
+        div.appendChild(rDiv);
+      });
+    }
+    transcript.appendChild(div);
+    transcript.scrollTop = transcript.scrollHeight;
+    // Auto log user queries and assistant responses (compact)
+    if(role === 'user'){ addLogEntry('TASK', text.slice(0,400)); }
+    else if(role === 'assistant'){ addLogEntry('INFO', (text||'').slice(0,400)); }
+  }
+
+  function buildAugmentedUserMessage(raw){
+    const basePrompt = customPromptOverride || window.OEPL_SYSTEM_PROMPT || '';
+    const meta = {
+      model: modelSelect.value,
+      temperature: parseFloat(temperatureRange.value),
+      max_tokens: parseInt(maxTokensInput.value)||4096,
+      structured: structuredChk.checked,
+      tool_calling: toolCallChk.checked,
+      reasoning: reasonChk.checked
+    };
+    // Prefer shared device context if module loaded
+  const deviceCtx = (window.getSharedDeviceContext ? window.getSharedDeviceContext() : {});
+    return `[[SYSTEM_CONTEXT_EMBEDDED]]\n${basePrompt}\n[[GENERATION_PARAMETERS]]\n${JSON.stringify(meta)}\n[[DEVICE_CONTEXT]]\n${JSON.stringify(deviceCtx)}\n[[USER_REQUEST]]\n${raw}`;
+  }
+
+  async function sendMessage(msg){
+    sessionStatus.textContent = 'Sending…';
+    sessionStatus.className = 'status-box warn';
+    consoleOut('SEND','User message', { text: msg });
+    try {
+      const r = await fetch('/api/ai/chat-tool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: buildAugmentedUserMessage(msg), sessionId })
+      });
+      const j = await r.json();
+      if(!j.success){
+        addMessage('assistant', 'Error: '+(j.error||'unknown'));
+        sessionStatus.textContent = 'Error'; sessionStatus.className = 'status-box bad';
+        consoleOut('ERROR','Assistant error response', j);
+      } else {
+        addMessage('assistant', j.responseText || '(no text)', { toolCalls: j.toolCalls, toolResults: j.toolResults });
+        sessionStatus.textContent = 'Idle'; sessionStatus.className = 'status-box good';
+        consoleOut('RESPONSE','Assistant response', { text: j.responseText, toolCalls: j.toolCalls, toolResults: j.toolResults });
+        if(j.toolCalls){ j.toolCalls.forEach(tc=> consoleOut('TOOL','Tool invoked', tc)); }
+        if(j.toolResults){ j.toolResults.forEach(tr=> consoleOut('TOOL','Tool result', tr)); }
+      }
+    } catch(e){
+      addMessage('assistant', 'Network error: '+e.message);
+      sessionStatus.textContent = 'Network Error'; sessionStatus.className = 'status-box bad';
+      consoleOut('ERROR','Network error during sendMessage', { message: e.message });
+    }
+  }
+
+  chatForm.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const msg = chatInput.value.trim();
+    if(!msg) return;
+    addMessage('user', msg);
+    chatInput.value='';
+    sendMessage(msg);
+  });
+
+  // Init
+  fetchModelInfo();
+  fetchTools();
+  fetchAvailableModels();
+  restoreSelectedModel();
+  loadAgents();
+})();
+</script>
+</body>
+</html>

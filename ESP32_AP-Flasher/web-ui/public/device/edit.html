@@ -4,6 +4,7 @@
 <head>
 	<title>ESP Editor</title>
 	<link rel="icon" href="data:,">
+    <script src="shared-nav.js" defer></script>
 	<style type="text/css" media="screen">
 		.cm {
 			z-index: 300;
@@ -392,7 +393,7 @@
 			function loadPreview(path) {
 				ge("button").style.display = 'none';
 				ge("savefile").style.display = 'none';
-				
+
 				var edfname = ge("editor-filename");
 
 				var filename = path;
@@ -445,7 +446,7 @@
 
 								[canvas.width, canvas.height] = [tagTypes[hwtype].width, tagTypes[hwtype].height] || [0, 0];
 								if (tagTypes[hwtype].rotatebuffer%2) [canvas.width, canvas.height] = [canvas.height, canvas.width];
-								if (tagTypes[hwtype].rotatebuffer>=2) canvas.style.transform='rotate(180deg)'; 
+								if (tagTypes[hwtype].rotatebuffer>=2) canvas.style.transform='rotate(180deg)';
 								const ctx = canvas.getContext('2d');
 								const imageData = ctx.createImageData(canvas.width, canvas.height);
 								if (data.length == 0) canvas.style.display = 'none';
@@ -505,7 +506,7 @@
 							.catch(error => {
 								console.log(error);
 							});
-						
+
 					} else {
 						preview.innerHTML = `<p class=\"tvu\">No current tag found with this mac. You can safely delete this file.</p>`;
 					}
@@ -874,6 +875,7 @@
 </head>
 
 <body onload="onBodyLoad();">
+	<!-- Shared navigation injected by shared-nav.js -->
 	<div id="loader" class="loader"></div>
 	<div id="uploader"></div>
 	<div id="tree"></div>

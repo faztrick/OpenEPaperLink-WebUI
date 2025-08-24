@@ -42,6 +42,10 @@
 		<span class="material-symbols-outlined" style="font-size: 14px;">smart_toy</span>
 		AI Assistant
 	</a>
+	<a href="ai-tools.html" class="menu-btn" data-page="ai-tools">
+		<span class="material-symbols-outlined" style="font-size: 14px;">build_circle</span>
+		AI Tools
+	</a>
 	<a href="updates.html" class="menu-btn" data-page="updates">
 		<span class="material-symbols-outlined" style="font-size: 14px;">system_update</span>
 		Updates
@@ -64,29 +68,29 @@
 		try {
 			const currentPage = window.location.pathname.split('/').pop().replace('.html', '') || 'index';
 			const menuItems = document.querySelectorAll('#universal-menu .menu-btn');
-			
+
 			menuItems.forEach(item => {
 				item.classList.remove('active');
-				const itemPage = item.getAttribute('data-page') || 
+				const itemPage = item.getAttribute('data-page') ||
 								item.href.split('/').pop().replace('.html', '');
 				if (itemPage === currentPage) {
 					item.classList.add('active');
 				}
 			});
-			
+
 			console.log(`Menu: Set active item for page '${currentPage}'`);
 		} catch (error) {
 			console.warn('Menu: Error setting active item:', error);
 		}
 	}
-	
+
 	// Initialize when DOM is loaded
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', setActiveMenuItem);
 	} else {
 		setActiveMenuItem();
 	}
-	
+
 	// Export function for external use
 	window.setActiveMenuItem = setActiveMenuItem;
 })();

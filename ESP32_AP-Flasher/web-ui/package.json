@@ -8,19 +8,20 @@
         "dev": "nodemon server.js"
     },
     "dependencies": {
-        "express": "^4.18.2",
-        "socket.io": "^4.7.2",
-        "cors": "^2.8.5",
-        "multer": "^2.0.2",
-        "openai": "^4.52.7",
         "@anthropic-ai/sdk": "^0.58.0",
         "axios": "^1.7.2",
         "cheerio": "^1.0.0-rc.12",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.18.2",
         "marked": "^12.0.2",
-        "ssh2": "^1.15.0",
-        "ssh2-sftp-client": "^10.0.3",
+        "multer": "^2.0.2",
         "node-ssh": "^13.1.0",
-        "serialport": "^12.0.0"
+        "openai": "^4.52.7",
+        "serialport": "^12.0.0",
+        "socket.io": "^4.7.2",
+        "ssh2": "^1.15.0",
+        "ssh2-sftp-client": "^10.0.3"
     },
     "devDependencies": {
         "nodemon": "^3.0.1"
