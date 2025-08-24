@@ -18,7 +18,25 @@
     "string": "cpp",
     "string_view": "cpp",
     "valarray": "cpp",
-    "map": "cpp"
+    "map": "cpp",
+    "compare": "cpp",
+    "filesystem": "cpp",
+    "functional": "cpp",
+    "future": "cpp",
+    "memory": "cpp",
+    "ratio": "cpp",
+    "tuple": "cpp",
+    "type_traits": "cpp",
+    "utility": "cpp",
+    "variant": "cpp",
+    "xmemory": "cpp",
+    "xtr1common": "cpp",
+    "__hash_table": "cpp",
+    "__tree": "cpp",
+    "complex": "cpp",
+    "forward_list": "cpp",
+    "limits": "cpp",
+    "*.inc": "cpp"
   },
   "chat.mcp.serverSampling": {
     "OpenEPaperLink-WebUI/.vscode/mcp.json: github": {

@@ -1,5 +1,23 @@
 # OpenEPaperLink ESP32 Access Point Firmware
 
+# OpenEPaperLink ESP32 Access Point Firmware - AI Agent Instructions
+
+This document provides guidance for AI coding agents working on the OpenEPaperLink ESP32 Access Point firmware.
+
+## Terminal logging guideline
+
+When running or showing terminal commands, always include the timestamp for the command execution so logs are traceable. Use the host's shell command to print a timestamp before or after the command. Examples:
+
+- PowerShell (Windows):
+  - Get a timestamp: `Get-Date -Format o`  # ISO 8601
+  - Example: `Get-Date -Format o; npm run build`  # prints timestamp then runs command
+
+- Bash (Linux/macOS):
+  - Get a timestamp: `date --iso-8601=seconds` or `date -Iseconds`
+  - Example: `date --iso-8601=seconds; npm run build`
+
+Include these timestamps in logs, and when reporting command outputs paste the timestamped output so it's clear when each operation ran.
+
 ## Project Overview
 
 This project is an ESP32-based access point for OpenEPaperLink electronic paper displays. It manages communication with the E-Paper tags, handles content updates, and provides a web interface for configuration and management. The firmware is built using PlatformIO and the Arduino framework.
@@ -102,3 +120,7 @@ The web interface source code is located in the `wwwroot` directory. It's a sing
 - **LittleFS:** The primary file system for storing web assets and configuration.
 
 When making changes, be mindful of the interactions between these components. For example, a change to a web API in `src/web.cpp` will likely require a corresponding change in the JavaScript files in `wwwroot`.
+
+## Operational reminder for agents
+
+- Before running actions from the web UI or automation, check the repository `PROJECT_STATUS.md` for current status, blockers, and device list and update its `Last updated` timestamp if you change the state. Use PowerShell `Get-Date -Format o` when logging command timestamps.

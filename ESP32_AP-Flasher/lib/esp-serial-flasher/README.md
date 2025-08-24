@@ -3,6 +3,7 @@
 `esp-serial-flasher` is a portable C library for flashing or loading apps to RAM of Espressif SoCs from other host microcontrollers.
 
 ## Using the library
+
 Espressif SoCs are normally programmed via serial interface (UART). The port layer for the given host microcontroller has to be implemented if not available. Details can be found in section below.
 
 Supported **host** microcontrollers:
@@ -24,6 +25,7 @@ Supported **target** microcontrollers:
 - ESP32-C6
 
 Supported hardware interfaces:
+
 - UART
 - SPI (only for RAM download, experimental)
 
@@ -41,6 +43,7 @@ In order to support a new target, following functions have to be implemented by 
 - `loader_port_remaining_time()`
 
 For the SPI interface ports
+
 - `loader_port_spi_set_cs()`
 needs to be implemented as well.
 
@@ -56,26 +59,26 @@ Prototypes of all functions mentioned above can be found in [io.h](include/io.h)
 
 These are the configuration toggles available to the user:
 
-* `SERIAL_FLASHER_INTERFACE_UART/SERIAL_FLASHER_INTERFACE_SPI`
+- `SERIAL_FLASHER_INTERFACE_UART/SERIAL_FLASHER_INTERFACE_SPI`
 
 This defines the hardware interface to use. SPI interface only supports RAM download mode and is in experimental stage and can undergo changes.
 
 Default: SERIAL_FLASHER_INTERFACE_UART
 
-* `MD5_ENABLED`
+- `MD5_ENABLED`
 
 If enabled, `esp-serial-flasher` is capable of verifying flash integrity after writing to flash.
 
 Default: Enabled
 > Warning: As ROM bootloader of the ESP8266 does not support MD5_CHECK, this option has to be disabled!
 
-* `SERIAL_FLASHER_RESET_HOLD_TIME_MS`
+- `SERIAL_FLASHER_RESET_HOLD_TIME_MS`
 
 This is the time for which the reset pin is asserted when doing a hard reset in milliseconds.
 
 Default: 100
 
-* `SERIAL_FLASHER_BOOT_HOLD_TIME_MS`
+- `SERIAL_FLASHER_BOOT_HOLD_TIME_MS`
 
 This is the time for which the boot pin is asserted when doing a hard reset in milliseconds.
 

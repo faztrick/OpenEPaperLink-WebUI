@@ -23,6 +23,7 @@ pip install -r requirements.txt
 ```
 
 Notes:
+
 - The server prefers a venv located at `ESP32_AP-Flasher/venv` or `ESP32_AP-Flasher/.venv`.
 - You can set the `PYTHON` environment variable to point to a specific python executable if needed.
 - After activating the venv, running server actions from the web UI will use the venv interpreter automatically.

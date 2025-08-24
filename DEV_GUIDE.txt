@@ -1,0 +1,66 @@
+DOCUMENTATION REMOVED - MINIMAL OPERATION GUIDE
+============================================
+
+Scope: Quick reference to build, flash, run web UI, and extend modules WITHOUT markdown docs.
+
+1. Build Firmware (PlatformIO / OutdoorAP env)
+   - Build:          pio run -e OutdoorAP
+   - Build+Upload:   pio run -e OutdoorAP -t upload
+   - Clean:          pio run -t clean
+   - Monitor:        pio device monitor --baud 115200
+
+2. Fast Build Scripts (PowerShell from ESP32_AP-Flasher/)
+   - Fast compile:   pwsh -NoProfile -ExecutionPolicy Bypass -File .\fast_compile.ps1 -Environment OutdoorAP
+   - Fast upload:    pwsh -NoProfile -ExecutionPolicy Bypass -File .\fast_compile.ps1 -Environment OutdoorAP -ComPort COM10 -BaudRate 921600
+   - Filesystem only:pwsh -NoProfile -ExecutionPolicy Bypass -File .\fast_compile.ps1 -Environment OutdoorAP -FilesystemOnly
+
+3. Web UI Dev Server
+   Location: ESP32_AP-Flasher/web-ui
+   - Start:          pwsh -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format o; npm start"
+   - Debug console:  http://localhost:3001/dev/debug.html (live logs & commands)
+
+4. Typical Workflow
+   a) Update source in src/ (e.g. wifi_module.cpp)
+   b) Run fast build script or pio build
+   c) Upload (USB) + open monitor
+   d) Connect to fallback AP or device IP
+   e) Use /ws or debug console for logs
+
+5. Serial & Logs
+   - Device serial speed: 115200 (default)
+   - WebSocket endpoint: /ws (device) for live log lines
+   - Node server logs:    web-ui/logs/*.log
+
+6. WiFi Behavior (Current)
+   - Starts STA attempt; if fails, AP fallback (SSID may be ESP32-AP-Flasher or config)
+   - AP endpoints under /api/wifi/* (status, scan, connect, ap)
+
+7. Minimal Command Examples (WebSocket or debug console)
+   - ping
+   - tail 100
+   - (extend server.js to proxy device commands later)
+
+8. Extending a Module
+   - Add new file: src/<name>_module.cpp implementing ModuleInterface
+   - Register web handlers in registerWebHandlers
+   - Add metrics via getMetrics(JsonObject &)
+   - Broadcast events with ModuleManager::getInstance().broadcastEvent("evt", data)
+
+9. File System Assets
+   - LittleFS content directory on build host: ESP32_AP-Flasher/data/www
+   - Upload script:   upload_www_files.py / .ps1
+
+10. Troubleshooting
+   - Build fails: check platformio.ini flags & library dependency versions
+   - Serial busy: use scripts/kill_com_port.ps1 then re-open
+   - WiFi won’t connect: clear staconfig.json or hold GPIO0 (if code supports reset) and reboot
+
+11. Suggested Next Enhancements
+   - Implement AP+STA policy toggles
+   - Peer link (UART or ESP-NOW) for external display
+   - Add sensor modules (RFID, battery, IR) using ModuleInterface pattern
+
+12. Timestamp Logging Pattern (PowerShell)
+   Get-Date -Format o; pio run -e OutdoorAP
+
+(End of minimal guide)

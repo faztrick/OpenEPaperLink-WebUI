@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OEPL Debug Console</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+body { font-family: system-ui, Arial, sans-serif; margin:0; padding:0; background:#111; color:#eee; }
+header { background:#222; padding:8px 12px; display:flex; align-items:center; gap:16px; }
+#status { font-size:12px; opacity:.8; }
+main { display:flex; height:calc(100vh - 50px); }
+#logs { flex:2; display:flex; flex-direction:column; }
+#logOutput { flex:1; background:#000; padding:8px; overflow:auto; font-family:monospace; font-size:12px; line-height:1.3; white-space:pre-wrap; }
+#panels { flex:1; display:flex; flex-direction:column; border-left:1px solid #333; }
+.panel { padding:8px; border-bottom:1px solid #333; }
+.panel h2 { margin:0 0 6px; font-size:14px; }
+#cmdForm { display:flex; gap:6px; }
+#cmdInput { flex:1; background:#181818; border:1px solid #333; color:#eee; padding:6px; }
+button { background:#3478f6; border:none; color:#fff; padding:6px 12px; cursor:pointer; border-radius:4px; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.tag { background:#444; padding:2px 4px; margin:2px; border-radius:3px; font-size:11px; display:inline-block; }
+.line.err { color:#ff6b6b; }
+.line.warn { color:#f5a623; }
+.line.cmdresp { color:#9cf; }
+small.ts { opacity:.5; margin-right:4px; }
+#filters { display:flex; gap:6px; flex-wrap:wrap; }
+.filterToggle { font-size:11px; padding:2px 6px; background:#333; border:1px solid #555; }
+.filterToggle.active { background:#3478f6; border-color:#3478f6; }
+</style>
+</head>
+<body>
+<header>
+  <h1 style="font-size:16px;margin:0;">OEPL Debug Console</h1>
+  <div id="status">Connecting...</div>
+  <nav><a href="/" style="color:#999;">Home</a></nav>
+</header>
+<main>
+  <section id="logs">
+    <div id="logOutput"></div>
+    <form id="cmdForm" autocomplete="off">
+      <input id="cmdInput" placeholder="Enter command e.g. wifi status" />
+      <button id="sendBtn" type="submit">Send</button>
+    </form>
+    <div style="padding:4px 8px; font-size:11px; background:#1d1d1d; display:flex; justify-content:space-between;">
+      <span id="stats"></span>
+      <span><button type="button" id="clearBtn" style="background:#555;">Clear</button></span>
+    </div>
+  </section>
+  <aside id="panels">
+    <div class="panel" id="wifiPanel"><h2>WiFi</h2><pre id="wifiStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
+    <div class="panel" id="peerPanel"><h2>Peer</h2><pre id="peerStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
+    <div class="panel" id="sensorsPanel"><h2>Sensors</h2><pre id="sensorStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
+  </aside>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+  const logEl = document.getElementById('logOutput');
+  const statusEl = document.getElementById('status');
+  const wifiEl = document.getElementById('wifiStatus');
+  const peerEl = document.getElementById('peerStatus');
+  const sensorEl = document.getElementById('sensorStatus');
+  const statsEl = document.getElementById('stats');
+  const form = document.getElementById('cmdForm');
+  const input = document.getElementById('cmdInput');
+  const clearBtn = document.getElementById('clearBtn');
+  let lines = 0, lastScrollAt = Date.now();
+  function appendLine(text, cls=''){
+    const line = document.createElement('div'); line.className='line '+cls;
+    const ts = document.createElement('small'); ts.className='ts'; ts.textContent=new Date().toISOString();
+    line.appendChild(ts); line.appendChild(document.createTextNode(text));
+    logEl.appendChild(line); lines++; if (logEl.childNodes.length>2000) logEl.removeChild(logEl.firstChild);
+    if (Date.now()-lastScrollAt>50) { logEl.scrollTop = logEl.scrollHeight; lastScrollAt=Date.now(); }
+    statsEl.textContent = lines+ ' lines';
+  }
+  const socket = io({ transports:['websocket','polling'] });
+  socket.on('connect', ()=>{ statusEl.textContent='Connected ('+socket.id+')'; appendLine('--- connected ---','info'); requestSnapshots(); });
+  socket.on('disconnect', ()=>{ statusEl.textContent='Disconnected'; appendLine('--- disconnected ---','warn'); });
+  socket.on('log-line', data => { appendLine(data.line, data.level||''); });
+  socket.on('wifi-status', data => { wifiEl.textContent = JSON.stringify(data,null,2); });
+  socket.on('peer-status', data => { peerEl.textContent = JSON.stringify(data,null,2); });
+  socket.on('sensors-status', data => { sensorEl.textContent = JSON.stringify(data,null,2); });
+  socket.on('cmd-response', data => { appendLine('CMD>'+data.cmd+' => '+data.result,'cmdresp'); });
+  function requestSnapshots(){ socket.emit('debug:snapshot'); }
+  form.addEventListener('submit', e=>{ e.preventDefault(); const cmd=input.value.trim(); if(!cmd) return; appendLine('> '+cmd,'user'); socket.emit('debug:command',{cmd}); input.value=''; });
+  clearBtn.addEventListener('click', ()=>{ logEl.innerHTML=''; lines=0; statsEl.textContent=''; });
+})();
+</script>
+</body>
+</html>

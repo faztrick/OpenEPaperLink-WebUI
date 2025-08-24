@@ -2831,17 +2831,17 @@ io.on('connection', (socket) => {
             io.emit('process-started', { processId: socket.id, command: `${command} ${args.join(' ')}` });
 
             proc.stdout.on('data', (data) => {
-                const text = data.toString();
-                socket.emit('output', { type: 'stdout', data: text });
-                io.emit('process-output', { processId: socket.id, type: 'stdout', data: text });
-                appendLog('process-out', text.replace(/\r?\n/g, '\\n'));
+                const output = data.toString();
+                socket.emit('output', { type: 'stdout', data: output });
+                io.emit('process-output', { processId: socket.id, type: 'stdout', data: output });
+                appendLog('process-out', output.replace(/\r?\n/g, '\\n'));
             });
 
             proc.stderr.on('data', (data) => {
-                const text = data.toString();
-                socket.emit('output', { type: 'stderr', data: text });
-                io.emit('process-output', { processId: socket.id, type: 'stderr', data: text });
-                appendLog('process-err', text.replace(/\r?\n/g, '\\n'));
+                const error = data.toString();
+                socket.emit('output', { type: 'stderr', data: error });
+                io.emit('process-output', { processId: socket.id, type: 'stderr', data: error });
+                appendLog('process-err', error.replace(/\r?\n/g, '\\n'));
             });
 
             proc.on('close', (code) => {
@@ -2978,7 +2978,6 @@ io.on('connection', (socket) => {
     // Development Tools Socket Events
     socket.on('debug-command', (data) => {
         const { command } = data;
-        // Echo the command back as debug output for now
         socket.emit('debug-output', {
             message: `Command executed: ${command}`,
             level: 'INFO'
@@ -2989,6 +2988,8 @@ io.on('connection', (socket) => {
             socket.emit('debug-output', { message: 'Device reset command sent', level: 'WARN' });
         } else if (command.toLowerCase().includes('status')) {
             socket.emit('debug-output', { message: 'Device status: Online, Heap: 128KB free', level: 'INFO' });
+        } else if (command.toLowerCase().includes('upload')) {
+            socket.emit('debug-output', { message: 'Uploading filesystem...', level: 'INFO' });
         }
     });
 
@@ -3006,7 +3007,7 @@ io.on('connection', (socket) => {
     socket.on('run-analysis', (data) => {
         const { type } = data;
         socket.emit('debug-output', {
-            message: `Starting ${type} analysis...`,
+            message: `Running ${type} analysis...`,
             level: 'INFO'
         });
 
@@ -3273,3 +3274,51 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
+
+// Add debug socket handling
+io.on('connection', (socket) => {
+    try {
+        socket.on('debug:snapshot', () => {
+            try {
+                socket.emit('log-line', { line: '--- tail (node) ---' });
+                const tail = tailLines('node', 120).split(/\r?\n/).filter(Boolean);
+                tail.forEach(l => socket.emit('log-line', { line: l }));
+            } catch (_) { /* ignore */ }
+            // Placeholder status structures; integrate real HTTP fetches if needed.
+            socket.emit('wifi-status', { placeholder: true, note: 'Fetch from device /api/wifi/status in future' });
+            socket.emit('peer-status', { placeholder: true });
+            socket.emit('sensors-status', { placeholder: true });
+        });
+        socket.on('debug:command', (data) => {
+            const cmd = (data && data.cmd || '').trim();
+            if (!cmd) return;
+            appendLog('cmd', `user:${socket.id} cmd=${cmd}`);
+            // Simple built-ins
+            if (cmd === 'ping') {
+                socket.emit('cmd-response', { cmd, result: 'pong' });
+                return;
+            }
+            if (cmd === 'help') {
+                socket.emit('cmd-response', { cmd, result: 'Available: ping, help, tail <n>' });
+                return;
+            }
+            if (cmd.startsWith('tail')) {
+                const parts = cmd.split(/\s+/);
+                const n = parseInt(parts[1]||'50',10);
+                const t = tailLines('node', isNaN(n)?50:n);
+                socket.emit('cmd-response', { cmd, result: t.split(/\r?\n/).slice(-n).join('\n') });
+                return;
+            }
+            // Fallback: echo; later map to device proxy
+            socket.emit('cmd-response', { cmd, result: 'echo: '+cmd });
+        });
+    } catch (err) {
+        console.error('debug socket error', err);
+    }
+});
+// Stream log updates in real-time to clients
+logEmitter.on('node', (line) => {
+    io.emit('log-line', { line });
+});
+logEmitter.on('api', (line) => { io.emit('log-line', { line, level: 'api' }); });
+logEmitter.on('cmd', (line) => { io.emit('log-line', { line, level: 'cmd' }); });
