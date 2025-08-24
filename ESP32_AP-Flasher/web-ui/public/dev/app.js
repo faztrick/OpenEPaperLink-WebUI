@@ -48,6 +48,11 @@ class ESP32DevUI {
         setTimeout(() => {
             this.startApiHealthChecks();
         }, 1000);
+
+        // If on AI page, initialize code editing file list
+        setTimeout(() => {
+            try { this.initAICodeEditing(); } catch (_) {}
+        }, 300);
     }
 
     // Central client logger: writes to on-page console and posts to server asynchronously
@@ -363,10 +368,32 @@ class ESP32DevUI {
     if (serialCloseBtn) serialCloseBtn.addEventListener('click', () => this.closeSerialPort());
     const serialSendBtn = document.getElementById('serial-send-btn');
     if (serialSendBtn) serialSendBtn.addEventListener('click', () => this.sendSerial());
+    const serialQuickSel = document.getElementById('serial-quick-cmd');
+    const serialQuickBtn = document.getElementById('serial-send-quick');
+    if (serialQuickBtn && serialQuickSel) serialQuickBtn.addEventListener('click', () => {
+        const selVal = serialQuickSel.value || '';
+        if (!selVal) { this.log('Select a quick command first', 'warning'); return; }
+        const input = document.getElementById('serial-send-text');
+        if (input) input.value = selVal;
+        this.sendSerial();
+    });
     const serialSendSelectedBtn = document.getElementById('serial-send-selected');
     if (serialSendSelectedBtn) serialSendSelectedBtn.addEventListener('click', () => this.sendSelectedSerialCommand());
     const serialCheckBtn = document.getElementById('serial-check');
     if (serialCheckBtn) serialCheckBtn.addEventListener('click', () => this.checkCom());
+    const serialReopenBtn = document.getElementById('serial-reopen');
+    if (serialReopenBtn) serialReopenBtn.addEventListener('click', () => this.reopenSerial());
+    const serialDiagnoseBtn = document.getElementById('serial-diagnose');
+    if (serialDiagnoseBtn) serialDiagnoseBtn.addEventListener('click', () => this.diagnoseSerial());
+    const serialBaudSel = document.getElementById('serial-baud');
+    if (serialBaudSel && !serialBaudSel.dataset.bound) {
+        serialBaudSel.addEventListener('change', () => {
+            const v = parseInt(serialBaudSel.value,10) || 115200;
+            this.config.baudRate = v;
+            try { this.saveConfig(); } catch (e) {}
+        });
+        serialBaudSel.dataset.bound = '1';
+    }
 
     // Log tail controls
     const startTailBtn = document.getElementById('start-tail');
@@ -398,6 +425,16 @@ class ESP32DevUI {
 
         const aiSuggestions = document.getElementById('ai-suggestions');
         if (aiSuggestions) aiSuggestions.addEventListener('click', () => this.getAISuggestions());
+
+    // AI code editing buttons (present only on ai.html)
+    const aiLoadBtn = document.getElementById('ai-load-file');
+    const aiPreviewBtn = document.getElementById('ai-preview-edit');
+    const aiApplyBtn = document.getElementById('ai-apply-edit');
+    const aiClearBtn = document.getElementById('ai-clear-diff');
+    if (aiLoadBtn) aiLoadBtn.addEventListener('click', () => this.aiLoadSelectedFile());
+    if (aiPreviewBtn) aiPreviewBtn.addEventListener('click', () => this.aiPreviewEdit());
+    if (aiApplyBtn) aiApplyBtn.addEventListener('click', () => this.aiApplyEdit());
+    if (aiClearBtn) aiClearBtn.addEventListener('click', () => this.aiClearEditPanels());
 
         const aiConfigBtn = document.getElementById('ai-config');
         if (aiConfigBtn) aiConfigBtn.addEventListener('click', () => this.showAIConfig());
@@ -1284,58 +1321,40 @@ class ESP32DevUI {
     // --- Device WiFi status helpers ---
     async getWifiStatusForHost(host) {
         if (!host) return { online: false };
-        // Try a sequence of endpoints via server proxy to avoid CORS
-        const paths = ['/network_info', '/api/telemetry', '/sysinfo', '/api/ping'];
-        for (const p of paths) {
+        // Prefer unified summary endpoint first, then status, falling back to minimal ping
+        const attempts = ['/api/wifi/summary', '/api/wifi/status', '/api/ping'];
+        for (const p of attempts) {
             try {
                 const url = `/device${p}?host=${encodeURIComponent(host)}`;
                 const res = await fetch(url, { method: 'GET' });
                 if (!res.ok) continue;
                 const data = await res.json().catch(() => ({}));
 
-                // Normalize into a common shape
-                if (p === '/network_info' && data) {
-                    const wifi = data.wifi || {};
-                    const ap = data.ap || {};
-                    const connected = !!wifi.connected;
+                if (p === '/api/wifi/summary' && data) {
                     return {
-                        online: connected || typeof ap.enabled !== 'undefined',
-                        ssid: wifi.ssid || '',
-                        rssi: typeof wifi.rssi === 'number' ? wifi.rssi : undefined,
-                        ip: wifi.localIP || '',
-                        channel: wifi.channel || undefined
-                    };
-                }
-
-                if (p === '/api/telemetry' && data) {
-                    const statusNum = data.wifiStatus;
-                    const online = statusNum === 3 || (typeof statusNum === 'string' && statusNum.toString() === '3');
-                    return {
-                        online: !!online,
-                        ssid: undefined,
+                        online: !!data.connected,
+                        ssid: data.ssid || '',
                         rssi: typeof data.rssi === 'number' ? data.rssi : undefined,
-                        ip: data.localIP || '',
-                        channel: undefined
+                        ip: data.ip || data.localIP || '',
+                        channel: data.channel,
+                        apActive: !!data.apActive
                     };
                 }
-
-                if (p === '/sysinfo' && data) {
-                    const statusNum = data.wifiStatus;
-                    const online = statusNum === 3 || (typeof statusNum === 'string' && statusNum.toString() === '3');
+                if (p === '/api/wifi/status' && data) {
+                    const sta = data.sta || {};
                     return {
-                        online: !!online,
-                        ssid: undefined,
-                        rssi: typeof data.wifi?.rssi === 'number' ? data.wifi.rssi : (typeof data.rssi === 'number' ? data.rssi : undefined),
-                        ip: data.localIP || data.wifi?.localIP || '',
-                        channel: data.wifi?.channel || undefined
+                        online: !!sta.connected,
+                        ssid: sta.ssid || '',
+                        rssi: typeof sta.rssi === 'number' ? sta.rssi : undefined,
+                        ip: sta.ip || data.ip || '',
+                        channel: sta.channel
                     };
                 }
-
                 if (p === '/api/ping' && data && data.ok) {
                     return { online: true };
                 }
-            } catch (e) {
-                // try next endpoint
+            } catch (_) {
+                // try next
             }
         }
         return { online: false };
@@ -1696,14 +1715,27 @@ class ESP32DevUI {
     async refreshComPortsViaAPI() {
         try {
             const response = await fetch('/api/com-ports');
-            if (response.ok) {
-                const ports = await response.json();
-                this.updateComPorts(ports);
-                this.log('COM ports refreshed via API', 'info');
-                return ports;
+            if (!response.ok) {
+                const msg = `HTTP ${response.status}${response.statusText ? ' '+response.statusText : ''}`;
+                this.log(`COM ports API returned non-OK: ${msg}`, 'warning');
+                throw new Error(msg);
             }
+            let ports = [];
+            try {
+                ports = await response.json();
+            } catch (e) {
+                this.log('COM ports JSON parse error: '+e.message, 'error');
+                throw e;
+            }
+            if (!Array.isArray(ports)) {
+                this.log('COM ports response not array; forcing fallback', 'warning');
+                throw new Error('invalid format');
+            }
+            this.updateComPorts(ports);
+            this.log(`COM ports refreshed (${ports.length}) via API`, 'info');
+            return ports;
         } catch (error) {
-            this.log('Failed to refresh COM ports via API', 'warning');
+            this.log(`Failed to refresh COM ports via API: ${error.message}`, 'warning');
             throw error;
         }
     }
@@ -1804,8 +1836,10 @@ class ESP32DevUI {
         if (!input) { this.log('No serial input field found', 'warning'); return; }
         if (!portPath) { this.log('No COM port selected', 'warning'); return; }
         const data = input.value || '';
+        const autoNL = document.getElementById('serial-auto-nl')?.checked;
         try {
-            const res = await fetch('/api/serial/write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, data }) });
+            const url = autoNL ? '/api/serial/write?autoNL=1' : '/api/serial/write';
+            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, data }) });
             const j = await res.json();
             if (j.success) {
                 this.log(`Sent to ${portPath}: ${data}`, 'info');
@@ -1815,6 +1849,37 @@ class ESP32DevUI {
         } catch (err) {
             this.log(`Error sending serial data: ${err.message}`, 'error');
         }
+    }
+
+    async reopenSerial() {
+        const select = document.getElementById('serial-port-select');
+        const baudSel = document.getElementById('serial-baud');
+        const portPath = select && select.value ? select.value : (document.getElementById('com-port-select')?.value || this.config.comPort || 'COM10');
+        const baudRate = baudSel ? parseInt(baudSel.value,10) || this.config.baudRate || 115200 : (this.config.baudRate || 115200);
+        if (!portPath) { this.log('No COM port selected', 'warning'); return; }
+        try {
+            const r = await fetch('/api/serial/reopen', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: portPath, baudRate }) });
+            const j = await r.json();
+            if (j.success) {
+                this.log(`Reopened ${portPath} @ ${baudRate}`, 'success');
+                this.updateSerialStatus(true, portPath);
+            } else {
+                this.log(`Reopen failed: ${j.error || 'unknown'}`,'error');
+            }
+        } catch (e) { this.log('Reopen error: '+e.message,'error'); }
+    }
+
+    async diagnoseSerial() {
+        try {
+            const r = await fetch('/api/serial/diagnose');
+            const j = await r.json();
+            if (j.success) {
+                this.log(`Serial diagnose: open=${j.status?.open?'yes':'no'} path=${j.status?.path||'-'} baud=${j.status?.baudRate||'-'} poke=${j.poked?'sent':'n/a'}`,'info');
+                if (j.status?.open) this.updateSerialStatus(true, j.status.path);
+            } else {
+                this.log('Serial diagnose failed: '+(j.error||'unknown'),'error');
+            }
+        } catch (e) { this.log('Serial diagnose error: '+e.message,'error'); }
     }
 
     // Quick COM health check
@@ -1848,6 +1913,8 @@ class ESP32DevUI {
     this.attachToWindow();
         // populate advanced pages list if present on page
         try { this.renderAdvancedPages(); } catch (e) { /* ignore when element missing */ }
+        // populate quick serial commands if dropdown present
+        try { this.populateQuickSerialCommands(); } catch (e) { /* ignore */ }
     }
 
     // --- Console tailing (SSE) ---
@@ -1869,6 +1936,20 @@ class ESP32DevUI {
                 if (this.logBuffer.length > 5000) this.logBuffer.shift();
             } catch (_) { }
         } catch (_) { }
+    }
+
+    async populateQuickSerialCommands() {
+        const sel = document.getElementById('serial-quick-cmd');
+        if (!sel) return;
+        try {
+            const r = await fetch('/api/serial/commands');
+            const j = await r.json();
+            if (j && j.success && Array.isArray(j.commands)) {
+                sel.innerHTML = '<option value="">--cmd--</option>' + j.commands.map(c => `<option value="${c}">${c}</option>`).join('');
+            }
+        } catch (e) {
+            this.log('Failed to load quick serial commands: ' + e.message, 'warning');
+        }
     }
 
     startTail() {
@@ -2797,6 +2878,19 @@ class ESP32DevUI {
         document.getElementById('feature-code-analysis').checked = this.aiConfig.features.codeAnalysis;
         document.getElementById('feature-optimization').checked = this.aiConfig.features.buildOptimization;
         document.getElementById('feature-suggestions').checked = this.aiConfig.features.autoSuggestions;
+    // new editing feature toggles
+    const feEdit = document.getElementById('feature-code-editing');
+    if (feEdit) feEdit.checked = !!this.aiConfig.features.codeEditing;
+    const enApply = document.getElementById('editing-enable-file-edits');
+    if (enApply) enApply.checked = !!(this.aiConfig.editing && this.aiConfig.editing.enableFileEdits);
+    const maxSize = document.getElementById('editing-max-size');
+    if (maxSize) maxSize.value = Math.round(((this.aiConfig.editing && this.aiConfig.editing.maxFileSize) || (200*1024)) / 1024);
+    const allowedExt = document.getElementById('editing-allowed-ext');
+    if (allowedExt) allowedExt.value = (this.aiConfig.editing && this.aiConfig.editing.allowedExtensions) ? this.aiConfig.editing.allowedExtensions.join(',') : '';
+    const blockList = document.getElementById('editing-block-list');
+    if (blockList) blockList.value = (this.aiConfig.editing && this.aiConfig.editing.blockList) ? this.aiConfig.editing.blockList.join(',') : '';
+    const rootEl = document.getElementById('editing-root');
+    if (rootEl) rootEl.value = (this.aiConfig.editing && this.aiConfig.editing.root) || '';
     }
 
     saveAIConfig() {
@@ -2816,13 +2910,26 @@ class ESP32DevUI {
                 codeAnalysis: document.getElementById('feature-code-analysis').checked,
                 buildOptimization: document.getElementById('feature-optimization').checked,
                 autoSuggestions: document.getElementById('feature-suggestions').checked
-            }
+            },
+            // include new features
+            codeEditing: document.getElementById('feature-code-editing')?.checked
+        };
+
+        const editingCfg = {
+            enableFileEdits: document.getElementById('editing-enable-file-edits')?.checked || false,
+            maxFileSize: (parseInt(document.getElementById('editing-max-size')?.value,10) || 200) * 1024,
+            allowedExtensions: (document.getElementById('editing-allowed-ext')?.value || '')
+                .split(',').map(s=>s.trim()).filter(Boolean),
+            blockList: (document.getElementById('editing-block-list')?.value || '')
+                .split(',').map(s=>s.trim()).filter(Boolean),
+            // root is controlled server-side; we send back for completeness but server may ignore if changed
+            root: document.getElementById('editing-root')?.value || undefined
         };
 
         fetch('/api/ai/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config)
+            body: JSON.stringify({ ...config, editing: editingCfg })
         })
             .then(response => response.json())
             .then(data => {
@@ -2892,6 +2999,146 @@ class ESP32DevUI {
 
         // Scroll to the panel
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /* ================= AI Code Editing (frontend) ================= */
+    async initAICodeEditing() {
+        const fileList = document.getElementById('ai-file-list');
+        if (!fileList) return; // not on ai.html
+        // Clear list first
+        fileList.innerHTML = '';
+        const statusEl = document.getElementById('ai-edit-status');
+        const disabledEl = document.getElementById('ai-editing-disabled');
+        try {
+            const r = await fetch('/api/ai/files');
+            const j = await r.json();
+            if (!j.success) throw new Error(j.error || 'Failed');
+            if (!j.enabled) {
+                if (disabledEl) disabledEl.style.display = 'block';
+                return; // editing disabled server side
+            }
+            if (disabledEl) disabledEl.style.display = 'none';
+            const files = Array.isArray(j.files) ? j.files : [];
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                fileList.appendChild(opt);
+            });
+            if (statusEl) statusEl.textContent = `${files.length} files available.`;
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Error loading files: ${e.message}`;
+        }
+    }
+
+    async aiLoadSelectedFile() {
+        const list = document.getElementById('ai-file-list');
+        const diffEl = document.getElementById('ai-diff');
+        const proposedEl = document.getElementById('ai-proposed');
+        const originalStore = document.getElementById('ai-original-file');
+        const statusEl = document.getElementById('ai-edit-status');
+        const applyBtn = document.getElementById('ai-apply-edit');
+        if (!list || !list.value) { if (statusEl) statusEl.textContent = 'Select a file first.'; return; }
+        const file = list.value;
+        try {
+            if (statusEl) statusEl.textContent = `Loading ${file}...`;
+            const r = await fetch(`/api/ai/file?path=${encodeURIComponent(file)}`);
+            const j = await r.json();
+            if (!j.success) throw new Error(j.error || 'Failed');
+            originalStore.textContent = j.content;
+            if (diffEl) diffEl.textContent = '';
+            if (proposedEl) proposedEl.textContent = '';
+            if (applyBtn) applyBtn.disabled = true;
+            if (statusEl) statusEl.textContent = `Loaded ${file} (${j.size} bytes). Enter an instruction and preview.`;
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Load failed: ${e.message}`;
+        }
+    }
+
+    async aiPreviewEdit() {
+        const list = document.getElementById('ai-file-list');
+        const instr = document.getElementById('ai-edit-instruction');
+        const originalStore = document.getElementById('ai-original-file');
+        const diffEl = document.getElementById('ai-diff');
+        const proposedEl = document.getElementById('ai-proposed');
+        const statusEl = document.getElementById('ai-edit-status');
+        const applyBtn = document.getElementById('ai-apply-edit');
+        if (!list || !list.value) { if (statusEl) statusEl.textContent = 'Select a file first.'; return; }
+        if (!instr || !instr.value.trim()) { if (statusEl) statusEl.textContent = 'Provide an instruction.'; return; }
+        if (!originalStore || !originalStore.textContent) { if (statusEl) statusEl.textContent = 'Load the file first.'; return; }
+        const file = list.value;
+        const instruction = instr.value.trim();
+        try {
+            if (statusEl) statusEl.textContent = 'Requesting AI edit preview...';
+            const r = await fetch('/api/ai/patch/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: file, instruction })
+            });
+            const j = await r.json();
+            if (!j.success) throw new Error(j.error || 'Failed');
+            // render diff & proposed
+            this.aiRenderDiff(j.diff, diffEl);
+            if (proposedEl) proposedEl.textContent = j.newContent;
+            if (applyBtn) applyBtn.disabled = false;
+            if (statusEl) statusEl.textContent = `Preview ready. Review diff then Apply.`;
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Preview failed: ${e.message}`;
+        }
+    }
+
+    async aiApplyEdit() {
+        const list = document.getElementById('ai-file-list');
+        const instr = document.getElementById('ai-edit-instruction');
+        const statusEl = document.getElementById('ai-edit-status');
+        const applyBtn = document.getElementById('ai-apply-edit');
+        if (!list || !list.value) { if (statusEl) statusEl.textContent = 'Select a file first.'; return; }
+        if (!instr || !instr.value.trim()) { if (statusEl) statusEl.textContent = 'Provide an instruction.'; return; }
+        const file = list.value;
+        const instruction = instr.value.trim();
+        try {
+            if (statusEl) statusEl.textContent = 'Applying edit...';
+            if (applyBtn) applyBtn.disabled = true;
+            const r = await fetch('/api/ai/patch/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: file, instruction })
+            });
+            const j = await r.json();
+            if (!j.success) throw new Error(j.error || 'Failed');
+            if (statusEl) statusEl.textContent = `Edit applied to ${file}. (${j.size} bytes)`;
+            this.log(`AI edit applied to ${file}`, 'success');
+            // reload file into original store
+            this.aiLoadSelectedFile();
+        } catch (e) {
+            if (statusEl) statusEl.textContent = `Apply failed: ${e.message}`;
+            if (applyBtn) applyBtn.disabled = false;
+        }
+    }
+
+    aiRenderDiff(diffObj, diffEl) {
+        if (!diffEl) diffEl = document.getElementById('ai-diff');
+        if (!diffEl) return;
+        if (!diffObj || !Array.isArray(diffObj.lines)) { diffEl.textContent = 'No diff.'; return; }
+        const header = diffObj.header || '';
+        const lines = diffObj.lines.map(l => {
+            const cls = l.startsWith('+') ? 'color:#16a34a' : l.startsWith('-') ? 'color:#dc2626' : 'color:#94a3b8';
+            return `<span style="${cls}">${l.replace(/</g,'&lt;')}</span>`;
+        }).join('\n');
+        diffEl.innerHTML = `<code>${header ? header + '\n' : ''}${lines}</code>`;
+    }
+
+    aiClearEditPanels() {
+        const diffEl = document.getElementById('ai-diff');
+        const proposedEl = document.getElementById('ai-proposed');
+        const instr = document.getElementById('ai-edit-instruction');
+        const applyBtn = document.getElementById('ai-apply-edit');
+        const statusEl = document.getElementById('ai-edit-status');
+        if (diffEl) diffEl.textContent = '';
+        if (proposedEl) proposedEl.textContent = '';
+        if (instr) instr.value = '';
+        if (applyBtn) applyBtn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Cleared.';
     }
 }
 

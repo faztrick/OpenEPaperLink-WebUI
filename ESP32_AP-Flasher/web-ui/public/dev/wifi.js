@@ -1,6 +1,6 @@
 // wifi.js module can be re-initialized after SPA navigation.
 (function(global){
-  if(global.__OEPL_WIFI_MODULE__) return; // singleton pattern for helpers; init() still re-runs per page load
+  if(global.__OEPL_WIFI_MODULE__) return; // singleton pattern
   const WIFI = { initializedOnce:false };
   const logEl = () => document.getElementById('wifi-console');
   function log(msg, type='info'){
@@ -10,62 +10,47 @@
   }
 
   function setText(id, txt){ const el = document.getElementById(id); if(el) el.textContent = txt || ''; }
-  function getSelectedDevice(){ try{ return (window.app && window.app.getSelectedDevice) ? window.app.getSelectedDevice() : null; }catch(_){ return null; } }
-  function devicesList(){ try{ return (window.app && Array.isArray(window.app.devices)) ? window.app.devices : []; }catch(_){ return []; } }
+  function getDevCommonState(){
+    try { return global.__OEPL_DEV_COMMON__ ? global.__OEPL_DEV_COMMON__.getState() : null; } catch(e){ return null; }
+  }
+  function getSelectedDevice(){
+    const st = getDevCommonState();
+    if(st){ return st.devices.find(d=>d.id===st.selectedId)||null; }
+    // fallback to legacy app
+    try{ return (window.app && window.app.getSelectedDevice)? window.app.getSelectedDevice(): null; }catch(_){ return null; }
+  }
+  function devicesList(){
+    const st = getDevCommonState();
+    if(st) return st.devices;
+    try{ return (window.app && Array.isArray(window.app.devices)) ? window.app.devices : []; }catch(_){ return []; }
+  }
 
   function populateDevices(){
     const sel = document.getElementById('wifi-device-select'); if(!sel) return;
-    const headerSel = document.getElementById('header-device-select');
-    const selects = [sel]; if(headerSel) selects.push(headerSel);
     const list = devicesList();
-    selects.forEach(s=>{
-      if(!s) return;
-      s.innerHTML='';
-      if(list.length === 0){ const o = document.createElement('option'); o.value=''; o.textContent='No saved devices'; s.appendChild(o); return; }
-      list.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.name||d.id}`; s.appendChild(o); });
-    });
-    const cur = getSelectedDevice();
-    if(cur){ selects.forEach(s=>{ try{ s.value = cur.id; }catch(_){ } }); }
-  }
-
-  async function refreshDevicesFromServer(autoSelect=true){
-    try {
-      const r = await fetch('/api/devices');
-      if(!r.ok) throw new Error('http '+r.status);
-      const j = await r.json();
-      if(j && Array.isArray(j.devices)) {
-        // If global app present update it, else keep local copy in window.wifiDevices
-        if(window.app){
-          window.app.devices = j.devices.map(d=>({ id:d.id, name:d.name, ip:d.host||d.ip, com:d.port||d.com }));
-          window.app.selectedDeviceId = j.selectedId || null;
-        } else {
-          window.wifiDevices = j.devices;
-          window.wifiSelectedId = j.selectedId || null;
-        }
-        populateDevices();
-        if(autoSelect && j.selectedId){
-          const selEl = document.getElementById('wifi-device-select');
-          if(selEl) selEl.value = j.selectedId;
-        }
-      }
-    } catch(e){ log('Device list load failed: '+e.message,'error'); }
+    sel.innerHTML='';
+    if(list.length===0){ const o=document.createElement('option'); o.value=''; o.textContent='No devices'; sel.appendChild(o); return; }
+    list.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=d.name||d.id; sel.appendChild(o); });
+    const cur = getSelectedDevice(); if(cur) { try { sel.value = cur.id; } catch(_){ } }
   }
 
   async function selectDeviceFromWifiTab(){
-    const id = document.getElementById('wifi-device-select').value;
-    if(!id){ alert('Choose a saved device first'); return; }
-    try {
-      const r = await fetch('/api/device/select',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
-      const j = await r.json();
-      if(!j.success) throw new Error(j.error||'select failed');
-      log(`Device '${id}' selected.`);
-      // mirror selection into global app if present
-      if(window.app){ window.app.selectedDeviceId = id; }
-      // update host override field
-      const dev = devicesList().find(d=>d.id===id);
-      if(dev && dev.ip){ const h=document.getElementById('wifi-host'); if(h) h.value = dev.ip; }
-      fetchStatus(false);
-    } catch(e){ log('Select device error: '+e.message,'error'); }
+    const sel = document.getElementById('wifi-device-select');
+    if(!sel) return;
+    const id = sel.value;
+    if(!id){ alert('Choose a device'); return; }
+    // Delegate to dev-common header selector if present for consistency
+    const headerSel = document.getElementById('header-device-select');
+    if(headerSel){ headerSel.value = id; headerSel.dispatchEvent(new Event('change')); }
+    else {
+      // direct POST fallback
+      try { await fetch('/api/device/select',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) }); } catch(e){ /* ignore */ }
+    }
+    // Update host field
+    const dev = devicesList().find(d=>d.id===id);
+    if(dev && dev.ip){ const h=document.getElementById('wifi-host'); if(h) h.value = dev.ip; }
+    log(`Device '${id}' selected.`);
+    fetchStatus(false);
   }
 
   function currentHost(){
@@ -223,11 +208,8 @@
     if(rootMarker.dataset.bound === '1') return; // prevent double binding for same DOM
     rootMarker.dataset.bound = '1';
     (async () => {
-    // Ensure ESP32DevUI is attached (if app.js loaded). If not, create a minimal stub for device list use.
-    if(!window.app){ window.app = { devices: window.wifiDevices||[], selectedDeviceId: window.wifiSelectedId||null, getSelectedDevice(){ return this.devices.find(d=>d.id===this.selectedDeviceId)||null; } }; }
-    await refreshDevicesFromServer(true);
     populateDevices();
-    const cur = getSelectedDevice(); if(cur && cur.ip){ document.getElementById('wifi-host').value = cur.ip; }
+    const cur = getSelectedDevice(); if(cur && cur.ip){ const hostEl=document.getElementById('wifi-host'); if(hostEl) hostEl.value = cur.ip; }
   updateSelectedComLabel();
   // Keep label in sync when header COM changes
   const headerSel = document.getElementById('com-port-select');
@@ -265,6 +247,9 @@
     const discBtn = document.getElementById('wifi-disconnect'); if(discBtn) discBtn.addEventListener('click', disconnectWifi);
   // Initial status (single); ongoing updates come from server push via app.js socket
   fetchStatus(false);
+  // Subscribe to dev-common events to keep device list fresh
+  document.addEventListener('dev-common:devices:updated', populateDevices);
+  document.addEventListener('dev-common:device:changed', ()=>{ populateDevices(); fetchStatus(false); });
     })();
   }
 

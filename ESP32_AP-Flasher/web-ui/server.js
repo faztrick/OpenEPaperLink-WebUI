@@ -9,10 +9,15 @@ const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
 const net = require('net');
-const ESP32AIAgent = require('./ai_agent');
-const RemoteServerManager = require('./remote_manager');
-const FileManager = require('./file_manager');
-const DeviceManager = require('./device_manager');
+// Optional modules wrapped so server does not crash if dependencies or native builds are missing.
+let ESP32AIAgent, RemoteServerManager, FileManager, DeviceManager;
+function safeRequire(name, localPath, onFailNote) {
+    try { return require(localPath); } catch (e) { console.warn(`[startup] Optional module '${name}' disabled: ${e.message}${onFailNote? ' - '+onFailNote: ''}`); return null; }
+}
+ESP32AIAgent        = safeRequire('ai_agent', './ai_agent');
+RemoteServerManager  = safeRequire('remote_manager', './remote_manager');
+FileManager          = safeRequire('file_manager', './file_manager');
+DeviceManager        = safeRequire('device_manager', './device_manager');
 // Resolve a Python executable preferring a local virtual environment (venv) when present.
 function resolvePythonExecutable() {
     const projectRoot = path.join(__dirname, '..');
@@ -73,56 +78,20 @@ const io = socketIo(server, {
     }
 });
 
-// --- Logging infrastructure ---
-const { EventEmitter } = require('events');
-const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
-const logEmitter = new EventEmitter();
-
-function appendLog(name, msg) {
-    try {
-        const file = path.join(logsDir, `${name}.log`);
-        const line = `[${new Date().toISOString()}] ${msg}\n`;
-        fs.appendFileSync(file, line, { encoding: 'utf8' });
-        // emit raw line for streaming viewers
-        logEmitter.emit(name, line);
-    } catch (err) {
-        console.error('appendLog error', err);
-    }
-}
-
-function tailLines(name, lines = 200) {
-    try {
-        const file = path.join(logsDir, `${name}.log`);
-        if (!fs.existsSync(file)) return '';
-        const content = fs.readFileSync(file, 'utf8');
-        const all = content.split(/\r?\n/).filter(Boolean);
-        return all.slice(-lines).join('\n');
-    } catch (err) {
-        console.error('tailLines error', err);
-        return '';
-    }
-}
+// Centralized logging utilities
+const { appendLog, tailLines, logEmitter, logsDir } = require('./logging');
 
 // Log server start
 appendLog('node', `server start pid=${process.pid} cwd=${process.cwd()}`);
 
-// Wire socket events to logs
-io.on('connection', (socket) => {
-    const addr = socket.handshake.address || socket.conn?.remoteAddress || 'unknown';
-    appendLog('ws', `connect id=${socket.id} addr=${addr}`);
-    socket.on('disconnect', (reason) => appendLog('ws', `disconnect id=${socket.id} reason=${reason}`));
-    socket.onAny((ev, ...args) => {
-        try { appendLog('ws', `event ${ev} ${JSON.stringify(args)}`); } catch (e) { appendLog('ws', `event ${ev} <serialize error>`); }
-    });
-});
+// (Removed early bare io.on connection logger; merged into main handler below)
 
 // Initialize AI Agent and Remote Server Manager
-const aiAgent = new ESP32AIAgent();
-const remoteManager = new RemoteServerManager();
+const aiAgent = ESP32AIAgent ? new ESP32AIAgent() : null;
+const remoteManager = RemoteServerManager ? new RemoteServerManager() : null;
 
 // Initialize File Manager for local operations (optional)
-const fileManager = new FileManager(path.join(__dirname, '..'));
+const fileManager = FileManager ? new FileManager(path.join(__dirname, '..')) : { getFileTree:()=>[], getProjectStats:()=>({}), getRecentFiles:()=>[], readFile:()=>({}) };
 
 const PORT = process.env.PORT || 3000;
 
@@ -166,28 +135,55 @@ app.get(['/development', '/development.html'], (req, res) => {
     try { res.redirect(301, '/device.html'); } catch (e) { res.redirect('/device.html'); }
 });
 
-// --- API Request Logging Middleware (logs all /api* requests) ---
-app.use((req, res, next) => {
-    if (!req.path.startsWith('/api')) return next();
-    const start = process.hrtime.bigint();
-    const method = req.method;
-    const pathPart = req.path;
-    const queryStr = Object.keys(req.query || {}).length ? `?${Object.entries(req.query).map(([k,v])=>`${k}=${v}`).join('&')}` : '';
-    const bodyPreview = (() => {
-        if (!req.body || typeof req.body !== 'object') return '';
-        try {
-            const json = JSON.stringify(req.body);
-            return json.length > 200 ? json.slice(0,200)+"…" : json;
-        } catch { return ''; }
-    })();
-    appendLog('api', `REQ ${method} ${pathPart}${queryStr} body=${bodyPreview}`);
-    res.on('finish', () => {
-        const durNs = Number(process.hrtime.bigint() - start);
-        const durMs = (durNs/1e6).toFixed(2);
-        appendLog('api', `RES ${method} ${pathPart} status=${res.statusCode} durMs=${durMs}`);
+// --- API Request Logging Middleware (toggle with API_LOGGING env var) ---
+const ENABLE_API_LOGGING = !['0', 'false', 'no'].includes(String(process.env.API_LOGGING || '').toLowerCase());
+if (ENABLE_API_LOGGING) {
+    app.use((req, res, next) => {
+        if (!req.path.startsWith('/api')) return next();
+        const start = process.hrtime.bigint();
+        const method = req.method;
+        const pathPart = req.path;
+        const queryStr = Object.keys(req.query || {}).length ? `?${Object.entries(req.query).map(([k,v])=>`${k}=${v}`).join('&')}` : '';
+        const bodyPreview = (() => {
+            if (!req.body || typeof req.body !== 'object') return '';
+            try {
+                const json = JSON.stringify(req.body);
+                return json.length > 200 ? json.slice(0,200)+"…" : json;
+            } catch { return ''; }
+        })();
+        appendLog('api', `REQ ${method} ${pathPart}${queryStr} body=${bodyPreview}`);
+        res.on('finish', () => {
+            const durNs = Number(process.hrtime.bigint() - start);
+            const durMs = (durNs/1e6).toFixed(2);
+            appendLog('api', `RES ${method} ${pathPart} status=${res.statusCode} durMs=${durMs}`);
+        });
+        next();
     });
-    next();
-});
+}
+
+// --- Simple in-memory rate limiting for heavy endpoints ---
+const _rateBuckets = new Map();
+function _rateCheck(key, limit, intervalMs) {
+    const now = Date.now();
+    const windowStart = now - intervalMs;
+    let arr = _rateBuckets.get(key) || [];
+    // prune old
+    arr = arr.filter(ts => ts > windowStart);
+    if (arr.length >= limit) {
+        _rateBuckets.set(key, arr); // keep pruned
+        return false;
+    }
+    arr.push(now);
+    _rateBuckets.set(key, arr);
+    return true;
+}
+function rateLimit(req, res, keySuffix, limit, intervalMs = 60000) {
+    const key = `${req.ip || 'unknown'}:${keySuffix}`;
+    if (!_rateCheck(key, limit, intervalMs)) {
+        return res.status(429).json({ success: false, error: 'rate limit exceeded' });
+    }
+    return null;
+}
 
 // Ensure uploads folder exists
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
@@ -388,7 +384,8 @@ function decodeRpcPayload(payload) {
 const defaultConfig = {
     environment: 'OutdoorAP',
     comPort: 'COM10',
-    baudRate: 921600,
+    // Align with firmware Serial.begin(115200) for human-readable console
+    baudRate: 115200,
     jobs: 0,
     fastBuild: true,
     clean: false,
@@ -405,34 +402,38 @@ const defaultConfig = {
 let currentConfig = { ...defaultConfig };
 
 // Initialize Serial Manager now that initial config is available
-serialManager = new SerialManager({
-    manualComOnly: currentConfig.manualComOnly,
-    allowedComPort: currentConfig.allowedComPort
-});
+try {
+    serialManager = new SerialManager({
+        manualComOnly: currentConfig.manualComOnly,
+        allowedComPort: currentConfig.allowedComPort
+    });
+} catch (e) {
+    console.warn('[startup] SerialManager unavailable:', e.message);
+}
 
 // Bridge serial manager events to socket.io and logs
 try {
-    serialManager.on('open', (info) => {
+    if (serialManager) serialManager.on('open', (info) => {
         appendLog('serial', `OPEN path=${info.path} baud=${info.baudRate}`);
         io.emit('serial-opened', info.path);
         io.emit('serial-status', serialManager.getStatus());
     });
-    serialManager.on('close', (info) => {
+    if (serialManager) serialManager.on('close', (info) => {
         appendLog('serial', `CLOSE path=${info.path}`);
         io.emit('serial-closed', info.path);
         io.emit('serial-status', serialManager.getStatus());
     });
-    serialManager.on('data', (d) => {
+    if (serialManager) serialManager.on('data', (d) => {
         const text = d.text || d.data?.toString() || '';
         appendLog('serial', `port=${d.path} ${text.replace(/\r?\n/g,'\\n')}`);
         io.emit('serial-data', { port: d.path, text });
     });
-    serialManager.on('error', (e) => {
+    if (serialManager) serialManager.on('error', (e) => {
         appendLog('serial', `ERROR path=${e.path} err=${e.error}`);
         io.emit('serial-error', e);
         io.emit('serial-status', serialManager.getStatus());
     });
-    serialManager.on('status', (s) => {
+    if (serialManager) serialManager.on('status', (s) => {
         io.emit('serial-status', s);
     });
 } catch (_) { /* ignore wiring issues */ }
@@ -610,18 +611,15 @@ app.get('/api/com-ports', async (req, res) => {
 
 // Serial control endpoints
 app.get('/api/serial/list', async (req, res) => {
-    try {
-        const ports = await serialManager.listPorts();
-        res.json({ success: true, ports });
-    } catch (e) {
-        res.json({ success: false, error: e.message });
-    }
+    if (!serialManager) return res.json({ success:false, error:'serial manager not available' });
+    try { const ports = await serialManager.listPorts(); res.json({ success: true, ports }); }
+    catch (e) { res.json({ success: false, error: e.message }); }
 });
 
 // Serial centralized status
 app.get('/api/serial/status', (req, res) => {
-    try { res.json({ success: true, status: serialManager.getStatus() }); }
-    catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    if (!serialManager) return res.json({ success:true, status:{ available:false }, note:'serial manager disabled' });
+    try { res.json({ success: true, status: serialManager.getStatus() }); } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // Firmware upload endpoint
@@ -654,7 +652,7 @@ app.post('/api/firmware/trigger', async (req, res) => {
 });
 
 app.post('/api/serial/open', async (req, res) => {
-    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
     try {
@@ -666,6 +664,7 @@ app.post('/api/serial/open', async (req, res) => {
 });
 
 app.post('/api/serial/close', async (req, res) => {
+    if (!serialManager) return res.json({ success:true, alreadyClosed:true });
     const { path: portPath } = req.body || {};
     // If a different port provided than open one, just report state
     if (portPath && serialManager.getStatus().path && portPath !== serialManager.getStatus().path) {
@@ -680,13 +679,78 @@ app.post('/api/serial/close', async (req, res) => {
 });
 
 app.post('/api/serial/write', async (req, res) => {
+    if (!serialManager) return res.status(501).json({ success:false, error:'serial manager not available' });
     const { path: portPath, data } = req.body || {};
     if (!portPath || data === undefined) return res.status(400).json({ success: false, error: 'path and data required' });
     const status = serialManager.getStatus();
     if (!status.open || status.path !== portPath) return res.status(400).json({ success: false, error: 'port not open' });
     try {
-        await serialManager.write(data);
+        const autoNL = req.query && req.query.autoNL === '1';
+        let payload = data;
+        if (autoNL && typeof payload === 'string' && !payload.endsWith('\n')) payload += '\n';
+        await serialManager.write(payload);
         res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Reopen serial (optionally change baud). POST { path?, baudRate? }
+app.post('/api/serial/reopen', async (req, res) => {
+    try {
+        if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success:false, error:'serialport not available on server' });
+        const { path: portPath, baudRate } = req.body || {};
+        const targetPort = portPath || currentConfig.comPort;
+        const targetBaud = parseInt(baudRate,10) || currentConfig.baudRate || 115200;
+        const st = serialManager.getStatus();
+        if (st.open && (st.path !== targetPort || st.baudRate !== targetBaud)) {
+            await serialManager.close();
+        }
+        const result = await serialManager.open(targetPort, targetBaud);
+        currentConfig.comPort = targetPort;
+        currentConfig.baudRate = targetBaud;
+        res.json({ success:true, result, status: serialManager.getStatus() });
+    } catch (e) { res.status(400).json({ success:false, error:e.message }); }
+});
+
+// Diagnose serial: returns status and pokes newline if open
+app.get('/api/serial/diagnose', async (req, res) => {
+    try {
+        if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success:false, error:'serialport not available on server' });
+        const status = serialManager.getStatus();
+        let poked = false;
+        if (status.open) {
+            try { await serialManager.write('\n'); poked = true; } catch (_) {}
+        }
+        res.json({ success:true, status, poked });
+    } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+});
+
+// Curated list of common serial commands (extend as firmware grows)
+// Keeping this static avoids probing the device and provides quick access in the UI.
+// If a future dynamic discovery mechanism is added, this endpoint can merge results.
+const DEFAULT_SERIAL_COMMANDS = [
+    'help',
+    'version',
+    'reboot',
+    'sysinfo',
+    'wifi_scan',
+    'heap',
+    'tasks',
+    'get_db',
+    'list_serial_ports',
+    // Developer / maintenance helpers (only if supported by firmware)
+    'ping',
+    'ota_status'
+];
+
+app.get('/api/serial/commands', (req, res) => {
+    try {
+        // Allow optional filtering (?q=prefix)
+        const q = (req.query.q || '').toString().trim().toLowerCase();
+        let cmds = DEFAULT_SERIAL_COMMANDS.slice();
+        if (q) cmds = cmds.filter(c => c.toLowerCase().startsWith(q));
+        res.json({ success: true, commands: cmds });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -695,7 +759,7 @@ app.post('/api/serial/write', async (req, res) => {
 // Serial WiFi scan using Improv protocol
 // body: { path, baudRate? }
 app.post('/api/serial/wifi/scan', async (req, res) => {
-    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200, timeoutMs = 8000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
@@ -769,7 +833,7 @@ app.post('/api/serial/wifi/scan', async (req, res) => {
 // Serial WiFi connect using Improv protocol
 // body: { path, ssid, password, baudRate? }
 app.post('/api/serial/wifi/connect', async (req, res) => {
-    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, ssid, password = '', baudRate = 115200 } = req.body || {};
     if (!portPath || !ssid) return res.status(400).json({ success: false, error: 'path and ssid required' });
 
@@ -829,7 +893,7 @@ app.post('/api/serial/wifi/connect', async (req, res) => {
 
 // Quick COM health check: write a test command and wait briefly for any response
 app.post('/api/com/check', async (req, res) => {
-    if (!serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
+    if (!serialManager || !serialManager.isAvailable()) return res.status(501).json({ success: false, error: 'serialport not available on server' });
     const { path: portPath, baudRate = 115200, testCmd = '\n', timeout = 1000 } = req.body || {};
     if (!portPath) return res.status(400).json({ success: false, error: 'path required' });
 
@@ -965,38 +1029,89 @@ app.post('/api/device/wifi', async (req, res) => {
 
 // WiFi: scan networks on device (proxy)
 // GET /api/device/wifi/scan?host=IP
-// Attempts to call device endpoints in order: /wifi_scan, /scan_wifi
+// Unified sequence (preferred):
+//   1. POST /api/wifi/scan
+//   2. Poll /api/wifi/scan/results until scanRunning=false or timeout
+// Legacy fallback (deprecated – will be removed): /wifi_scan, /scan_wifi
 app.get('/api/device/wifi/scan', async (req, res) => {
+    // Limit to 4 scans per minute per IP to protect devices
+    if (rateLimit(req, res, 'wifi_scan', 4)) return;
     try {
         const host = req.query.host;
         if (!host) return res.status(400).json({ success: false, error: 'host required' });
-
         const base = `http://${host}`;
-        const tryPaths = ['/wifi_scan', '/scan_wifi'];
+
+        // Helper: normalize any results array shape
+        const normalizeNetworks = (raw) => {
+            if (!raw) return [];
+            // Accept { networks: [...] } or { results: [...] }
+            if (Array.isArray(raw.networks)) raw = raw.networks;
+            if (Array.isArray(raw.results)) raw = raw.results;
+            if (Array.isArray(raw.scanResults)) raw = raw.scanResults;
+            if (!Array.isArray(raw) && typeof raw === 'object') {
+                // convert object map -> array of values
+                raw = Object.values(raw);
+            }
+            if (!Array.isArray(raw)) return [];
+            return raw.map(n => {
+                if (n && typeof n === 'object') return n; // assume already structured
+                return { ssid: String(n) };
+            });
+        };
+
+        // --- Preferred unified API path ---
+        try {
+            const kick = await axios.post(`${base}/api/wifi/scan`, {}, { timeout: 8000, validateStatus: () => true });
+            if (kick.status >= 200 && kick.status < 300) {
+                const started = Date.now();
+                const timeoutMs = 15000; // overall scan timeout
+                let lastData = null;
+                while ((Date.now() - started) < timeoutMs) {
+                    await new Promise(r => setTimeout(r, 750));
+                    try {
+                        const r = await axios.get(`${base}/api/wifi/scan/results`, { timeout: 6000, validateStatus: () => true });
+                        if (r.status >= 200 && r.status < 300) {
+                            lastData = r.data;
+                            const running = !!r.data?.scanRunning;
+                            if (!running) {
+                                const nets = normalizeNetworks(r.data);
+                                return res.json({ success: true, networks: nets, unified: true, scanDurationMs: Date.now() - started });
+                            }
+                        } else {
+                            // Non-success status while polling: break to fallback
+                            break;
+                        }
+                    } catch (pollErr) {
+                        // break to fallback on persistent error
+                        break;
+                    }
+                }
+                // If we exit loop with lastData that has results but scanRunning maybe stuck false
+                if (lastData) {
+                    const nets = normalizeNetworks(lastData);
+                    if (nets.length) return res.json({ success: true, networks: nets, unified: true, partial: true });
+                }
+                // fall through to legacy
+            }
+        } catch (unifiedErr) {
+            // swallow and attempt legacy
+        }
+
+        // --- Legacy fallback paths --- (deprecated)
+        const legacyPaths = ['/wifi_scan', '/scan_wifi'];
         let lastErr = null;
-        for (const p of tryPaths) {
+        for (const p of legacyPaths) {
             try {
                 const url = `${base}${p}`;
                 const r = await axios.get(url, { timeout: 10000, validateStatus: () => true });
                 if (r.status >= 200 && r.status < 300) {
-                    // Try to normalize payload
-                    let data = r.data;
-                    // some firmwares wrap in { networks: [...] }
-                    if (data && data.networks && Array.isArray(data.networks)) {
-                        data = data.networks;
-                    }
-                    // ensure array
-                    if (!Array.isArray(data) && typeof data === 'object') {
-                        data = Object.values(data);
-                    }
-                    return res.json({ success: true, networks: data });
+                    const nets = normalizeNetworks(r.data);
+                    return res.json({ success: true, networks: nets, unified: false, legacyEndpoint: p });
                 }
                 lastErr = new Error(`HTTP ${r.status}`);
-            } catch (e) {
-                lastErr = e;
-            }
+            } catch (e) { lastErr = e; }
         }
-        return res.status(502).json({ success: false, error: lastErr?.message || 'scan failed' });
+        return res.status(502).json({ success: false, error: lastErr?.message || 'scan failed', unifiedTried: true });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message || String(err) });
     }
@@ -1057,7 +1172,11 @@ app.get('/api/device/wifi/status', async (req, res) => {
     if (!host) return res.status(400).json({ success: false, error: 'host required' });
     const base = `http://${host}`;
     const result = { success: true, host, connected: false, ssid: null, rssi: null, ip: null, channel: null, mode: null, raw: {} };
+    // Preferred unified endpoints first; legacy fallbacks after
     const attempts = [
+        { path: '/api/wifi/summary', tag: 'summary' },
+        { path: '/api/wifi/status', tag: 'status' },
+        // --- legacy (deprecated) ---
         { path: '/network_info', tag: 'network_info' },
         { path: '/sysinfo', tag: 'sysinfo' },
         { path: '/api/telemetry', tag: 'telemetry' },
@@ -1068,30 +1187,25 @@ app.get('/api/device/wifi/status', async (req, res) => {
             const r = await axios.get(base + a.path, { timeout: 5000, validateStatus: () => true });
             if (r.status >= 200 && r.status < 300 && r.data) {
                 result.raw[a.tag] = r.data;
-                // Normalize fields from various schemas
                 const d = r.data;
-                // wifi or nested wifi
-                const wifi = d.wifi || d.network || d;
+                const wifi = d.wifi || d.network || d; // d.network legacy alias
                 if (wifi) {
                     if (wifi.ssid && !result.ssid) result.ssid = wifi.ssid;
                     if (typeof wifi.rssi === 'number' && result.rssi == null) result.rssi = wifi.rssi;
                     if (wifi.localIP && !result.ip) result.ip = wifi.localIP;
                     if (wifi.ip && !result.ip) result.ip = wifi.ip;
                     if (wifi.channel && !result.channel) result.channel = wifi.channel;
+                    if ((wifi.connected === true || wifi.status === 'connected') && !result.connected) result.connected = true;
                 }
-                if (d.localIP && !result.ip) result.ip = d.localIP;
+                if (d.ap && d.ap.enabled && !result.mode) result.mode = d.ap.mode || 'ap';
+                if (d.mode && !result.mode) result.mode = d.mode;
                 if (d.wifiStatus !== undefined) {
                     const ws = (typeof d.wifiStatus === 'string') ? parseInt(d.wifiStatus, 10) : d.wifiStatus;
                     if (ws === 3) result.connected = true;
                 }
-                if (d.mode && !result.mode) result.mode = d.mode; // some firmwares
-                // Heuristic connected states
-                if (d.wifi && (d.wifi.connected || d.wifi.status === 'connected')) result.connected = true;
-                if (d.ap && d.ap.enabled && result.mode === null) result.mode = 'ap';
             }
         } catch (_) { /* ignore individual attempt */ }
     }
-    // Fallback connectivity check (ping)
     if (!result.connected) {
         try {
             const ping = await axios.get(base + '/api/ping', { timeout: 2000, validateStatus: () => true });
@@ -1189,8 +1303,8 @@ app.get('/api/status', (req, res) => {
     res.json(status);
 });
 
-// AP/STA Summary: aggregate /network_info for all devices
-// GET /api/ap-summary -> { success, devices: [ { id, host, ap: { enabled, clients, ip }, wifi: { connected, ssid, rssi, ip, channel }, mode, error } ] }
+// AP/STA Summary: aggregate unified /api/wifi/summary for all devices (fallback to /network_info)
+// GET /api/ap-summary -> { success, devices: [ { id, host, ap, wifi, mode, error } ] }
 app.get('/api/ap-summary', async (req, res) => {
     try {
         const out = [];
@@ -1200,20 +1314,28 @@ app.get('/api/ap-summary', async (req, res) => {
             const rec = { id: d.id, host, ap: null, wifi: null, mode: null, error: null };
             if (!host) { rec.error = 'no-host'; out.push(rec); continue; }
             try {
-                const r = await axios.get(`http://${host}/network_info`, { timeout: 5000, validateStatus: () => true });
-                if (r.status >= 200 && r.status < 300 && r.data) {
-                    const data = r.data;
+                let data = null;
+                // Try unified summary first
+                try {
+                    const rSum = await axios.get(`http://${host}/api/wifi/summary`, { timeout: 5000, validateStatus: () => true });
+                    if (rSum.status >= 200 && rSum.status < 300 && rSum.data) data = rSum.data;
+                } catch (_) { /* ignore */ }
+                // Fallback legacy
+                if (!data) {
+                    const rLegacy = await axios.get(`http://${host}/network_info`, { timeout: 5000, validateStatus: () => true });
+                    if (rLegacy.status >= 200 && rLegacy.status < 300 && rLegacy.data) data = rLegacy.data; else rec.error = 'http-' + rLegacy.status;
+                }
+                if (data) {
                     rec.ap = data.ap || null;
-                    rec.wifi = data.wifi || null;
-                    // derive mode
-                    if (data.ap && data.ap.enabled && data.wifi && data.wifi.connected) rec.mode = 'ap+sta';
-                    else if (data.ap && data.ap.enabled) rec.mode = 'ap';
-                    else if (data.wifi && data.wifi.connected) rec.mode = 'sta';
-                } else {
-                    rec.error = 'http-' + r.status;
+                    rec.wifi = data.wifi || data.network || null;
+                    // derive mode heuristically
+                    if (data.mode) rec.mode = data.mode;
+                    else if (rec.ap && rec.ap.enabled && rec.wifi && rec.wifi.connected) rec.mode = 'ap+sta';
+                    else if (rec.ap && rec.ap.enabled) rec.mode = 'ap';
+                    else if (rec.wifi && rec.wifi.connected) rec.mode = 'sta';
                 }
             } catch (e) {
-                rec.error = e.message || 'fetch-failed';
+                if (!rec.error) rec.error = e.message || 'fetch-failed';
             }
             out.push(rec);
         }
@@ -1287,7 +1409,8 @@ app.get('/api/tests/api', async (req, res) => {
         const host = d.host || d.ip;
         if (!host) { results.push({ id: d.id, host: null, ok: false, http: null, durationMs: 0, endpointTried: null, note: 'no host' }); continue; }
         const base = `http://${host}`;
-        const endpoints = ['/network_info', '/sysinfo', '/api/telemetry', '/api/status', '/api/ping'];
+    // Prefer unified endpoints, then legacy fallbacks
+    const endpoints = ['/api/wifi/summary', '/api/wifi/status', '/api/ping', '/network_info', '/sysinfo', '/api/telemetry', '/api/status'];
         let ok = false; let http = null; let endpointTried = null; let note = '';
         const start = Date.now();
         for (const ep of endpoints) {
@@ -1312,9 +1435,7 @@ app.get('/api/tests/api', async (req, res) => {
 // GET /api/tests/serial?poke=1 -> uses SerialManager.getStatus(); if open and poke=1 sends a newline
 app.get('/api/tests/serial', async (req, res) => {
     try {
-        if (!serialManager || !serialManager.isAvailable()) {
-            return res.json({ success: true, available: false, status: null, note: 'serial manager not available' });
-        }
+        if (!serialManager || !serialManager.isAvailable()) return res.json({ success: true, available: false, status: null, note: 'serial manager not available' });
         const status = serialManager.getStatus();
         let pokeSent = false;
         if (req.query.poke === '1' && status && status.open) {
@@ -1649,6 +1770,8 @@ app.post('/api/log', (req, res) => {
 // Device file management endpoints - proxy to ESP32 device
 // New: device log tail proxy and TFT print proxy
 app.get('/api/device/logs/tail', async (req, res) => {
+    // Limit tail requests (initial bursts) to reduce device pressure
+    if (rateLimit(req, res, 'device_logs_tail', 12)) return;
     try {
         const host = req.query.host;
         const lines = req.query.lines || 200;
@@ -1800,44 +1923,18 @@ app.delete('/api/device-files/delete', async (req, res) => {
 });
 
 // Local source file browser (for reference/comparison)
-app.get('/api/source-files/tree', (req, res) => {
-    try {
-        const tree = fileManager.getFileTree();
-        res.json({ success: true, tree });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+app.get('/api/source-files/tree', (req, res) => { try { const tree = fileManager.getFileTree(); res.json({ success: true, tree }); } catch (error) { res.status(500).json({ success: false, error: error.message }); } });
 
-app.get('/api/source-files/stats', (req, res) => {
-    try {
-        const stats = fileManager.getProjectStats();
-        res.json({ success: true, stats });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+app.get('/api/source-files/stats', (req, res) => { try { const stats = fileManager.getProjectStats(); res.json({ success: true, stats }); } catch (error) { res.status(500).json({ success: false, error: error.message }); } });
 
-app.get('/api/source-files/recent', (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit) || 20;
-        const files = fileManager.getRecentFiles(limit);
-        res.json({ success: true, files });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+app.get('/api/source-files/recent', (req, res) => { try { const limit = parseInt(req.query.limit) || 20; const files = fileManager.getRecentFiles(limit); res.json({ success: true, files }); } catch (error) { res.status(500).json({ success: false, error: error.message }); } });
 
 // Read single local source file (relative path)
-app.get('/api/source-files/read', (req, res) => {
-    try {
-        const p = req.query.path;
-        if (!p) return res.status(400).json({ success: false, error: 'path query required' });
-        const file = fileManager.readFile(p);
-        res.json({ success: true, file });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message || String(err) });
-    }
+app.get('/api/source-files/read', (req, res) => { try { const p = req.query.path; if (!p) return res.status(400).json({ success: false, error: 'path query required' }); const file = fileManager.readFile(p); res.json({ success: true, file }); } catch (err) { res.status(500).json({ success: false, error: err.message || String(err) }); } });
+
+// Simple health endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ ok:true, uptimeSec: Math.floor(process.uptime()), pid: process.pid, serialAvailable: !!(serialManager && serialManager.isAvailable && serialManager.isAvailable()), aiAgent: !!aiAgent });
 });
 
 app.get('/api/source-files/search', (req, res) => {
@@ -2199,13 +2296,66 @@ app.post('/api/kill/:processId', (req, res) => {
 });
 
 // AI Agent endpoints
+/**
+ * AI Endpoints Overview
+ * GET  /api/ai/config         -> Safe config (keys masked)
+ * POST /api/ai/config         -> Update config (body may include openai, anthropic, features, editing)
+ * POST /api/ai/chat           -> { message, context? }
+ * POST /api/ai/analyze-code   -> { filePath, code }
+ * POST /api/ai/suggestions    -> { input, projectState }
+ * GET  /api/ai/history        -> conversation history
+ * DELETE /api/ai/history      -> clear history
+ * GET  /api/ai/files          -> list editable files (requires editing enabled)
+ * GET  /api/ai/file?path=     -> fetch file content
+ * POST /api/ai/patch/preview  -> { path, instruction } generate diff & proposed content
+ * POST /api/ai/patch/apply    -> { path, instruction } apply AI edit (atomic)
+ * GET  /api/ai/health         -> Provider availability + feature flags
+ */
 app.get('/api/ai/config', (req, res) => {
     res.json(aiAgent.getConfig());
 });
 
 app.post('/api/ai/config', (req, res) => {
     try {
-        aiAgent.updateConfig(req.body);
+        const body = req.body || {};
+        // Defensive merge ensuring nested objects exist
+        const merged = {};
+        if (body.openai) {
+            merged.openai = {
+                apiKey: body.openai.apiKey !== undefined ? body.openai.apiKey : aiAgent.config.openai.apiKey,
+                model: body.openai.model || aiAgent.config.openai.model,
+                enabled: !!body.openai.enabled
+            };
+        }
+        if (body.anthropic) {
+            merged.anthropic = {
+                apiKey: body.anthropic.apiKey !== undefined ? body.anthropic.apiKey : aiAgent.config.anthropic.apiKey,
+                model: body.anthropic.model || aiAgent.config.anthropic.model,
+                enabled: !!body.anthropic.enabled
+            };
+        }
+        if (body.features) {
+            merged.features = { ...aiAgent.config.features, ...body.features };
+        }
+        if (body.codeEditing !== undefined) { // backward compatibility (older clients may send separate flag)
+            merged.features = { ...aiAgent.config.features, codeEditing: !!body.codeEditing };
+        }
+        if (body.editing) {
+            merged.editing = { ...aiAgent.config.editing };
+            if (body.editing.enableFileEdits !== undefined) merged.editing.enableFileEdits = !!body.editing.enableFileEdits;
+            if (body.editing.maxFileSize) merged.editing.maxFileSize = parseInt(body.editing.maxFileSize,10) || aiAgent.config.editing.maxFileSize;
+            if (Array.isArray(body.editing.allowedExtensions)) merged.editing.allowedExtensions = body.editing.allowedExtensions.filter(e=>/^\./.test(e));
+            if (Array.isArray(body.editing.blockList)) merged.editing.blockList = body.editing.blockList;
+            if (body.editing.root && typeof body.editing.root === 'string') {
+                // For safety: ignore attempts to move root outside current root
+                try {
+                    const proposed = path.resolve(body.editing.root);
+                    const current = path.resolve(aiAgent.config.editing.root);
+                    if (proposed.startsWith(current)) merged.editing.root = proposed; // allow narrowing deeper
+                } catch {/* ignore */}
+            }
+        }
+        aiAgent.updateConfig(merged);
         res.json({ success: true, config: aiAgent.getConfig() });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -2249,6 +2399,157 @@ app.get('/api/ai/history', (req, res) => {
 app.delete('/api/ai/history', (req, res) => {
     aiAgent.clearHistory();
     res.json({ success: true });
+});
+
+app.get('/api/ai/health', (req, res) => {
+    try {
+        const cfg = aiAgent.getConfig();
+        res.json({
+            success: true,
+            providers: {
+                openai: { enabled: cfg.openai.enabled, model: cfg.openai.model, available: !!aiAgent.openai },
+                anthropic: { enabled: cfg.anthropic.enabled, model: cfg.anthropic.model, available: !!aiAgent.anthropic }
+            },
+            features: cfg.features,
+            editing: cfg.editing ? { ...cfg.editing, apiKeyMasked: true } : null,
+            available: aiAgent.isAvailable()
+        });
+    } catch (e) {
+        res.status(500).json({ success:false, error: e.message });
+    }
+});
+
+// --- AI Assisted Code Editing Endpoints ---
+// Security & safety constraints applied:
+//  * Must enable both config.features.codeEditing and config.editing.enableFileEdits
+//  * File must reside under configured root (default repo root) and within size & extension allow-lists
+//  * Preview endpoint never writes; Apply endpoint performs atomic write via temp file + rename
+//  * Block list prevents modification of sensitive runtime/config files
+
+function aiEditingEnabled() {
+    try { return aiAgent.config.features.codeEditing && aiAgent.config.editing.enableFileEdits; } catch { return false; }
+}
+
+function resolveSafePath(rel) {
+    const root = aiAgent.config.editing.root;
+    const full = path.resolve(root, rel);
+    if (!full.startsWith(path.resolve(root))) throw new Error('Path outside allowed root');
+    return full;
+}
+
+function validateFileTarget(fullPath) {
+    const { allowedExtensions, maxFileSize, blockList } = aiAgent.config.editing;
+    const ext = path.extname(fullPath).toLowerCase();
+    if (!allowedExtensions.includes(ext)) throw new Error('Extension not allowed');
+    const base = path.basename(fullPath);
+    if (blockList.includes(base)) throw new Error('File is blocked');
+    if (!fs.existsSync(fullPath)) throw new Error('File does not exist');
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) throw new Error('Not a regular file');
+    if (stat.size > maxFileSize) throw new Error('File exceeds size limit');
+    // crude binary detection: if first 800 bytes contain many \0 bytes
+    const fd = fs.openSync(fullPath, 'r');
+    const buf = Buffer.alloc(Math.min(800, stat.size));
+    fs.readSync(fd, buf, 0, buf.length, 0); fs.closeSync(fd);
+    const nulCount = buf.reduce((a,b)=> a + (b===0?1:0),0);
+    if (nulCount > 5) throw new Error('Binary file rejected');
+    return stat.size;
+}
+
+function listTextFiles(dir, root, acc, depth=0) {
+    if (depth > 6) return; // limit breadth
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+            if (['.git', 'node_modules', '.pio', 'build', 'dist'].includes(ent.name)) continue;
+            listTextFiles(full, root, acc, depth+1);
+        } else {
+            const ext = path.extname(ent.name).toLowerCase();
+            if (aiAgent.config.editing.allowedExtensions.includes(ext)) {
+                acc.push(path.relative(root, full));
+            }
+        }
+    }
+}
+
+app.get('/api/ai/files', (req, res) => {
+    if (!aiEditingEnabled()) return res.status(403).json({ success:false, error:'Editing disabled' });
+    try {
+        const root = aiAgent.config.editing.root;
+        const files = [];
+        listTextFiles(root, root, files);
+        res.json({ success:true, files });
+    } catch (e) { res.status(500).json({ success:false, error:e.message }); }
+});
+
+app.get('/api/ai/file', (req, res) => {
+    if (!aiEditingEnabled()) return res.status(403).json({ success:false, error:'Editing disabled' });
+    const rel = req.query.path;
+    if (!rel) return res.status(400).json({ success:false, error:'path required'});
+    try {
+        const full = resolveSafePath(rel);
+        validateFileTarget(full);
+        const content = fs.readFileSync(full, 'utf8');
+        res.json({ success:true, path: rel, content });
+    } catch (e) { res.status(400).json({ success:false, error:e.message }); }
+});
+
+function computeUnifiedDiff(oldStr, newStr, filePath) {
+    const oldLines = oldStr.split(/\r?\n/);
+    const newLines = newStr.split(/\r?\n/);
+    // Simple diff (O(n^2) worst) acceptable for <=200KB; use LCS dynamic programming
+    const m = oldLines.length, n = newLines.length;
+    const dp = Array(m+1).fill(null).map(()=>Array(n+1).fill(0));
+    for (let i=m-1;i>=0;--i) {
+        for (let j=n-1;j>=0;--j) {
+            dp[i][j] = oldLines[i] === newLines[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+        }
+    }
+    const diff = [];
+    let i=0,j=0;
+    while (i<m && j<n) {
+        if (oldLines[i] === newLines[j]) { diff.push(' '+oldLines[i]); i++; j++; }
+        else if (dp[i+1][j] >= dp[i][j+1]) { diff.push('-'+oldLines[i]); i++; }
+        else { diff.push('+'+newLines[j]); j++; }
+    }
+    while (i<m) { diff.push('-'+oldLines[i]); i++; }
+    while (j<n) { diff.push('+'+newLines[j]); j++; }
+    return { header: `--- a/${filePath}\n+++ b/${filePath}`, lines: diff };
+}
+
+app.post('/api/ai/patch/preview', async (req, res) => {
+    if (!aiEditingEnabled()) return res.status(403).json({ success:false, error:'Editing disabled' });
+    const { path: relPath, instruction } = req.body || {};
+    if (!relPath || !instruction) return res.status(400).json({ success:false, error:'path and instruction required' });
+    try {
+        const full = resolveSafePath(relPath);
+        validateFileTarget(full);
+        const original = fs.readFileSync(full, 'utf8');
+        const { reasoning, content } = await aiAgent.generateFileEdit(relPath, original, instruction);
+        const diff = computeUnifiedDiff(original, content, relPath);
+        res.json({ success:true, reasoning, diff, proposed: content });
+    } catch (e) { res.status(400).json({ success:false, error:e.message }); }
+});
+
+app.post('/api/ai/patch/apply', async (req, res) => {
+    if (!aiEditingEnabled()) return res.status(403).json({ success:false, error:'Editing disabled' });
+    const { path: relPath, instruction, token } = req.body || {};
+    if (!relPath || !instruction) return res.status(400).json({ success:false, error:'path and instruction required'});
+    // Basic CSRF-ish token optional hook: require token if configured later
+    try {
+        const full = resolveSafePath(relPath);
+        validateFileTarget(full);
+        const original = fs.readFileSync(full, 'utf8');
+        const { reasoning, content } = await aiAgent.generateFileEdit(relPath, original, instruction);
+        const tmp = full + '.ai_tmp';
+        fs.writeFileSync(tmp, content, 'utf8');
+        fs.renameSync(tmp, full);
+        const diff = computeUnifiedDiff(original, content, relPath);
+        appendLog('node', `AI_APPLY path=${relPath} bytes_old=${original.length} bytes_new=${content.length}`);
+        res.json({ success:true, reasoning, diff });
+    } catch (e) { res.status(400).json({ success:false, error:e.message }); }
 });
 
 // Remote Server endpoints
@@ -2412,10 +2713,16 @@ app.delete('/api/remote/server/:serverId', async (req, res) => {
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
+    const addr = socket.handshake.address || socket.conn?.remoteAddress || 'unknown';
+    appendLog('ws', `connect id=${socket.id} addr=${addr}`);
+    console.log('Client connected:', socket.id); // retain console for dev visibility
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+        appendLog('ws', `disconnect id=${socket.id} reason=${reason}`);
         console.log('Client disconnected:', socket.id);
+    });
+    socket.onAny((ev, ...args) => {
+        try { appendLog('ws', `event ${ev} ${JSON.stringify(args)}`); } catch (e) { appendLog('ws', `event ${ev} <serialize error>`); }
     });
 
     // AI Socket handlers
@@ -2907,6 +3214,19 @@ function postListen(port){
         console.log(`🌐 Open your browser to http://localhost:${port}`);
     }
 }
+
+// Basic health endpoint (not rate limited intentionally)
+app.get('/healthz', (req, res) => {
+    res.json({
+        ok: true,
+        uptime: process.uptime(),
+        pid: process.pid,
+        rss: process.memoryUsage().rss,
+        devices: (()=>{ try { return deviceManager.list().length; } catch { return 0; }})(),
+        ai: { available: aiAgent.isAvailable() },
+        ts: Date.now()
+    });
+});
 
 startServer(PORT);
 

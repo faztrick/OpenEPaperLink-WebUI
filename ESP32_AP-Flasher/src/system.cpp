@@ -6,7 +6,7 @@
 
 #include "storage.h"
 #include "tag_db.h"
-#include "wifimanager.h"
+#include "wifi_module.h"
 
 void timeSyncCallback(struct timeval *tv)
 {
@@ -15,7 +15,7 @@ void timeSyncCallback(struct timeval *tv)
 
 void initTime(void *parameter)
 {
-    if (!(WiFi.status() == WL_CONNECTED || wm.wifiStatus == ETHERNET))
+    if (WiFi.status() != WL_CONNECTED)
     {
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }

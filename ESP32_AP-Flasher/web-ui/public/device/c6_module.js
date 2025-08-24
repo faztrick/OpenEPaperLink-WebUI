@@ -34,13 +34,13 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSettings();
     setupAutoRefresh();
     checkModuleCapabilities();
-    
+
     // Initialize the update source dropdown
     updateSourceChanged();
-    
+
     // Initialize file validation
     validateFirmwareFile();
-    
+
     // Load current firmware information
     loadCurrentFirmware();
 });
@@ -48,11 +48,11 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadCurrentFirmware() {
     try {
         const currentDiv = document.getElementById('currentFirmware');
-        
+
         if (moduleInfo && Object.keys(moduleInfo).length > 0) {
             const version = moduleInfo.version || moduleInfo.firmware || moduleInfo.fwVersion || 'Unknown';
             const buildDate = moduleInfo.buildDate || moduleInfo.compiled || '';
-            
+
             currentDiv.innerHTML = `
                 <strong>Version:</strong> ${version}<br>
                 <strong>Type:</strong> ESP32-S3 C6 Elecrow Module<br>
@@ -63,12 +63,12 @@ async function loadCurrentFirmware() {
             // Try to get system info
             const response = await fetch('/sysinfo');
             const sysData = await response.json();
-            
+
             currentDiv.innerHTML = `
                 <strong>System:</strong> ${sysData.system || 'OpenEPaperLink'}<br>
                 <strong>Version:</strong> ${sysData.version || 'Unknown'}<br>
-                <strong>C6 Support:</strong> ${sysData.hasC6 || sysData.C6 === "1" ? 
-                    '<span style="color: #28a745;">✅ Available</span>' : 
+                <strong>C6 Support:</strong> ${sysData.hasC6 || sysData.C6 === "1" ?
+                    '<span style="color: #28a745;">✅ Available</span>' :
                     '<span style="color: #dc3545;">❌ Not Available</span>'}
             `;
         }
@@ -85,17 +85,17 @@ function showTab(tabName, targetElement = null) {
     // Hide all tab contents
     const tabContents = document.querySelectorAll('.tab-content');
     tabContents.forEach(content => content.classList.remove('active'));
-    
+
     // Remove active class from all tabs
     const tabs = document.querySelectorAll('.tab');
     tabs.forEach(tab => tab.classList.remove('active'));
-    
+
     // Show selected tab content
     const targetContent = document.getElementById(tabName);
     if (targetContent) {
         targetContent.classList.add('active');
     }
-    
+
     // Add active class to clicked tab
     if (targetElement) {
         targetElement.classList.add('active');
@@ -108,7 +108,7 @@ function showTab(tabName, targetElement = null) {
             activeTab.classList.add('active');
         }
     }
-    
+
     // Load tab-specific data
     if (tabName === 'firmware') {
         loadAvailableVersions();
@@ -123,24 +123,24 @@ function showTab(tabName, targetElement = null) {
 async function loadModuleInfo() {
     try {
         logToConsole('info', 'Loading module information...');
-        
+
         const response = await fetch('/ap_list');
-        
+
         // Check if response is ok and has content
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
             throw new Error('Response is not JSON format');
         }
-        
+
         const text = await response.text();
         if (!text || text.trim() === '') {
             throw new Error('Empty response received');
         }
-        
+
         let data;
         try {
             data = JSON.parse(text);
@@ -149,10 +149,10 @@ async function loadModuleInfo() {
             logToConsole('error', 'Raw response: ' + text.substring(0, 100));
             throw new Error('Failed to parse JSON response');
         }
-        
+
         // Find C6 module in AP list
         const c6Module = findC6Module(data);
-        
+
         if (c6Module) {
             updateModuleStatus('online', 'C6 Module Connected');
             updateModuleInfo(c6Module);
@@ -160,18 +160,18 @@ async function loadModuleInfo() {
             updateModuleStatus('offline', 'C6 Module Not Found');
             logToConsole('warning', 'No C6 module found in AP list');
         }
-        
+
         logToConsole('success', 'Module information loaded successfully');
     } catch (error) {
         logToConsole('error', 'Failed to load module information: ' + error.message);
         updateModuleStatus('offline', 'Connection Error');
-        
+
         // Try fallback to sysinfo if ap_list fails
         try {
             logToConsole('info', 'Trying fallback to system info...');
             const sysResponse = await fetch('/sysinfo');
             const sysData = await sysResponse.json();
-            
+
             if (sysData.hasC6 === 1 || sysData.C6 === "1") {
                 updateModuleStatus('detected', 'C6 Support Available');
                 logToConsole('success', 'C6 module support detected via system info');
@@ -186,7 +186,7 @@ function findC6Module(apList) {
     // Look for C6 module in the AP list - updated detection logic
     for (const ap of apList) {
         // Check multiple possible indicators for C6 support
-        if (ap.hwType === 0xC6 || 
+        if (ap.hwType === 0xC6 ||
             ap.hwType === 'C6' ||
             ap.capabilities?.includes('C6') ||
             ap.type?.toLowerCase().includes('c6') ||
@@ -196,56 +196,56 @@ function findC6Module(apList) {
             return ap;
         }
     }
-    
+
     // Also check if any AP has C6-related properties
     for (const ap of apList) {
-        if (ap.hasOwnProperty('c6_version') || 
+        if (ap.hasOwnProperty('c6_version') ||
             ap.hasOwnProperty('c6Version') ||
             ap.hasOwnProperty('C6_FW') ||
             ap.firmware?.toLowerCase().includes('c6')) {
             return ap;
         }
     }
-    
+
     return null;
 }
 
 function updateModuleStatus(status, text) {
     const statusIndicator = document.getElementById('moduleStatus');
     const statusText = document.getElementById('moduleStatusText');
-    
+
     statusIndicator.className = `status-indicator status-${status}`;
     statusText.textContent = text;
 }
 
 function updateModuleInfo(moduleData) {
     moduleInfo = moduleData;
-    
+
     // Show device details section
     const deviceDetailsDiv = document.getElementById('moduleDetails');
     const deviceInfoDiv = document.getElementById('deviceInfo');
     deviceDetailsDiv.style.display = 'block';
-    
+
     // Update overview cards with real data
-    document.getElementById('moduleVersion').textContent = 
-        moduleData.version ? 
-            (typeof moduleData.version === 'string' ? moduleData.version : `0x${moduleData.version.toString(16).toUpperCase()}`) : 
+    document.getElementById('moduleVersion').textContent =
+        moduleData.version ?
+            (typeof moduleData.version === 'string' ? moduleData.version : `0x${moduleData.version.toString(16).toUpperCase()}`) :
             (moduleData.c6_version || moduleData.c6Version || moduleData.firmware || '--');
-    
-    document.getElementById('moduleUptime').textContent = 
-        moduleData.uptime ? formatUptime(moduleData.uptime) : 
+
+    document.getElementById('moduleUptime').textContent =
+        moduleData.uptime ? formatUptime(moduleData.uptime) :
         (moduleData.onlineTime ? formatUptime(moduleData.onlineTime) : '--');
-    
-    document.getElementById('moduleSignal').textContent = 
-        moduleData.rssi ? `${moduleData.rssi} dBm` : 
+
+    document.getElementById('moduleSignal').textContent =
+        moduleData.rssi ? `${moduleData.rssi} dBm` :
         (moduleData.signalStrength ? `${moduleData.signalStrength} dBm` : '--');
-    
-    document.getElementById('moduleChannel').textContent = 
+
+    document.getElementById('moduleChannel').textContent =
         moduleData.channel || moduleData.radioChannel || moduleData.zigbeeChannel || '--';
-    
+
     // Display detailed device information
     let deviceInfoHTML = '<table style="width: 100%; font-size: 12px;">';
-    
+
     if (moduleData.name || moduleData.ap_name) {
         deviceInfoHTML += `<tr><td><strong>Device Name:</strong></td><td>${moduleData.name || moduleData.ap_name}</td></tr>`;
     }
@@ -268,10 +268,10 @@ function updateModuleInfo(moduleData) {
         const caps = Array.isArray(moduleData.capabilities) ? moduleData.capabilities.join(', ') : moduleData.capabilities;
         deviceInfoHTML += `<tr><td><strong>Capabilities:</strong></td><td>${caps}</td></tr>`;
     }
-    
+
     deviceInfoHTML += '</table>';
     deviceInfoDiv.innerHTML = deviceInfoHTML;
-    
+
     // Log detailed module information
     logToConsole('info', 'C6 Module Information:');
     logToConsole('info', `  Type: ${moduleData.hwType || moduleData.type || 'Unknown'}`);
@@ -279,7 +279,7 @@ function updateModuleInfo(moduleData) {
     logToConsole('info', `  MAC: ${moduleData.mac || moduleData.macAddress || 'Unknown'}`);
     logToConsole('info', `  IP: ${moduleData.ip || moduleData.ipAddress || 'Unknown'}`);
     logToConsole('info', `  Firmware: ${moduleData.firmware || moduleData.fwVersion || 'Unknown'}`);
-    
+
     if (moduleData.capabilities) {
         logToConsole('info', `  Capabilities: ${Array.isArray(moduleData.capabilities) ? moduleData.capabilities.join(', ') : moduleData.capabilities}`);
     }
@@ -297,48 +297,48 @@ async function loadAvailableVersions() {
     try {
         const versionsDiv = document.getElementById('availableVersions');
         versionsDiv.innerHTML = 'Loading available versions from GitHub...';
-        
+
         // Fetch available firmware versions from OpenEPaperLink GitHub
         const response = await fetch('https://api.github.com/repos/OpenEPaperLink/OpenEPaperLink/releases');
         const releases = await response.json();
-        
+
         let versionsHTML = '<table style="width: 100%; border-collapse: collapse;">';
         versionsHTML += '<tr><th style="border-bottom: 1px solid #ddd; padding: 8px;">Version</th>';
         versionsHTML += '<th style="border-bottom: 1px solid #ddd; padding: 8px;">Date</th>';
         versionsHTML += '<th style="border-bottom: 1px solid #ddd; padding: 8px;">C6 Firmware</th>';
         versionsHTML += '<th style="border-bottom: 1px solid #ddd; padding: 8px;">Action</th></tr>';
-        
+
         releases.slice(0, 5).forEach(release => {
             const date = new Date(release.created_at).toLocaleDateString();
             const hasC6Firmware = release.assets.some(asset => asset.name.includes('ESP32_S3_C6_NANO_AP'));
             const c6Asset = release.assets.find(asset => asset.name === 'ESP32_S3_C6_NANO_AP.bin');
             const c6FullAsset = release.assets.find(asset => asset.name === 'ESP32_S3_C6_NANO_AP_full.bin');
-            
+
             versionsHTML += `<tr>
                 <td style="border-bottom: 1px solid #eee; padding: 8px;">${release.tag_name}</td>
                 <td style="border-bottom: 1px solid #eee; padding: 8px;">${date}</td>
                 <td style="border-bottom: 1px solid #eee; padding: 8px;">
-                    ${hasC6Firmware ? 
-                        `✅ Available${c6Asset ? ` (${(c6Asset.size/1024/1024).toFixed(1)}MB)` : ''}` : 
+                    ${hasC6Firmware ?
+                        `✅ Available${c6Asset ? ` (${(c6Asset.size/1024/1024).toFixed(1)}MB)` : ''}` :
                         '❌ Not available'}
                 </td>
                 <td style="border-bottom: 1px solid #eee; padding: 8px;">
-                    ${hasC6Firmware ? 
+                    ${hasC6Firmware ?
                         `<button class="btn btn-primary" onclick="updateToVersion('${release.tag_name}', '${c6Asset ? c6Asset.browser_download_url : ''}')">
                             Install Firmware
                         </button>
-                        ${c6FullAsset ? 
+                        ${c6FullAsset ?
                             `<br><button class="btn btn-success" onclick="updateToVersion('${release.tag_name}', '${c6FullAsset.browser_download_url}')" style="margin-top: 5px;">
                                 Install Full (w/ Filesystem)
                             </button>` : ''
-                        }` : 
+                        }` :
                         '<span style="color: #6c757d;">N/A</span>'}
                 </td>
             </tr>`;
         });
-        
+
         versionsHTML += '</table>';
-        
+
         // Add information about the firmware
         versionsHTML += `<div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 12px;">
             <strong>📋 Firmware Information:</strong><br>
@@ -347,11 +347,11 @@ async function loadAvailableVersions() {
             • Supports Elecrow C6 wireless module<br>
             • Source: <a href="https://github.com/OpenEPaperLink/OpenEPaperLink/releases" target="_blank">OpenEPaperLink GitHub</a>
         </div>`;
-        
+
         versionsDiv.innerHTML = versionsHTML;
-        
+
     } catch (error) {
-        document.getElementById('availableVersions').innerHTML = 
+        document.getElementById('availableVersions').innerHTML =
             `<div class="error-message">Error loading GitHub releases: ${error.message}<br>
             This might be due to network connectivity or GitHub API limits.<br><br>
             <strong>Manual Download:</strong><br>
@@ -365,7 +365,7 @@ function updateSourceChanged() {
     const source = document.getElementById('updateSource').value;
     const localSection = document.getElementById('localFileSection');
     const updateButton = document.getElementById('updateButton');
-    
+
     if (source === 'local') {
         localSection.style.display = 'block';
         updateButton.textContent = '📤 Upload & Install Firmware';
@@ -373,7 +373,7 @@ function updateSourceChanged() {
     } else {
         localSection.style.display = 'none';
         updateButton.disabled = false;
-        
+
         switch(source) {
             case 'github_latest':
                 updateButton.textContent = '📥 Download & Install Latest C6 Firmware';
@@ -396,13 +396,13 @@ function validateFirmwareFile() {
     const fileInfo = document.getElementById('fileInfo');
     const fileError = document.getElementById('fileError');
     const updateButton = document.getElementById('updateButton');
-    
+
     // Check if fileInput exists
     if (!fileInput) {
         console.error('File input element not found');
         return false;
     }
-    
+
     if (fileInput.files.length === 0) {
         if (fileInputDisplay) {
             fileInputDisplay.className = 'file-input-display';
@@ -413,15 +413,15 @@ function validateFirmwareFile() {
         if (updateButton) updateButton.disabled = true;
         return false;
     }
-    
+
     const file = fileInput.files[0];
     const maxSize = 20 * 1024 * 1024; // 20MB max (for full firmware)
     const minSize = 64 * 1024; // 64KB min
-    
+
     // Reset error state
     if (fileError) fileError.style.display = 'none';
     if (updateButton) updateButton.disabled = false;
-    
+
     // Validate file extension
     if (!file.name.toLowerCase().endsWith('.bin')) {
         if (fileError) {
@@ -432,12 +432,12 @@ function validateFirmwareFile() {
         if (fileInputDisplay) fileInputDisplay.className = 'file-input-display';
         return false;
     }
-    
+
     // Check if it's a recognized C6 firmware file
-    const isC6Firmware = file.name.toLowerCase().includes('c6') || 
+    const isC6Firmware = file.name.toLowerCase().includes('c6') ||
                         file.name.toLowerCase().includes('esp32_s3_c6_nano_ap') ||
                         file.name.toLowerCase().includes('elecrow');
-    
+
     if (!isC6Firmware) {
         fileError.innerHTML = `
             <strong>Warning:</strong> This doesn't appear to be an ESP32-C6 firmware file.<br>
@@ -449,7 +449,7 @@ function validateFirmwareFile() {
         fileError.style.borderColor = '#ffc107';
         fileError.style.color = '#856404';
     }
-    
+
     // Validate file size
     if (file.size > maxSize) {
         fileError.textContent = `Error: File too large (${(file.size/1024/1024).toFixed(1)}MB). Maximum size is 20MB`;
@@ -458,7 +458,7 @@ function validateFirmwareFile() {
         fileInputDisplay.className = 'file-input-display';
         return false;
     }
-    
+
     if (file.size < minSize) {
         fileError.textContent = `Error: File too small (${(file.size/1024).toFixed(1)}KB). Minimum size is 64KB`;
         fileError.style.display = 'block';
@@ -466,7 +466,7 @@ function validateFirmwareFile() {
         fileInputDisplay.className = 'file-input-display';
         return false;
     }
-    
+
     // Update display to show selected file
     fileInputDisplay.className = 'file-input-display has-file';
     fileInputDisplay.innerHTML = `
@@ -474,25 +474,25 @@ function validateFirmwareFile() {
         <span class="file-input-text">${file.name}</span>
         <button type="button" onclick="clearFileSelection(); event.stopPropagation();" style="margin-left: auto; padding: 2px 6px; border: none; background: #dc3545; color: white; border-radius: 3px; cursor: pointer;">✕</button>
     `;
-    
+
     // Show file info with C6-specific details
     const fileSize = file.size > 1024*1024 ? `${(file.size/1024/1024).toFixed(1)} MB` : `${(file.size/1024).toFixed(1)} KB`;
     const isFull = file.size > 10*1024*1024;
-    
+
     fileInfo.innerHTML = `
         <strong>Selected:</strong> ${file.name}<br>
         <strong>Size:</strong> ${fileSize} ${isFull ? '(Full firmware with filesystem)' : '(Firmware only)'}<br>
         <strong>Type:</strong> ${isC6Firmware ? 'ESP32-C6 Firmware ✅' : 'Unknown firmware type ⚠️'}<br>
         <strong>Modified:</strong> ${new Date(file.lastModified).toLocaleString()}
     `;
-    
+
     logToConsole('info', `C6 Firmware file selected: ${file.name} (${fileSize})`);
     if (isC6Firmware) {
         logToConsole('success', 'File appears to be valid ESP32-C6 firmware');
     } else {
         logToConsole('warning', 'File may not be ESP32-C6 firmware - proceed with caution');
     }
-    
+
     return true;
 }
 
@@ -502,14 +502,14 @@ function clearFileSelection() {
     const fileInfo = document.getElementById('fileInfo');
     const fileError = document.getElementById('fileError');
     const updateButton = document.getElementById('updateButton');
-    
+
     fileInput.value = '';
     fileInputDisplay.className = 'file-input-display';
     fileInputDisplay.innerHTML = '<span class="file-input-icon">📁</span><span class="file-input-text">Click to select firmware file (.bin)</span>';
     fileInfo.textContent = '';
     fileError.style.display = 'none';
     updateButton.disabled = true;
-    
+
     logToConsole('info', 'File selection cleared');
 }
 
@@ -518,9 +518,9 @@ async function startFirmwareUpdate() {
         logToConsole('warning', 'Update already in progress');
         return;
     }
-    
+
     const source = document.getElementById('updateSource').value;
-    
+
     if (source === 'local') {
         await updateFromLocalFile();
     } else {
@@ -533,80 +533,80 @@ async function updateFromOnline(source) {
         isUpdating = true;
         updateModuleStatus('updating', 'Downloading firmware...');
         showProgress(0);
-        
+
         logToConsole('info', `Starting ${source} firmware update...`);
-        
+
         let firmwareUrl = '';
         let firmwareName = '';
-        
+
         if (source === 'github_latest' || source === 'github_full') {
             // Fetch latest release from GitHub
             logToConsole('info', 'Fetching latest release from OpenEPaperLink GitHub...');
             const releasesResponse = await fetch('https://api.github.com/repos/OpenEPaperLink/OpenEPaperLink/releases/latest');
-            
+
             if (!releasesResponse.ok) {
                 throw new Error('Failed to fetch releases from GitHub');
             }
-            
+
             const release = await releasesResponse.json();
-            
+
             firmwareName = source === 'github_full' ? 'ESP32_S3_C6_NANO_AP_full.bin' : 'ESP32_S3_C6_NANO_AP.bin';
             const asset = release.assets.find(asset => asset.name === firmwareName);
-            
+
             if (!asset) {
                 throw new Error(`${firmwareName} not found in latest release ${release.tag_name}`);
             }
-            
+
             firmwareUrl = asset.browser_download_url;
             logToConsole('info', `Found firmware: ${asset.name} (${(asset.size/1024/1024).toFixed(1)}MB)`);
             logToConsole('info', `Release: ${release.tag_name}`);
-            
+
         } else if (source === 'beta') {
             // For beta, get the latest pre-release
             logToConsole('info', 'Fetching latest beta release...');
             const releasesResponse = await fetch('https://api.github.com/repos/OpenEPaperLink/OpenEPaperLink/releases');
-            
+
             if (!releasesResponse.ok) {
                 throw new Error('Failed to fetch releases from GitHub');
             }
-            
+
             const releases = await releasesResponse.json();
             const betaRelease = releases.find(release => release.prerelease);
-            
+
             if (!betaRelease) {
                 throw new Error('No beta releases found');
             }
-            
+
             firmwareName = 'ESP32_S3_C6_NANO_AP.bin';
             const asset = betaRelease.assets.find(asset => asset.name === firmwareName);
             if (!asset) {
                 throw new Error(`${firmwareName} not found in beta release ${betaRelease.tag_name}`);
             }
-            
+
             firmwareUrl = asset.browser_download_url;
             logToConsole('info', `Found beta firmware: ${asset.name} (${(asset.size/1024/1024).toFixed(1)}MB)`);
         }
-        
+
         showProgress(20);
         logToConsole('info', `Starting C6 update with firmware: ${firmwareName}`);
-        
+
         // Use the real C++ endpoint for C6 update
         const formData = new FormData();
         formData.append('url', firmwareUrl);
         formData.append('source', source);
         formData.append('filename', firmwareName);
-        
+
         const response = await fetch('/update_c6', {
             method: 'POST',
             body: formData
         });
-        
+
         if (response.ok) {
             const result = await response.json();
             if (result.success || result.status === 'started') {
                 showProgress(40);
                 logToConsole('success', 'C6 update started successfully');
-                
+
                 // Monitor update progress using the real endpoint
                 await monitorUpdateProgress();
             } else {
@@ -616,7 +616,7 @@ async function updateFromOnline(source) {
             const errorText = await response.text();
             throw new Error(`Update request failed: ${response.status} ${errorText}`);
         }
-        
+
     } catch (error) {
         logToConsole('error', 'C6 firmware update failed: ' + error.message);
         updateModuleStatus('offline', 'Update Failed');
@@ -629,86 +629,86 @@ async function updateFromOnline(source) {
 
 async function updateFromLocalFile() {
     const fileInput = document.getElementById('firmwareFile');
-    
+
     // Validate file selection
     if (!fileInput.files.length) {
         logToConsole('warning', 'Please select a firmware file');
         return;
     }
-    
+
     if (!validateFirmwareFile()) {
         logToConsole('error', 'File validation failed');
         return;
     }
-    
+
     const file = fileInput.files[0];
     const verifyChecksum = document.getElementById('verifyChecksum') ? document.getElementById('verifyChecksum').checked : true;
     const backupBeforeUpdate = document.getElementById('backupBeforeUpdate') ? document.getElementById('backupBeforeUpdate').checked : false;
-    
+
     try {
         isUpdating = true;
         updateModuleStatus('updating', 'Uploading Firmware...');
         showProgress(0);
-        
+
         logToConsole('info', `Starting C6 firmware upload: ${file.name}`);
         logToConsole('info', `File size: ${(file.size/1024/1024).toFixed(2)} MB`);
-        
+
         // Create backup if requested
         if (backupBeforeUpdate) {
             logToConsole('info', 'Creating firmware backup...');
             showProgress(5);
             await createFirmwareBackup();
         }
-        
+
         // Upload firmware file using the real C++ endpoint
         logToConsole('info', 'Uploading firmware to C6 module...');
         showProgress(20);
-        
+
         const formData = new FormData();
         formData.append('firmware', file);
         formData.append('verify', verifyChecksum ? '1' : '0');
-        
+
         // Use the real C++ firmware upload handler
         const response = await fetch('/update_c6', {
             method: 'POST',
             body: formData
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Upload failed: HTTP ${response.status} - ${errorText}`);
         }
-        
+
         const result = await response.json();
-        
+
         if (result.success || result.status === 'started') {
             showProgress(60);
             logToConsole('success', 'C6 firmware uploaded successfully');
-            
+
             // Monitor update progress using real endpoint
             logToConsole('info', 'Starting C6 firmware installation...');
             await monitorUpdateProgress();
-            
+
             if (verifyChecksum) {
                 logToConsole('info', 'Verifying firmware integrity...');
                 showProgress(90);
                 await verifyFirmware();
             }
-            
+
             showProgress(100);
             logToConsole('success', 'C6 firmware update completed successfully');
             updateModuleStatus('online', 'Update Complete');
-            
+
             // Refresh module info after update
             setTimeout(() => {
                 loadModuleInfo();
                 loadCurrentFirmware();
             }, 3000);
-            
+
         } else {
             throw new Error(result.error || result.message || 'Upload failed');
         }
-        
+
     } catch (error) {
         logToConsole('error', 'C6 firmware update failed: ' + error.message);
         updateModuleStatus('offline', 'Update Failed');
@@ -721,11 +721,11 @@ async function updateFromLocalFile() {
 async function createFirmwareBackup() {
     try {
         logToConsole('info', 'Creating C6 firmware backup...');
-        
+
         const response = await fetch('/backup_c6_firmware');
         if (response.ok) {
             const blob = await response.blob();
-            
+
             if (blob.size > 0) {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -735,7 +735,7 @@ async function createFirmwareBackup() {
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
-                
+
                 logToConsole('success', `C6 firmware backup created (${(blob.size/1024/1024).toFixed(2)}MB)`);
                 return true;
             } else {
@@ -756,38 +756,38 @@ async function updateToVersion(version, downloadUrl) {
     try {
         logToConsole('info', `Updating C6 to version ${version}...`);
         logToConsole('info', `Download URL: ${downloadUrl}`);
-        
+
         if (!downloadUrl) {
             throw new Error('No download URL provided');
         }
-        
+
         isUpdating = true;
         updateModuleStatus('updating', `Downloading ${version}...`);
         showProgress(0);
-        
+
         // Download and install firmware from GitHub using real C++ endpoint
         const formData = new FormData();
         formData.append('url', downloadUrl);
         formData.append('version', version);
         formData.append('source', 'github_version');
-        
+
         logToConsole('info', 'Downloading C6 firmware from GitHub...');
         showProgress(20);
-        
+
         const response = await fetch('/update_c6', {
             method: 'POST',
             body: formData
         });
-        
+
         if (response.ok) {
             const result = await response.json();
             if (result.success || result.status === 'started') {
                 showProgress(40);
                 logToConsole('success', 'C6 firmware download started successfully');
-                
+
                 // Monitor update progress using real endpoint
                 await monitorUpdateProgress();
-                
+
                 logToConsole('success', `C6 successfully updated to version ${version}`);
             } else {
                 throw new Error(result.error || result.message || 'Update failed to start');
@@ -796,7 +796,7 @@ async function updateToVersion(version, downloadUrl) {
             const errorText = await response.text();
             throw new Error(`Update request failed: HTTP ${response.status} - ${errorText}`);
         }
-        
+
     } catch (error) {
         logToConsole('error', 'C6 version update failed: ' + error.message);
         updateModuleStatus('offline', 'Update Failed');
@@ -809,18 +809,18 @@ async function updateToVersion(version, downloadUrl) {
 async function monitorUpdateProgress() {
     let attempts = 0;
     const maxAttempts = 60; // 60 seconds timeout
-    
+
     logToConsole('info', 'Monitoring C6 update progress...');
-    
+
     while (attempts < maxAttempts && isUpdating) {
         try {
             // Use the real C6 update status endpoint
             const response = await fetch('/c6_update_status');
             if (response.ok) {
                 const status = await response.json();
-                
+
                 logToConsole('info', `Update status check ${attempts + 1}/${maxAttempts}`);
-                
+
                 if (status.completed || status.success) {
                     showProgress(100);
                     logToConsole('success', 'C6 firmware update completed successfully');
@@ -841,7 +841,7 @@ async function monitorUpdateProgress() {
                 // Endpoint not found, use simpler progress
                 const progress = Math.min(50 + (attempts * 2), 95);
                 showProgress(progress);
-                
+
                 if (attempts > 30) { // Assume completion after 30 attempts
                     showProgress(100);
                     logToConsole('success', 'C6 firmware update completed (timeout reached)');
@@ -850,10 +850,10 @@ async function monitorUpdateProgress() {
                     return true;
                 }
             }
-            
+
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 1000));
-            
+
         } catch (error) {
             if (attempts > 20) { // Give some time for normal errors during update
                 logToConsole('error', `Update monitoring failed: ${error.message}`);
@@ -863,10 +863,10 @@ async function monitorUpdateProgress() {
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
-    
+
     if (attempts >= maxAttempts) {
         logToConsole('warning', 'Update monitoring timeout - checking final status...');
-        
+
         // Final status check
         try {
             const response = await fetch('/c6_update_status');
@@ -881,17 +881,17 @@ async function monitorUpdateProgress() {
         } catch (e) {
             // Ignore final check errors
         }
-        
+
         throw new Error('Update timeout - no response from C6 module');
     }
-    
+
     return false;
 }
 
 async function verifyFirmware() {
     try {
         logToConsole('info', 'Verifying C6 firmware integrity...');
-        
+
         // Try to get module info to verify the firmware is working
         const response = await fetch('/test_c6_connection');
         if (response.ok) {
@@ -910,7 +910,7 @@ async function verifyFirmware() {
             logToConsole('warning', 'Unable to verify C6 firmware - connection test failed');
             return false;
         }
-        
+
     } catch (error) {
         logToConsole('warning', 'C6 firmware verification failed: ' + error.message);
         return false;
@@ -923,7 +923,7 @@ async function verifyFirmware() {
 async function loadSettings() {
     try {
         logToConsole('info', 'Loading module settings...');
-        
+
         const response = await fetch('/get_c6_settings');
         if (response.ok) {
             const settings = await response.json();
@@ -932,7 +932,7 @@ async function loadSettings() {
         } else {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
     } catch (error) {
         logToConsole('warning', 'Could not load settings: ' + error.message + ', using defaults');
         populateSettingsForm({});
@@ -957,22 +957,22 @@ async function saveSettings() {
             sleepMode: document.getElementById('sleepMode').value,
             wakeInterval: document.getElementById('wakeInterval').value
         };
-        
+
         logToConsole('info', 'Saving settings...');
-        
+
         const response = await fetch('/save_c6_settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settings)
         });
-        
+
         if (response.ok) {
             logToConsole('success', 'Settings saved successfully');
             await restartModule(); // Restart to apply new settings
         } else {
             throw new Error('Failed to save settings');
         }
-        
+
     } catch (error) {
         logToConsole('error', 'Failed to save settings: ' + error.message);
     }
@@ -982,16 +982,16 @@ async function resetToDefaults() {
     if (confirm('Are you sure you want to reset all settings to defaults?')) {
         try {
             logToConsole('info', 'Resetting settings to defaults...');
-            
+
             const response = await fetch('/reset_c6_settings', { method: 'POST' });
-            
+
             if (response.ok) {
                 logToConsole('success', 'Settings reset to defaults');
                 await loadSettings();
             } else {
                 throw new Error('Failed to reset settings');
             }
-            
+
         } catch (error) {
             logToConsole('error', 'Failed to reset settings: ' + error.message);
         }
@@ -1004,7 +1004,7 @@ async function resetToDefaults() {
 async function runDiagnostics() {
     clearConsole();
     logToConsole('info', 'Starting comprehensive diagnostics...');
-    
+
     const tests = [
         { name: 'Module Connection', func: testConnection },
         { name: 'Radio Functionality', func: testRadio },
@@ -1012,7 +1012,7 @@ async function runDiagnostics() {
         { name: 'Temperature Monitor', func: testTemperature },
         { name: 'Channel Scan', func: scanChannels }
     ];
-    
+
     for (const test of tests) {
         try {
             logToConsole('info', `Running ${test.name}...`);
@@ -1021,11 +1021,11 @@ async function runDiagnostics() {
         } catch (error) {
             logToConsole('error', `${test.name}: FAILED - ${error.message}`);
         }
-        
+
         // Small delay between tests
         await new Promise(resolve => setTimeout(resolve, 500));
     }
-    
+
     logToConsole('info', 'Diagnostics completed');
 }
 
@@ -1033,13 +1033,13 @@ async function testConnection() {
     try {
         logToConsole('info', 'Testing C6 module connection...');
         const response = await fetch('/test_c6_connection');
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const result = await response.json();
-        
+
         if (result.success || result.connected) {
             logToConsole('success', 'C6 module connection test passed');
             if (result.version) {
@@ -1055,7 +1055,7 @@ async function testConnection() {
         } else {
             throw new Error(result.error || 'Module not responding');
         }
-        
+
     } catch (error) {
         logToConsole('error', 'C6 connection test failed: ' + error.message);
         return false;
@@ -1066,13 +1066,13 @@ async function testRadio() {
     try {
         logToConsole('info', 'Testing C6 radio functionality...');
         const response = await fetch('/test_c6_radio');
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             logToConsole('success', 'C6 radio test passed');
             if (result.rssi !== undefined) {
@@ -1086,7 +1086,7 @@ async function testRadio() {
             }
             if (result.errorRate !== undefined) {
                 logToConsole('info', `Error rate: ${result.errorRate.toFixed(1)}%`);
-                
+
                 if (result.errorRate > 50) {
                     logToConsole('warning', `High packet loss: ${result.errorRate.toFixed(1)}%`);
                 } else if (result.errorRate > 20) {
@@ -1100,7 +1100,7 @@ async function testRadio() {
         } else {
             throw new Error(result.error || 'Radio test failed');
         }
-        
+
     } catch (error) {
         logToConsole('error', 'C6 radio test failed: ' + error.message);
         return false;
@@ -1114,25 +1114,25 @@ async function testMemory() {
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const sysInfo = await response.json();
         const freeHeapKB = Math.floor(sysInfo.freeHeap / 1024);
         const totalHeapKB = Math.floor(sysInfo.totalHeap / 1024);
-        
+
         // Update UI elements if they exist
         if (document.getElementById('freeHeap')) {
             document.getElementById('freeHeap').textContent = freeHeapKB;
         }
-        
+
         logToConsole('info', `Free memory: ${freeHeapKB}KB / ${totalHeapKB}KB`);
-        
+
         if (freeHeapKB < 10) {
             throw new Error(`Low memory: ${freeHeapKB}KB free`);
         }
-        
+
         logToConsole('success', `Memory test passed: ${freeHeapKB}KB free`);
         return true;
-        
+
     } catch (error) {
         logToConsole('error', 'Memory test failed: ' + error.message);
         return false;
@@ -1146,26 +1146,26 @@ async function testTemperature() {
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const sysInfo = await response.json();
         const temp = sysInfo.temperature || temperatureRead(); // Use real temperature
-        
+
         // Update UI element if it exists
         if (document.getElementById('temperature')) {
             document.getElementById('temperature').textContent = temp;
         }
-        
+
         logToConsole('info', `Current temperature: ${temp}°C`);
-        
+
         if (temp > 80) {
             throw new Error(`High temperature: ${temp}°C`);
         } else if (temp > 70) {
             logToConsole('warning', `Elevated temperature: ${temp}°C`);
         }
-        
+
         logToConsole('success', `Temperature test passed: ${temp}°C`);
         return true;
-        
+
     } catch (error) {
         logToConsole('error', 'Temperature test failed: ' + error.message);
         return false;
@@ -1174,27 +1174,35 @@ async function testTemperature() {
 
 async function scanChannels() {
     try {
-        logToConsole('info', 'Scanning available radio channels...');
-        
-        // Use the existing WiFi scan endpoint to get channel usage data
-        const response = await fetch('/wifi_scan');
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        logToConsole('info', 'Scanning available radio channels (unified WiFi API)...');
+        let scanData;
+        if (window.apiManager && typeof window.apiManager.unifiedScan === 'function') {
+            scanData = await window.apiManager.unifiedScan({ maxWaitMs: 12000, pollIntervalMs: 1000 });
+        } else {
+            // Fallback manual unified sequence
+            await fetch('/api/wifi/scan', { method: 'POST' });
+            let attempts = 0;
+            while (attempts < 10) {
+                const r = await fetch('/api/wifi/scan/results');
+                scanData = await r.json();
+                if (!scanData.scanRunning) break;
+                await new Promise(res => setTimeout(res, 1000));
+                attempts++;
+            }
+            if (!scanData || scanData.scanRunning) throw new Error('WiFi scan timeout');
         }
-        
-        const scanData = await response.json();
-        
+
         // Analyze channel usage from WiFi scan
         const channelUsage = {};
         const zigbeeChannels = [11, 15, 20, 25, 26]; // Common ZigBee channels
-        
+
         // Initialize channel usage
         zigbeeChannels.forEach(ch => {
             channelUsage[ch] = 0;
         });
-        
+
         // Count WiFi networks on each channel (affects ZigBee performance)
-        if (scanData.networks) {
+        if (scanData && scanData.networks) {
             scanData.networks.forEach(network => {
                 const wifiChannel = network.channel;
                 // ZigBee channels that overlap with WiFi
@@ -1206,37 +1214,37 @@ async function scanChannels() {
                 }
             });
         }
-        
+
         // Log channel analysis
         let bestChannel = null;
         let leastUsage = Infinity;
-        
+
         for (const [channel, usage] of Object.entries(channelUsage)) {
             const interferenceLevel = usage === 0 ? 'Low' : usage < 3 ? 'Medium' : 'High';
             logToConsole('info', `ZigBee Channel ${channel}: ${usage} WiFi networks nearby (${interferenceLevel} interference)`);
-            
+
             if (usage < leastUsage) {
                 leastUsage = usage;
                 bestChannel = channel;
             }
         }
-        
+
         if (bestChannel) {
             logToConsole('success', `Recommended channel: ${bestChannel} (${leastUsage} WiFi networks nearby)`);
         }
-        
+
         logToConsole('success', 'Channel scan completed');
         return true;
-        
+
     } catch (error) {
         logToConsole('error', 'Channel scan failed: ' + error.message);
-        
+
         // Fallback: simple channel recommendation
         logToConsole('info', 'Using fallback channel analysis...');
         const defaultChannels = [15, 20, 25]; // Usually less congested
         const recommendedChannel = defaultChannels[Math.floor(Math.random() * defaultChannels.length)];
         logToConsole('info', `Fallback recommendation: Channel ${recommendedChannel}`);
-        
+
         return false;
     }
 }
@@ -1244,15 +1252,15 @@ async function scanChannels() {
 async function loadSystemInfo() {
     try {
         logToConsole('info', 'Loading real system information...');
-        
+
         // Get actual system info from ESP32
         const response = await fetch('/sysinfo');
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const sysInfo = await response.json();
-        
+
         // Update UI elements with real data
         if (document.getElementById('freeHeap')) {
             document.getElementById('freeHeap').textContent = Math.floor(sysInfo.freeHeap / 1024);
@@ -1266,16 +1274,16 @@ async function loadSystemInfo() {
         if (document.getElementById('temperature')) {
             document.getElementById('temperature').textContent = sysInfo.temperature || 'N/A';
         }
-        
+
         logToConsole('success', 'System information loaded successfully');
         logToConsole('info', `Free Heap: ${Math.floor(sysInfo.freeHeap / 1024)}KB`);
         logToConsole('info', `CPU Frequency: ${sysInfo.cpuFreq || 240}MHz`);
         logToConsole('info', `Flash Size: ${Math.floor(sysInfo.flashSize / (1024 * 1024))}MB`);
         logToConsole('info', `Temperature: ${sysInfo.temperature || 'N/A'}°C`);
-        
+
     } catch (error) {
         logToConsole('error', 'Failed to load system info: ' + error.message);
-        
+
         // Fallback to default values if system info fails
         if (document.getElementById('freeHeap')) {
             document.getElementById('freeHeap').textContent = 'N/A';
@@ -1300,19 +1308,19 @@ async function restartModule() {
         try {
             logToConsole('info', 'Restarting C6 module...');
             updateModuleStatus('updating', 'Restarting...');
-            
+
             // Use the real C++ endpoint for C6 restart
             const response = await fetch('/restart_c6', { method: 'POST' });
-            
+
             if (response.ok) {
                 const result = await response.json();
                 if (result.success || result.status === 'restarting') {
                     logToConsole('success', 'C6 module restart command sent successfully');
-                    
+
                     // Wait for module to restart
                     logToConsole('info', 'Waiting for C6 module to restart...');
                     await new Promise(resolve => setTimeout(resolve, 8000)); // Give more time for C6 restart
-                    
+
                     // Refresh module info
                     await loadModuleInfo();
                     await loadCurrentFirmware();
@@ -1324,7 +1332,7 @@ async function restartModule() {
                 const errorText = await response.text();
                 throw new Error(`Restart command failed: HTTP ${response.status} - ${errorText}`);
             }
-            
+
         } catch (error) {
             logToConsole('error', 'Failed to restart C6 module: ' + error.message);
             updateModuleStatus('offline', 'Restart Failed');
@@ -1335,9 +1343,9 @@ async function restartModule() {
 async function backupConfig() {
     try {
         logToConsole('info', 'Creating configuration backup...');
-        
+
         const response = await fetch('/backup_c6_config');
-        
+
         if (response.ok) {
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -1346,12 +1354,12 @@ async function backupConfig() {
             a.download = `c6_config_backup_${new Date().toISOString().split('T')[0]}.json`;
             a.click();
             window.URL.revokeObjectURL(url);
-            
+
             logToConsole('success', 'Configuration backup downloaded');
         } else {
             throw new Error('Backup failed');
         }
-        
+
     } catch (error) {
         logToConsole('error', 'Failed to create backup: ' + error.message);
     }
@@ -1361,9 +1369,9 @@ async function resetConfig() {
     if (confirm('Are you sure you want to reset the module configuration? This will erase all settings!')) {
         try {
             logToConsole('warning', 'Resetting module configuration...');
-            
+
             const response = await fetch('/reset_c6_config', { method: 'POST' });
-            
+
             if (response.ok) {
                 await loadSettings();
                 await loadModuleInfo();
@@ -1371,7 +1379,7 @@ async function resetConfig() {
             } else {
                 throw new Error('Reset failed');
             }
-            
+
         } catch (error) {
             logToConsole('error', 'Failed to reset configuration: ' + error.message);
         }
@@ -1392,7 +1400,7 @@ function updateFirmware() {
 function showProgress(percent) {
     const progressBar = document.getElementById('updateProgress');
     const progressFill = document.getElementById('updateProgressFill');
-    
+
     progressBar.style.display = 'block';
     progressFill.style.width = percent + '%';
 }
@@ -1405,11 +1413,11 @@ function logToConsole(level, message) {
     const console = document.getElementById('diagnosticConsole');
     const timestamp = new Date().toLocaleTimeString();
     const levelClass = `log-${level}`;
-    
+
     const logEntry = document.createElement('div');
     logEntry.className = levelClass;
     logEntry.textContent = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-    
+
     console.appendChild(logEntry);
     console.scrollTop = console.scrollHeight;
 }
@@ -1433,7 +1441,7 @@ function formatUptime(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (days > 0) {
         return `${days}d ${hours}h ${minutes}m`;
     } else if (hours > 0) {
@@ -1456,7 +1464,7 @@ async function checkModuleCapabilities() {
     try {
         const response = await fetch('/sysinfo');
         const data = await response.json();
-        
+
         // Check for C6_OTA_FLASHING flag in sysinfo
         if (!data.C6_OTA_FLASHING) {
             // Show warning if C6 support is not available
@@ -1476,9 +1484,9 @@ async function checkModuleCapabilities() {
                 Please use a C6-compatible firmware build.<br><br>
                 <small>Build flags should include: <code>-D C6_OTA_FLASHING</code></small>
             `;
-            
+
             document.querySelector('.container').insertBefore(warning, document.querySelector('.tabs'));
-            
+
             // Disable most functionality
             const buttons = document.querySelectorAll('button');
             buttons.forEach(btn => {
@@ -1489,7 +1497,7 @@ async function checkModuleCapabilities() {
         } else {
             logToConsole('success', 'C6 module support detected');
         }
-        
+
     } catch (error) {
         console.error('Failed to check module capabilities:', error);
         logToConsole('error', 'Failed to check module capabilities: ' + error.message);
@@ -1504,10 +1512,10 @@ async function refreshDrives() {
         logToConsole('info', 'Refreshing drives list...');
         const response = await fetch('/list_drives');
         const data = await response.json();
-        
+
         const driveSelect = document.getElementById('driveSelect');
         driveSelect.innerHTML = '<option value="">-- Select Drive --</option>';
-        
+
         if (data.drives && data.drives.length > 0) {
             data.drives.forEach(drive => {
                 const option = document.createElement('option');
@@ -1515,7 +1523,7 @@ async function refreshDrives() {
                 option.textContent = `${drive.label} (${drive.letter})`;
                 driveSelect.appendChild(option);
             });
-            
+
             document.getElementById('availableDrives').textContent = data.drives.length;
             logToConsole('success', `Found ${data.drives.length} drives`);
         } else {
@@ -1533,10 +1541,10 @@ async function refreshSerialPorts() {
         logToConsole('info', 'Refreshing serial ports...');
         const response = await fetch('/list_serial_ports');
         const data = await response.json();
-        
+
         const portSelect = document.getElementById('comPortSelect');
         portSelect.innerHTML = '<option value="">-- Select COM Port --</option>';
-        
+
         if (data.ports && data.ports.length > 0) {
             data.ports.forEach(port => {
                 const option = document.createElement('option');
@@ -1544,7 +1552,7 @@ async function refreshSerialPorts() {
                 option.textContent = `${port.port} - ${port.description}`;
                 portSelect.appendChild(option);
             });
-            
+
             document.getElementById('availablePorts').textContent = data.ports.length;
             logToConsole('success', `Found ${data.ports.length} serial ports`);
         } else {
@@ -1561,9 +1569,9 @@ function openFileManager() {
     // Open file manager in a new window/tab
     const fileManagerUrl = '/edit';
     const fileManagerWindow = window.open(fileManagerUrl, 'fileManager', 'width=1000,height=700,scrollbars=yes,resizable=yes');
-    
+
     logToConsole('info', 'File manager opened');
-    
+
     // Listen for file selection (would need to be implemented in the file manager)
     window.addEventListener('message', (event) => {
         if (event.data.type === 'fileSelected') {
@@ -1575,19 +1583,19 @@ function openFileManager() {
 
 async function testConnection() {
     const comPort = document.getElementById('comPortSelect').value;
-    
+
     if (!comPort) {
         logToConsole('error', 'Please select a COM port first');
         return;
     }
-    
+
     logToConsole('info', `Testing connection to ${comPort}...`);
-    
+
     try {
         // This would normally test the actual connection
         // For now, we'll simulate a connection test
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         logToConsole('success', `Connection to ${comPort} successful`);
     } catch (error) {
         logToConsole('error', `Connection test failed: ${error.message}`);
@@ -1601,12 +1609,12 @@ async function startOTAFlash() {
     const verifyFlash = document.getElementById('verifyFlash') ? document.getElementById('verifyFlash').checked : true;
     const resetAfterFlash = document.getElementById('resetAfterFlash') ? document.getElementById('resetAfterFlash').checked : true;
     const baudRate = document.getElementById('baudRate') ? document.getElementById('baudRate').value : '921600';
-    
+
     if (!firmwareFile) {
         logToOTAConsole('error', 'Please select a firmware file');
         return;
     }
-    
+
     // Clear console and start flash process
     document.getElementById('otaFlashConsole').innerHTML = '';
     logToOTAConsole('info', 'Starting C6 OTA flash process...');
@@ -1616,12 +1624,12 @@ async function startOTAFlash() {
     logToOTAConsole('info', `Erase Flash: ${eraseFlash ? 'Yes' : 'No'}`);
     logToOTAConsole('info', `Verify Flash: ${verifyFlash ? 'Yes' : 'No'}`);
     logToOTAConsole('info', `Reset After Flash: ${resetAfterFlash ? 'Yes' : 'No'}`);
-    
+
     // Show progress bar and update buttons
     document.getElementById('otaFlashProgress').style.display = 'block';
     document.getElementById('otaFlashButton').style.display = 'none';
     document.getElementById('stopOTAButton').style.display = 'inline-block';
-    
+
     try {
         const response = await fetch('/flash_c6_ota', {
             method: 'POST',
@@ -1637,9 +1645,9 @@ async function startOTAFlash() {
                 baud_rate: baudRate
             })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             logToOTAConsole('success', 'OTA flash started successfully');
             startOTAProgressMonitoring();
@@ -1655,41 +1663,41 @@ async function startOTAFlash() {
 
 function startOTAProgressMonitoring() {
     logToOTAConsole('info', 'Monitoring OTA progress via WebSocket...');
-    
+
     // Real progress monitoring via WebSocket messages
     // The WebSocket connection is already established in the main application
     // We just need to listen for OTA-specific messages
-    
+
     let progressCheckInterval = null;
     let lastProgressUpdate = Date.now();
-    
+
     const checkProgress = () => {
         const now = Date.now();
-        
+
         // If we haven't received an update in 30 seconds, assume completion or failure
         if (now - lastProgressUpdate > 30000) {
             clearInterval(progressCheckInterval);
-            
+
             // Check if we're at 100% or if there was an error
             const progressFill = document.getElementById('otaFlashProgressFill');
             const currentProgress = parseFloat(progressFill.style.width) || 0;
-            
+
             if (currentProgress >= 100) {
                 logToOTAConsole('success', 'OTA flash completed successfully!');
             } else {
                 logToOTAConsole('warning', 'OTA flash process finished (check console for results)');
             }
-            
+
             resetOTAFlashUI();
         }
     };
-    
+
     // Start monitoring
     progressCheckInterval = setInterval(checkProgress, 5000);
-    
+
     // Listen for WebSocket messages containing progress updates
     let originalOnMessage = null;
-    
+
     // Check if websocket exists and is connected
     if (typeof websocket !== 'undefined' && websocket && websocket.readyState === WebSocket.OPEN) {
         originalOnMessage = websocket.onmessage;
@@ -1698,24 +1706,24 @@ function startOTAProgressMonitoring() {
             if (originalOnMessage) {
                 originalOnMessage.call(this, event);
             }
-            
+
             try {
                 const data = JSON.parse(event.data);
-                
+
                 // Look for OTA progress messages
                 if (data.type === 'console' && data.message) {
                     const message = data.message;
-                    
+
                     // Update last progress time
                     lastProgressUpdate = Date.now();
-                    
+
                     // Parse progress messages
                     if (message.includes('Progress:') && message.includes('%')) {
                         const progressMatch = message.match(/Progress:\s*(\d+)%/);
                         if (progressMatch) {
                             const progress = parseInt(progressMatch[1]);
                             updateOTAProgress(progress, `Flashing... ${progress}%`);
-                            
+
                             if (progress >= 100) {
                                 clearInterval(progressCheckInterval);
                                 setTimeout(() => {
@@ -1725,7 +1733,7 @@ function startOTAProgressMonitoring() {
                             }
                         }
                     }
-                    
+
                     // Check for completion or error messages
                     if (message.includes('✅ C6 OTA flash completed successfully')) {
                         clearInterval(progressCheckInterval);
@@ -1757,13 +1765,13 @@ function startOTAProgressMonitoring() {
 
 function stopOTAFlash() {
     logToOTAConsole('warning', 'Stopping OTA flash...');
-    
+
     if (window.otaProgressInterval) {
         clearInterval(window.otaProgressInterval);
     }
-    
+
     // Would send stop command to server here
-    
+
     resetOTAFlashUI();
     logToOTAConsole('info', 'OTA flash stopped');
 }
@@ -1804,17 +1812,17 @@ function showTab(tabName) {
     // Hide all tab contents
     const tabContents = document.querySelectorAll('.tab-content');
     tabContents.forEach(content => content.classList.remove('active'));
-    
+
     // Remove active class from all tabs
     const tabs = document.querySelectorAll('.tab');
     tabs.forEach(tab => tab.classList.remove('active'));
-    
+
     // Show selected tab content
     document.getElementById(tabName).classList.add('active');
-    
+
     // Add active class to clicked tab
     event.target.classList.add('active');
-    
+
     // Load tab-specific data
     if (tabName === 'firmware') {
         loadAvailableVersions();
@@ -1833,21 +1841,21 @@ window.addEventListener('beforeunload', () => {
             clearInterval(updateInterval);
             updateInterval = null;
         }
-        
+
         if (window.otaProgressInterval) {
             clearInterval(window.otaProgressInterval);
             window.otaProgressInterval = null;
         }
-        
+
         // Reset any ongoing operations
         isUpdating = false;
-        
+
         // Clear any pending timeouts
         const highestTimeoutId = setTimeout(() => {}, 0);
         for (let i = 0; i < highestTimeoutId; i++) {
             clearTimeout(i);
         }
-        
+
         logToConsole('info', 'Page cleanup completed');
     } catch (error) {
         console.error('Error during cleanup:', error);

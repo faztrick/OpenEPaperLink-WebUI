@@ -4,13 +4,9 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include "wifimanager.h"
 #include "web.h"
 
-// Provide a WifiManager instance if none exists elsewhere
-// Marking no attribute here; if another definition exists it will conflict,
-// but the project previously had only 'extern WifiManager wm;' so we need one.
-WifiManager wm;
+// WiFiModule handles all WiFi duties; this stub intentionally minimal.
 
 // lastssidscan default
 uint32_t lastssidscan = 0;

@@ -149,7 +149,22 @@
                                 <button id="serial-open" class="btn btn-small"><i class="fas fa-plug"></i> Open Serial</button>
                                 <button id="serial-close" class="btn btn-small"><i class="fas fa-power-off"></i> Close Serial</button>
                                 <button id="serial-send-btn" class="btn btn-small"><i class="fas fa-paper-plane"></i> Send</button>
+                                <select id="serial-quick-cmd" title="Quick serial commands" style="padding:4px;min-width:160px;border:1px solid #e5e7eb;border-radius:4px;background:#fff">
+                                    <option value="">--cmd--</option>
+                                </select>
+                                <button id="serial-send-quick" class="btn btn-small" title="Send selected quick command"><i class="fas fa-bolt"></i> Quick</button>
                                 <button id="serial-check" class="btn btn-small"><i class="fas fa-stethoscope"></i> COM Check</button>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#6b7280">
+                                    <input type="checkbox" id="serial-auto-nl" style="margin:0"> NL
+                                </label>
+                                <select id="serial-baud" title="Baud Rate" style="padding:4px;min-width:90px;border:1px solid #e5e7eb;border-radius:4px;background:#fff">
+                                    <option value="115200">115200</option>
+                                    <option value="230400">230400</option>
+                                    <option value="460800">460800</option>
+                                    <option value="921600">921600</option>
+                                </select>
+                                <button id="serial-reopen" class="btn btn-small" title="Reopen with selected baud"><i class="fas fa-sync"></i> Reopen</button>
+                                <button id="serial-diagnose" class="btn btn-small" title="Diagnose serial"><i class="fas fa-heartbeat"></i> Diagnose</button>
                                 <span class="muted" id="serial-check-status"></span>
                             </div>
                             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
@@ -283,6 +298,40 @@
                                 <span class="checkmark"></span>
                                 Auto Suggestions
                             </label>
+                        </div>
+
+                        <h4>Code Editing (Experimental)</h4>
+                        <div class="form-group" style="margin-bottom:4px">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="feature-code-editing">
+                                <span class="checkmark"></span>
+                                Enable Code Editing Feature
+                            </label>
+                        </div>
+                        <div class="form-group" style="margin-bottom:4px">
+                            <label class="checkbox-label" title="Allow server to apply file edits (otherwise listing only)">
+                                <input type="checkbox" id="editing-enable-file-edits">
+                                <span class="checkmark"></span>
+                                Allow Applying File Edits
+                            </label>
+                        </div>
+                        <div class="form-group" style="display:flex;gap:8px;flex-wrap:wrap">
+                            <div style="flex:1 1 130px;min-width:120px">
+                                <label for="editing-max-size" style="font-size:12px;color:#6b7280">Max File Size (KB)</label>
+                                <input type="number" id="editing-max-size" min="1" value="200" />
+                            </div>
+                            <div style="flex:1 1 200px;min-width:180px">
+                                <label for="editing-allowed-ext" style="font-size:12px;color:#6b7280">Allowed Extensions (comma)</label>
+                                <input type="text" id="editing-allowed-ext" placeholder=".h,.cpp,.js,.py" />
+                            </div>
+                            <div style="flex:1 1 200px;min-width:180px">
+                                <label for="editing-block-list" style="font-size:12px;color:#6b7280">Block List (comma)</label>
+                                <input type="text" id="editing-block-list" placeholder="ai_config.json" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="editing-root" style="font-size:12px;color:#6b7280">Root (readonly)</label>
+                            <input type="text" id="editing-root" readonly />
                         </div>
 
                         <div class="ai-config-buttons">

@@ -1,28 +1,74 @@
-#ifndef WIFI_MODULE_H
-#define WIFI_MODULE_H
+// Consolidated WiFiModule (legacy WifiManager + enhanced module features)
+#pragma once
 
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <ArduinoJson.h>
-
+#include <vector>
 #include "module_manager.h"
 
-// Enhanced WiFi Module with Module Manager Integration
 class WiFiModule : public ModuleInterface
 {
 private:
+    // Lifecycle flags
     bool isInitialized = false;
     bool isStarted = false;
+    // Timers / counters
     uint32_t lastScanTime = 0;
     uint32_t lastStatusCheck = 0;
-    String lastError = "";
     int reconnectAttempts = 0;
-    // Tracks whether fallback AP is currently running
+    // State
     bool apStarted = false;
-    // Multi-STA support
-    WiFiMulti wifiMulti;
-    int savedNetworkCount = 0;
     bool useWiFiMulti = false;
+    int savedNetworkCount = 0;
+    String lastError;
+    // Extended feature flags/state
+    bool managementAP = false;            // always-on management AP (from config)
+    bool suppressAPAutoStop = false;      // prevents auto-stop if managementAP true
+    bool scanVerbose = false;             // verbose scan logging
+    bool gpioResetArmed = false;          // tracking button hold
+    uint32_t gpioResetStart = 0;          // timestamp for long-press
+    WiFiEventId_t wifiEventHandlerId = 0; // event handler token
+    // Multi network support
+    WiFiMulti wifiMulti;
+    // Cached static IP settings
+    String staticIp, staticMask, staticGw, staticDns;
+
+    // Event history (recent broadcast events captured for diagnostics)
+    struct WifiEventRecord
+    {
+        uint32_t ts; // millis timestamp
+        String name;
+        String data;
+    };
+    static constexpr size_t kMaxEventHistory = 16;
+    std::vector<WifiEventRecord> eventHistory;
+
+    // Cached scan results
+    struct ScanResultItem
+    {
+        String ssid;
+        int32_t rssi = 0;
+        int32_t channel = 0;
+        String bssid;
+        String encryption;
+    };
+    std::vector<ScanResultItem> lastScanResults;
+    bool scanInProgress = false; // track async scan state for /api/wifi/scan/results
+
+    struct StaConfig
+    {
+        String primarySsid;
+        String primaryPassword;
+        JsonArray networks; // view into loaded document (do not persist outside scope)
+        bool powerSave = false;
+        String hostname;
+        String ip;
+        String mask;
+        String gw;
+        String dns;
+    };
 
 public:
     // Module lifecycle
@@ -33,37 +79,47 @@ public:
 
     // Module information
     ModuleInfo getInfo() const override;
-    ModuleType getType() const override;
+    ModuleType getType() const override { return ModuleType::COMMUNICATION; }
     ModuleState getState() const override;
     bool isHealthy() const override;
 
-    // Module interfaces
+    // Interfaces
     void registerWebHandlers(AsyncWebServer &server) override;
     void handleEvent(const String &event, const String &data) override;
     void update() override;
-
-    // Configuration
-    String getConfig() const override;
-    bool setConfig(const String &config) override;
-    String getStatus() const override;
+    String getConfig() const override;             // Returns combined station/AP config
+    bool setConfig(const String &config) override; // Updates station/AP config
+    String getStatus() const override;             // Returns runtime status JSON
     void getMetrics(JsonObject &metrics) const override;
 
+    // Expose recent events (for API endpoint)
+    void appendEvent(const String &name, const String &data);
+
+    // Convenience accessor
+    IPAddress localIP() const { return WiFi.localIP(); }
+
 private:
+    // Helpers
     void performWiFiScan();
     void checkConnectionStatus();
-    void handleDisconnection();
     bool attemptReconnection();
     void optimizeWiFiSettings();
-
-    // Fallback AP helpers
+    void loadSavedNetworks();
     void startFallbackAP();
     void stopFallbackAPIfIdle();
-
-    // Load saved STA networks from config
-    void loadSavedNetworks();
+    void applyStaticIpIfConfigured();
+    void rankCandidateNetworks(std::vector<std::pair<String, String>> &candidates);
+    void loadApConfig(JsonDocument &outApCfg);                // loads /current/apconfig.json for AP customization
+    bool loadStaConfig(JsonDocument &doc, StaConfig &outCfg); // unified loader for station JSON
+    void applyStaticIpFrom(const StaConfig &cfg);
+    void registerWiFiEvents();
+    void logDisconnectReason(uint8_t reason);
+    void maybeStartManagementAP();        // start AP early if managementAP enabled
+    void handleGpioResetCheck();          // credential wipe via GPIO0 long press
+    bool wipeStaCredentials();            // delete /current/staconfig.json
+    String buildDefaultHostname() const;  // MAC-based hostname
+    void cacheScanResults(int16_t count); // populate lastScanResults from WiFi.scan* API
 };
 
-// WiFi module registration function
+// Registration helper
 void registerWiFiModule();
-
-#endif // WIFI_MODULE_H

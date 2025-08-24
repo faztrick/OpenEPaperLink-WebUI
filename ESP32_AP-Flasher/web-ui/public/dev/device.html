@@ -68,7 +68,7 @@
         </div>
     </nav>
 
-    <div class="main-container container">
+    <div class="main-container container" id="device-page-root" data-page="device">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="project-info">
@@ -165,29 +165,28 @@
 
 
 
-            <!-- Debug Console (moved) -->
-            <div class="console-panel">
+            <!-- Primary Build/Process Console (unified) -->
+            <div class="console-panel" id="primary-console-panel">
                 <div class="console-header">
-                    <h3><i class="fas fa-terminal"></i> Console Output</h3>
+                    <h3><i class="fas fa-terminal"></i> Build / Process Console</h3>
                     <div class="console-controls">
-                        <button id="clear-console" class="btn btn-small">
+                        <button id="clear-console" class="btn btn-small" title="Clear main console">
                             <i class="fas fa-eraser"></i> Clear
                         </button>
-                        <button id="save-log" class="btn btn-small">
-                            <i class="fas fa-save"></i> Save Log
+                        <button id="save-log" class="btn btn-small" title="Download console log">
+                            <i class="fas fa-save"></i> Save
                         </button>
-                        <button id="kill-process" class="btn btn-danger btn-small" disabled>
+                        <button id="kill-process" class="btn btn-danger btn-small" disabled title="Stop running process">
                             <i class="fas fa-stop"></i> Stop
                         </button>
                     </div>
                 </div>
-
-                <div id="console" class="console"></div>
+                <div id="console" class="console" aria-live="polite" aria-label="Primary build and process output"></div>
             </div>
 
 
 
-            <!-- Debug Console (after Device Management) -->
+            <!-- Debug Console (secondary targeted debug log) -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-terminal"></i> Debug Console</h3>
@@ -218,7 +217,7 @@
                 <div class="debug-console" id="debug-log"></div>
             </div>
 
-            <!-- Memory Analysis (after Device Management) -->
+            <!-- Memory Analysis -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-memory"></i> Memory Analysis</h3>
@@ -276,7 +275,7 @@
                 </div>
             </div>
 
-            <!-- ESP32 Quick Actions (moved below diagnostics) -->
+            <!-- ESP32 Quick Actions -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
@@ -309,7 +308,7 @@
                 </div>
             </div>
 
-            <!-- API Testing Section (moved below Quick Actions) -->
+            <!-- API Testing Section -->
             <div class="dev-section">
                 <div class="section-header">
                     <h3><i class="fas fa-network-wired"></i> API Testing</h3>
@@ -385,6 +384,19 @@
                     </div>
                     <pre id="api-response" class="response-output">No response yet. Click a test button or send a custom request.</pre>
                 </div>
+
+                <!-- Features Panel (dynamic, populated by device-features.js) -->
+                <div class="dev-section" id="features-section">
+                    <div class="section-header">
+                        <h3><i class="fas fa-list-check"></i> Firmware Features</h3>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap">
+                            <button id="refresh-features" class="btn btn-small"><i class="fas fa-sync"></i> Refresh</button>
+                            <span id="features-status" class="muted"></span>
+                        </div>
+                    </div>
+                    <p class="muted" style="margin-top:0">Detected capabilities exposed by the selected device. Parsed from /api/features (firmware dependent). Green = available, red = missing or disabled.</p>
+                    <div id="features-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
+                </div>
             </div>
         </main>
     </div>
@@ -454,10 +466,12 @@
         </div>
     </div>
 
-        <script src="/socket.io/socket.io.js"></script>
-        <!-- Use the same app logic as index.html so Devices behaves identically everywhere -->
-        <script src="app.js"></script>
-        <script src="spa.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="dev-common.js"></script>
+    <script src="device-features.js"></script>
+    <script src="spa.js"></script>
+    <!-- Reuse shared application logic -->
+    <script src="app.js"></script>
         <script>
             // Optional soft-redirect: if a query flag is present, redirect to index.html
             // Otherwise keep this page loaded but with unified behavior.

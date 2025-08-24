@@ -13,7 +13,7 @@
 #include "settings.h"
 #include "storage.h"
 #include "web.h"
-#include "wifimanager.h"
+#include "wifi_module.h"
 #include "zbs_interface.h"
 
 #define LOG(format, ...) printf(format, ##__VA_ARGS__)
@@ -88,8 +88,11 @@ struct rxCmd
 #define ZBS_RX_WAIT_TAG_RETURN_DATA 18
 #define ZBS_RX_WAIT_SUBCHANNEL 19
 
-bool txStart()
+// Acquire TX semaphore. If timeoutMs==0 wait forever (legacy behaviour). Returns false on timeout.
+bool txStart(uint32_t timeoutMs /*=0*/)
 {
+    uint32_t start = millis();
+    uint32_t lastLog = 0; // rate-limit busy log
     while (1)
     {
         if (xPortInIsrContext())
@@ -102,11 +105,18 @@ bool txStart()
             if (xSemaphoreTake(txActive, portTICK_PERIOD_MS))
                 return true;
         }
+        if (timeoutMs && (millis() - start >= timeoutMs))
+        {
+            return false; // timeout
+        }
+        // Avoid spamming logs; print every ~500ms only when debugging contention.
+        if (millis() - lastLog > 500)
+        {
+            lastLog = millis();
+            Serial.println("wait... tx busy");
+        }
         vTaskDelay(10 / portTICK_PERIOD_MS);
-        Serial.println("wait... tx busy");
     }
-    // this never happens. Should we make a timeout?
-    return false;
 }
 void txEnd()
 {
@@ -243,7 +253,7 @@ uint16_t sendBlock(const void *data, const uint16_t len)
 {
     time_t timeCanary = millis();
     if (apInfo.state == AP_STATE_NORADIO)
-        return true;
+        return true; // legacy behaviour
     if (!apInfo.isOnline)
         return false;
     if (!txStart())
@@ -263,10 +273,8 @@ uint16_t sendBlock(const void *data, const uint16_t len)
 blksend:
     uint8_t blockbuffer[sizeof(struct blockData)];
     struct blockData *bd = (struct blockData *)blockbuffer;
-    // set size in header (field name in protocol is 'bytes')
-    bd->bytes = len;
+    bd->bytes = len; // set size in header (protocol field 'bytes')
 
-    // calculate checksum locally (protocol header does not contain a checksum field)
     const uint8_t *dataBytes = reinterpret_cast<const uint8_t *>(data);
     uint16_t checksum = 0;
     for (uint16_t c = 0; c < len; c++)
@@ -274,53 +282,74 @@ blksend:
         checksum += dataBytes[c];
     }
 
-    // send blockData header
-    dataBytes = reinterpret_cast<const uint8_t *>(&blockbuffer);
-    const size_t bufferSize = sizeof(struct blockData);
-    uint8_t *modifiedHeader = static_cast<uint8_t *>(malloc(bufferSize));
-    if (modifiedHeader != nullptr)
+    // XOR & send header without dynamic allocation
     {
-        for (size_t i = 0; i < bufferSize; i++)
+        uint8_t headerXor[sizeof(struct blockData)];
+        for (size_t i = 0; i < sizeof(struct blockData); i++)
         {
-            modifiedHeader[i] = 0xAA ^ dataBytes[i];
+            headerXor[i] = 0xAA ^ blockbuffer[i];
         }
-        AP_SERIAL_PORT.write(modifiedHeader, bufferSize);
-        free(modifiedHeader);
+        AP_SERIAL_PORT.write(headerXor, sizeof(headerXor));
     }
 
-    // send an entire block of data
-    uint16_t c = 0; // Initialize c to prevent undefined behavior
-    dataBytes = reinterpret_cast<const uint8_t *>(data);
-    uint8_t *modifiedBuffer = static_cast<uint8_t *>(malloc(len));
-    if (modifiedBuffer != nullptr)
+    // XOR & send payload in small chunks to avoid large stack usage (no malloc)
+    const uint8_t *payload = reinterpret_cast<const uint8_t *>(data);
+    uint16_t sent = 0;
+    uint8_t xorBuf[64];
+    while (sent < len)
     {
-        for (c = 0; c < len; c++)
+        uint16_t chunk = len - sent;
+        if (chunk > sizeof(xorBuf))
+            chunk = sizeof(xorBuf);
+        for (uint16_t i = 0; i < chunk; i++)
         {
-            modifiedBuffer[c] = 0xAA ^ dataBytes[c];
+            xorBuf[i] = 0xAA ^ payload[sent + i];
         }
-        AP_SERIAL_PORT.write(modifiedBuffer, len);
-        free(modifiedBuffer);
+        AP_SERIAL_PORT.write(xorBuf, chunk);
+        sent += chunk;
     }
 
-    // fill the rest of the block-length filled with something else (will end up as 0xFF in the buffer)
-    const size_t remainingBytes = BLOCK_DATA_SIZE - c;
+    // fill rest of fixed block size
+    const size_t remainingBytes = BLOCK_DATA_SIZE - sent;
     if (remainingBytes > 0)
     {
-        uint8_t fillBuffer[remainingBytes];
-        memset(fillBuffer, 0x55, remainingBytes);
-        AP_SERIAL_PORT.write(fillBuffer, remainingBytes);
+        uint8_t fillByte = 0x55;
+        for (size_t i = 0; i < remainingBytes; i++)
+        {
+            AP_SERIAL_PORT.write(fillByte);
+        }
     }
 
-    // dummy bytes in case some bytes were missed, makes sure the AP gets kicked out of data-loading mode
-    uint8_t dummyBuffer[32];
-    memset(dummyBuffer, 0xF5, 32);
-    AP_SERIAL_PORT.write(dummyBuffer, 32);
+    // dummy bytes (kick AP out of data-loading mode)
+    for (uint8_t i = 0; i < 32; i++)
+    {
+        AP_SERIAL_PORT.write((uint8_t)0xF5);
+    }
 
     if (apInfo.type != ESP32_C6)
         delay(10);
     txEnd();
     Serial.println("Sendblock complete, " + String(millis() - timeCanary) + "ms");
     return checksum;
+}
+
+// Generic helper to send a simple command followed by a struct payload with retry logic.
+static bool sendStructWithAck(const char *cmdPrefix, const void *payload, size_t payloadLen, uint8_t attempts)
+{
+    for (uint8_t attempt = 0; attempt < attempts; attempt++)
+    {
+        cmdReplyValue = CMD_REPLY_WAIT;
+        AP_SERIAL_PORT.print(cmdPrefix);
+        if (payloadLen)
+            AP_SERIAL_PORT.write(reinterpret_cast<const uint8_t *>(payload), payloadLen);
+        if (waitCmdReply())
+        {
+            return true;
+        }
+        Serial.printf("%s send failed in try %d\r\n", cmdPrefix, attempt);
+    }
+    Serial.printf("%s failed to send...\r\n", cmdPrefix);
+    return false;
 }
 
 bool sendDataAvail(struct pendingData *pending)
@@ -332,25 +361,9 @@ bool sendDataAvail(struct pendingData *pending)
     if (!txStart())
         return false;
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++)
-    {
-        cmdReplyValue = CMD_REPLY_WAIT;
-        AP_SERIAL_PORT.print("SDA>");
-        for (uint8_t c = 0; c < sizeof(struct pendingData); c++)
-        {
-            AP_SERIAL_PORT.write(((uint8_t *)pending)[c]);
-        }
-        if (waitCmdReply())
-        {
-            txEnd();
-            return true;
-        }
-        Serial.printf("SDA send failed in try %d\r\n", attempt);
-        delay(200);
-    }
-    Serial.print("SDA failed to send...\r\n");
+    bool ok = sendStructWithAck("SDA>", pending, sizeof(struct pendingData), 5);
     txEnd();
-    return false;
+    return ok;
 }
 bool sendCancelPending(struct pendingData *pending)
 {
@@ -361,24 +374,9 @@ bool sendCancelPending(struct pendingData *pending)
     if (!txStart())
         return false;
     addCRC(pending, sizeof(struct pendingData));
-    for (uint8_t attempt = 0; attempt < 5; attempt++)
-    {
-        cmdReplyValue = CMD_REPLY_WAIT;
-        AP_SERIAL_PORT.print("CXD>");
-        for (uint8_t c = 0; c < sizeof(struct pendingData); c++)
-        {
-            AP_SERIAL_PORT.write(((uint8_t *)pending)[c]);
-        }
-        if (waitCmdReply())
-        {
-            txEnd();
-            return true;
-        }
-        Serial.printf("CXD send failed in try %d\r\n", attempt);
-    }
-    Serial.print("CXD failed to send...\r\n");
+    bool ok = sendStructWithAck("CXD>", pending, sizeof(struct pendingData), 5);
     txEnd();
-    return false;
+    return ok;
 }
 bool sendChannelPower(struct espSetChannelPower *scp)
 {
@@ -389,26 +387,14 @@ bool sendChannelPower(struct espSetChannelPower *scp)
     if (!txStart())
         return false;
     addCRC(scp, sizeof(struct espSetChannelPower));
-    for (uint8_t attempt = 0; attempt < 5; attempt++)
+    bool ok = sendStructWithAck("SCP>", scp, sizeof(struct espSetChannelPower), 5);
+    if (ok)
     {
-        cmdReplyValue = CMD_REPLY_WAIT;
-        AP_SERIAL_PORT.print("SCP>");
-        for (uint8_t c = 0; c < sizeof(struct espSetChannelPower); c++)
-        {
-            AP_SERIAL_PORT.write(((uint8_t *)scp)[c]);
-        }
-        if (waitCmdReply())
-        {
-            txEnd();
-            apInfo.channel = scp->channel;
-            apInfo.power = scp->power;
-            return true;
-        }
-        Serial.printf("SCP send failed in try %d\r\n", attempt);
+        apInfo.channel = scp->channel;
+        apInfo.power = scp->power;
     }
-    Serial.print("SCP failed to send...\r\n");
     txEnd();
-    return false;
+    return ok;
 }
 bool sendPing()
 {
@@ -982,7 +968,7 @@ void checkWaitPowerCycle()
 }
 void segmentedShowIp()
 {
-    IPAddress IP = wm.localIP();
+    IPAddress IP = WiFi.localIP();
     char temp[12];
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     sendAPSegmentedData(apInfo.mac, (String) "IP    Addr", 0x0200, true, true);

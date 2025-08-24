@@ -15,7 +15,7 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
                                    const std::vector<String> &dependencies)
 {
     using namespace ModuleUtils;
-    
+
     if (!module)
     {
         LogUtils::logError("[MODULE_MANAGER] Cannot register null module");
@@ -25,12 +25,14 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
     ModuleInfo info = module->getInfo();
 
     // Validate module information
-    if (!ValidationUtils::isValidModuleName(info.name)) {
+    if (!ValidationUtils::isValidModuleName(info.name))
+    {
         LogUtils::logError("[MODULE_MANAGER] Invalid module name: " + info.name);
         return false;
     }
 
-    if (!ValidationUtils::isValidVersion(info.version)) {
+    if (!ValidationUtils::isValidVersion(info.version))
+    {
         LogUtils::logError("[MODULE_MANAGER] Invalid module version: " + info.version);
         return false;
     }
@@ -43,7 +45,8 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
     }
 
     // Check memory availability for the module
-    if (!MemoryUtils::hasEnoughMemory(1024)) { // Assume 1KB minimum per module
+    if (!MemoryUtils::hasEnoughMemory(1024))
+    { // Assume 1KB minimum per module
         LogUtils::logError("[MODULE_MANAGER] Insufficient memory to register module: " + info.name);
         return false;
     }
@@ -65,7 +68,7 @@ bool ModuleManager::registerModule(std::unique_ptr<ModuleInterface> module,
 bool ModuleManager::initializeAll()
 {
     using namespace ModuleUtils;
-    
+
     if (initialized)
     {
         LogUtils::logWarning("[MODULE_MANAGER] Already initialized");
@@ -76,7 +79,8 @@ bool ModuleManager::initializeAll()
     LogUtils::logInfo("[MODULE_MANAGER] Initializing all modules...");
 
     // Check system resources before initialization
-    if (!MemoryUtils::hasEnoughMemory(4096)) { // Minimum 4KB for initialization
+    if (!MemoryUtils::hasEnoughMemory(4096))
+    { // Minimum 4KB for initialization
         LogUtils::logError("[MODULE_MANAGER] Insufficient memory for initialization");
         return false;
     }
@@ -103,8 +107,9 @@ bool ModuleManager::initializeAll()
             regModule.info.state = ModuleState::INITIALIZING;
 
             uint32_t initStart = millis();
-            
-            try {
+
+            try
+            {
                 bool success = regModule.instance->initialize();
                 regModule.info.initTime = millis() - initStart;
 
@@ -113,35 +118,42 @@ bool ModuleManager::initializeAll()
                     regModule.info.state = ModuleState::INITIALIZED;
                     regModule.info.lastActivity = millis();
                     successCount++;
-                    LogUtils::logInfo("[MODULE_MANAGER] Module '" + regModule.info.name + 
-                                    "' initialized in " + String(regModule.info.initTime) + "ms");
+                    LogUtils::logInfo("[MODULE_MANAGER] Module '" + regModule.info.name +
+                                      "' initialized in " + String(regModule.info.initTime) + "ms");
                 }
                 else
                 {
                     regModule.info.state = ModuleState::ERROR;
                     regModule.info.errorMessage = "Initialization failed";
                     LogUtils::logModuleError(regModule.info.name, "Initialization failed");
-                    
+
                     // Check if this is a critical module
-                    if (!regModule.info.capabilities.isOptional) {
+                    if (!regModule.info.capabilities.isOptional)
+                    {
                         allSuccess = false;
                         LogUtils::logError("[MODULE_MANAGER] Critical module failed: " + regModule.info.name);
                     }
                 }
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception &e)
+            {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = String("Exception: ") + e.what();
                 LogUtils::logModuleError(regModule.info.name, "Exception during initialization: " + String(e.what()));
-                
-                if (!regModule.info.capabilities.isOptional) {
+
+                if (!regModule.info.capabilities.isOptional)
+                {
                     allSuccess = false;
                 }
-            } catch (...) {
+            }
+            catch (...)
+            {
                 regModule.info.state = ModuleState::ERROR;
                 regModule.info.errorMessage = "Unknown exception during initialization";
                 LogUtils::logModuleError(regModule.info.name, "Unknown exception during initialization");
-                
-                if (!regModule.info.capabilities.isOptional) {
+
+                if (!regModule.info.capabilities.isOptional)
+                {
                     allSuccess = false;
                 }
             }
@@ -152,22 +164,22 @@ bool ModuleManager::initializeAll()
     }
 
     uint32_t totalTime = millis() - startTime;
-    
+
     if (allSuccess)
     {
         initialized = true;
-        LogUtils::logInfo("[MODULE_MANAGER] All modules initialized successfully: " + 
-                         String(successCount) + "/" + String(totalCount) + 
-                         " in " + String(totalTime) + "ms");
+        LogUtils::logInfo("[MODULE_MANAGER] All modules initialized successfully: " +
+                          String(successCount) + "/" + String(totalCount) +
+                          " in " + String(totalTime) + "ms");
     }
     else
     {
-        LogUtils::logError("[MODULE_MANAGER] Module initialization failed: " + 
-                          String(successCount) + "/" + String(totalCount) + " successful");
+        LogUtils::logError("[MODULE_MANAGER] Module initialization failed: " +
+                           String(successCount) + "/" + String(totalCount) + " successful");
     }
 
     MemoryUtils::logMemoryUsage("After module initialization");
-    
+
     return allSuccess;
 }
 
@@ -813,4 +825,33 @@ bool ModuleManager::loadConfig()
     if (json.length() == 0)
         return false;
     return setSystemConfig(json);
+}
+
+// -----------------------------
+// Event system
+// -----------------------------
+void ModuleManager::broadcastEvent(const String &event, const String &data)
+{
+    // Simple fan-out to all modules that declare event handling capability
+    // Note: We intentionally do not stop if one module throws; we catch and continue.
+    for (auto &regModule : modules)
+    {
+        if (regModule.info.state == ModuleState::ACTIVE && regModule.info.capabilities.hasEventHandlers)
+        {
+// Protect against exceptions (if compiled with exceptions enabled)
+#if defined(__EXCEPTIONS)
+            try
+            {
+                regModule.instance->handleEvent(event, data);
+            }
+            catch (...)
+            {
+                Serial.printf("[MODULE_MANAGER] Exception delivering event '%s' to module '%s'\n",
+                              event.c_str(), regModule.info.name.c_str());
+            }
+#else
+            regModule.instance->handleEvent(event, data);
+#endif
+        }
+    }
 }

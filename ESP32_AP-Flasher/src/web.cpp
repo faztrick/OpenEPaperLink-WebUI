@@ -374,50 +374,21 @@ void init_web()
         JsonDocument doc;
         // Populate from compile-time macros where available
 #ifdef HAS_TFT
-        JsonObject tft = doc["TFT"].to<JsonObject>();
+    JsonObject tft = doc["TFT"].to<JsonObject>();
 #ifdef TFT_MOSI
-        tft["MOSI"] = TFT_MOSI;
+    tft["MOSI"] = TFT_MOSI;
 #endif
-#ifdef TFT_SCLK
-        tft["SCLK"] = TFT_SCLK;
-#endif
-#ifdef TFT_CS
-        tft["CS"] = TFT_CS;
-#endif
-#ifdef TFT_DC
-        tft["DC"] = TFT_DC;
-#endif
-#ifdef TFT_RST
-        tft["RST"] = TFT_RST;
-#endif
-        tft["source"] = "build-time";
-#endif
-
-#ifdef HAS_RGB_LED
-        JsonObject rgb = doc["FLASHER_RGB_LED"].to<JsonObject>();
-#ifdef FLASHER_RGB_LED
-        rgb["pin"] = FLASHER_RGB_LED;
-#endif
-        rgb["source"] = "build-time";
-#endif
-
-#ifdef HAS_EXT_FLASHER
-        JsonObject flasher = doc["FLASHER_LED"].to<JsonObject>();
-#ifdef FLASHER_LED
-        flasher["pin"] = FLASHER_LED;
-#endif
-        flasher["source"] = "build-time";
-#endif
-
-#ifdef HAS_RC522_RFID
-        JsonObject rc = doc.createNestedObject("RC522");
-#ifdef RC522_SS_PIN
-        rc["SS"] = RC522_SS_PIN;
-#endif
-#ifdef RC522_RST_PIN
-        rc["RST"] = RC522_RST_PIN;
-#endif
-        rc["source"] = "driver/build-time (example)";
+    // NOTE: Previous builds performed moduleManager initialization & start here under
+    // C6_OTA_FLASHING. This caused duplicate initialization because main.cpp now
+    // performs registration/initialize/start for all modules (including WiFiModule
+    // and optional C6Module) before calling init_web(). The duplicate block has been
+    // removed to:
+    //  * Prevent double start() calls on modules (side‑effects, extra tasks)
+    //  * Save flash/IRAM and reduce boot time
+    //  * Centralize module lifecycle in main.cpp
+    // If future conditional module init is required, add lightweight registration
+    // helpers here guarded by feature macros, but keep initialize/start in one place.
+    tft["source"] = "build-time"; // indicates values come from compile-time macros
 #endif
 
         // CC1101 / Sub-GHz - driver may not expose pins at compile-time
@@ -1810,187 +1781,13 @@ void init_web()
         serializeJson(doc, *response);
         request->send(response); });
 
-    // Network Endpoints
+    // Deprecated network endpoints replaced by /api/wifi/* unified API
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        JsonDocument doc;
-        doc["success"] = true;
-        doc["wifi"]["connected"] = (WiFi.status() == WL_CONNECTED);
-        doc["wifi"]["ssid"] = WiFi.SSID();
-        doc["wifi"]["rssi"] = WiFi.RSSI();
-        doc["wifi"]["localIP"] = WiFi.localIP().toString();
-        doc["wifi"]["macAddress"] = WiFi.macAddress();
-        doc["wifi"]["channel"] = WiFi.channel();
-        doc["wifi"]["hostname"] = WiFi.getHostname();
-        doc["ap"]["enabled"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
-        doc["ap"]["clients"] = WiFi.softAPgetStationNum();
-        doc["ap"]["ip"] = WiFi.softAPIP().toString();
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
-
+              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/status\"}"); });
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        // Increased buffer size for better memory handling
-        JsonDocument doc;
-
-        // Ensure WiFi is in a mode that allows scanning
-        wifi_mode_t currentMode = WiFi.getMode();
-        Serial.printf("ESP32-S3 WiFi scan - Current WiFi mode: %d\n", currentMode);
-
-        if (currentMode == WIFI_OFF) {
-            Serial.println("WiFi was off, switching to STA mode with ESP32-S3 optimizations");
-            WiFi.mode(WIFI_STA);
-            // ESP32-S3 specific WiFi performance settings
-            esp_wifi_set_ps(WIFI_PS_NONE);        // Disable power saving
-            WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Optimal power for ESP32-S3
-            vTaskDelay(pdMS_TO_TICKS(200));
-        } else if (currentMode == WIFI_AP) {
-            Serial.println("WiFi was in AP mode, switching to AP+STA mode with ESP32-S3 optimizations");
-            WiFi.mode(WIFI_AP_STA);
-            // Apply optimizations for dual mode
-            esp_wifi_set_ps(WIFI_PS_NONE);
-            WiFi.setTxPower(WIFI_POWER_19_5dBm);
-            vTaskDelay(pdMS_TO_TICKS(200));
-        }
-
-        // Check if scan is already in progress
-        int scanResult = WiFi.scanComplete();
-        if (scanResult == WIFI_SCAN_RUNNING) {
-            doc["success"] = false;
-            doc["message"] = "Scan already in progress";
-            doc["scanRunning"] = true;
-
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            serializeJson(doc, *response);
-            request->send(response);
-            return;
-        }
-
-        // Use async scan for better performance
-        Serial.println("Starting async WiFi scan...");
-        WiFi.scanDelete();              // Clear previous results
-        WiFi.scanNetworks(true, true);  // async=true, show_hidden=true
-
-        // Wait briefly for scan to initialize
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        // Check scan status again
-        scanResult = WiFi.scanComplete();
-        if (scanResult == WIFI_SCAN_RUNNING) {
-            doc["success"] = false;
-            doc["message"] = "Scan initiated, please try again in a few seconds";
-            doc["scanRunning"] = true;
-
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            serializeJson(doc, *response);
-            request->send(response);
-            return;
-        }
-
-        // If scan completed immediately or has results
-        int n = scanResult;
-        if (n < 0) {
-            Serial.printf("WiFi scan error: %d\n", n);
-            doc["success"] = false;
-            doc["message"] = "WiFi scan failed";
-            doc["errorCode"] = n;
-        } else {
-            Serial.printf("WiFi scan found %d networks\n", n);
-            doc["success"] = true;
-            doc["networkCount"] = n;
-            doc["wifiMode"] = WiFi.getMode();
-            doc["timestamp"] = millis();
-
-            JsonArray networks = doc["networks"].to<ArduinoJson::JsonArray>();
-
-            // Limit networks to prevent memory issues and sort by signal strength
-            int maxNetworks = min(n, 50);
-
-            // Create array of network info for sorting
-            struct NetworkInfo {
-                int index;
-                int rssi;
-            };
-
-            std::vector<NetworkInfo> networkList;
-            for (int i = 0; i < n; i++) {
-                String ssid = WiFi.SSID(i);
-                if (!ssid.isEmpty() && ssid.length() > 0) {
-                    networkList.push_back({i, WiFi.RSSI(i)});
-                }
-            }
-
-            // Sort by RSSI (signal strength) descending
-            std::sort(networkList.begin(), networkList.end(),
-                      [](const NetworkInfo &a, const NetworkInfo &b) {
-                          return a.rssi > b.rssi;
-                      });
-
-            // Add sorted networks to JSON
-            int addedCount = 0;
-            for (const auto &netInfo : networkList) {
-                if (addedCount >= maxNetworks) break;
-
-                int i = netInfo.index;
-                JsonObject network = networks.add<ArduinoJson::JsonObject>();
-                network["ssid"] = WiFi.SSID(i);
-                network["rssi"] = WiFi.RSSI(i);
-                network["encryption"] = WiFi.encryptionType(i);
-                network["channel"] = WiFi.channel(i);
-                network["bssid"] = WiFi.BSSIDstr(i);
-
-                addedCount++;
-            }
-
-            doc["networksReturned"] = addedCount;
-        }
-
-        // Clean up scan results
-        WiFi.scanDelete();
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
-
+              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/scan\"}"); });
     server.on("/wifi_manage", HTTP_POST, [](AsyncWebServerRequest *request)
-              {
-        if (!request->hasParam("action", true)) {
-            request->send(400, "application/json", "{\"error\":\"Missing action parameter\"}");
-            return;
-        }
-
-        String action = request->getParam("action", true)->value();
-        String ssid = request->hasParam("ssid", true) ? request->getParam("ssid", true)->value() : "";
-        String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
-
-        JsonDocument doc;
-        doc["success"] = true;
-        doc["action"] = action;
-
-        if (action == "connect" && ssid.length() > 0) {
-            WiFi.begin(ssid.c_str(), password.c_str());
-            doc["result"] = "Connecting to " + ssid;
-        } else if (action == "disconnect") {
-            WiFi.disconnect();
-            doc["result"] = "Disconnected from WiFi";
-        } else if (action == "scan") {
-            WiFi.scanNetworks(true);
-            doc["result"] = "WiFi scan initiated";
-        } else if (action == "startAP") {
-            WiFi.softAP("ESP32-AP-Flasher", "");
-            doc["result"] = "Access Point started";
-        } else if (action == "stopAP") {
-            WiFi.softAPdisconnect();
-            doc["result"] = "Access Point stopped";
-        } else {
-            doc["result"] = "Unknown action or missing parameters";
-        }
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
+              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/connect|/api/wifi/disconnect|/api/wifi/ap\"}"); });
 
     // OTA Endpoints
     server.on("/ota_check", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -2056,44 +1853,9 @@ void init_web()
         request->send(response); });
 
     server.on("/serial_ap_status", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        JsonDocument doc;
-        doc["success"] = true;
-        doc["state"] = apInfo.state;
-        doc["online"] = apInfo.isOnline;
-        doc["channel"] = apInfo.channel;
-        doc["power"] = apInfo.power;
-        doc["rssi"] = apInfo.rssi;
-        doc["uptime"] = apInfo.uptime;
-        doc["pendingBuffer"] = apInfo.pendingBuffer;
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
-
+              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}"); });
     server.on("/serial_ap_control", HTTP_POST, [](AsyncWebServerRequest *request)
-              {
-        String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocument doc;
-        doc["success"] = true;
-        doc["action"] = action;
-
-        if (action == "start") {
-            bringAPOnline(AP_STATE_ONLINE);
-            doc["result"] = "Serial AP start initiated";
-        } else if (action == "stop") {
-            setAPstate(false, AP_STATE_OFFLINE);
-            doc["result"] = "Serial AP stopped";
-        } else if (action == "reset") {
-            APTagReset();
-            doc["result"] = "Serial AP reset initiated";
-        } else {
-            doc["result"] = "Serial AP action queued";
-        }
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
+              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}"); });
 
     // Log streaming configuration (UDP mirror for wireless receivers)
     server.on("/api/log/config", HTTP_GET, [](AsyncWebServerRequest *request)

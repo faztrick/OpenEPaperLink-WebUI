@@ -58,3 +58,8 @@ void rxSerialTask2(void *parameter);
 void APTagReset();
 bool bringAPOnline(uint8_t newState = AP_STATE_ONLINE);
 void setAPstate(bool isOnline, uint8_t state);
+
+// Acquire TX semaphore; if timeoutMs == 0 wait forever. Returns false on timeout.
+// Providing default parameter here so existing call sites without argument remain valid.
+bool txStart(uint32_t timeoutMs = 0);
+void txEnd();

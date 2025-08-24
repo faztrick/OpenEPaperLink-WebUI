@@ -14,7 +14,11 @@
 #include "system.h"
 #include "tag_db.h"
 #include "tagdata.h"
-#include "wifimanager.h"
+#include "wifi_module.h"    // migrated unified WiFi management
+#include "improv_support.h" // serial Improv provisioning
+#include "serial_cli.h"     // developer serial CLI
+// forward poll for advanced WiFi LED (optional)
+void wifi_led_poll();
 
 #ifdef HAS_EXT_FLASHER
 #include "webflasher.h"
@@ -158,6 +162,8 @@ void setup()
     Serial.print(">\r\n");
     Serial.println("[BOOT-TEST] Serial initialized at 115200");
     Serial.println("[BOOT-TEST] If you don't see these messages, check baud port and TX pin settings");
+    serial_cli_init();
+    serial_cli_print_prompt();
 #ifdef HAS_TFT
     extern void yellow_ap_display_init(void);
     yellow_ap_display_init();
@@ -225,7 +231,7 @@ void setup()
     }
     */
 
-    wm.initEth();
+    // Ethernet init (if any) should be handled inside WiFiModule in future; placeholder removed
     initAPconfig();
 
     updateLanguageFromConfig();
@@ -361,6 +367,41 @@ void setup()
         extern void init_udp();
         init_udp();
     }
+
+    // ---- Module System Initialization ----
+    // Register WiFi module (and any future auto-start modules) then initialize/start them.
+    // This was missing previously which prevented WiFi from starting.
+    Serial.println("[BOOT] Registering core modules (WiFiModule)...");
+    registerWiFiModule();
+
+    // Load persisted module autoStart configuration (modules_config.json) if present
+    if (!moduleManager.loadConfig())
+    {
+        Serial.println("[BOOT] No persisted module config found; applying defaults (WiFiModule autoStart=true)");
+        // Provide a minimal default system config enabling WiFiModule
+        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true}]}");
+    }
+
+    // Initialize all registered modules
+    if (!moduleManager.initializeAll())
+    {
+        Serial.println("[BOOT][ERROR] Module initialization failed; WiFi will not start.");
+    }
+
+    // Start auto-start modules (WiFiModule expected to start here)
+    if (!moduleManager.startAll())
+    {
+        Serial.println("[BOOT][ERROR] Some auto-start modules failed to start.");
+    }
+    else
+    {
+        Serial.println("[BOOT] Auto-start modules started successfully.");
+    }
+
+    // Register web handlers for active modules (WiFi REST endpoints)
+    extern AsyncWebServer server; // declared in web.cpp
+    moduleManager.registerAllWebHandlers(server);
+    Serial.println("[BOOT] Module web handlers registered.");
 }
 
 void loop()
@@ -368,7 +409,12 @@ void loop()
     ws.cleanupClients();
     // Ensure web server starts only when TCP/IP stack is ready
     ensure_webserver_started();
-    wm.poll();
+    // Drive module periodic updates (WiFiModule etc.)
+    moduleManager.updateAll();
+    // Poll Improv serial provisioning protocol
+    improv_poll();
+    // Advanced WiFi LED animation phase updates (if enabled)
+    wifi_led_poll();
 
     // Opportunistically attempt starting deferred UDP subsystems when WiFi becomes ready
     if (gStart_UDP)

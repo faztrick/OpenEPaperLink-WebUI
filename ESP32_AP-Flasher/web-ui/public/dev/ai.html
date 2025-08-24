@@ -36,6 +36,33 @@
 
         <!-- The ai-agent-widget.js script will attach and render the assistant UI -->
         <div id="ai-widget-root"></div>
+
+        <hr style="margin:2rem 0" />
+        <h3><i class="fas fa-code"></i> AI Code Editing (Experimental)</h3>
+        <p class="muted" style="margin-top:-4px">Generate edits to repository source files. Requires enabling codeEditing + enableFileEdits in AI config.</p>
+        <div id="ai-editing-disabled" style="display:none;color:#b91c1c;font-weight:500;margin-bottom:12px">Editing is disabled in server configuration.</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+            <div style="flex:1 1 260px;min-width:240px">
+                <label style="font-size:12px;color:#6b7280">Files</label>
+                <select id="ai-file-list" size="12" style="width:100%;min-height:280px;font-family:monospace"></select>
+            </div>
+            <div style="flex:2 1 420px;min-width:360px;display:flex;flex-direction:column;gap:8px">
+                <label style="font-size:12px;color:#6b7280">Instruction</label>
+                <textarea id="ai-edit-instruction" rows="4" placeholder="Describe the change (e.g., 'Add retry logic to HTTP download with exponential backoff')" style="width:100%"></textarea>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button id="ai-load-file" class="btn btn-small"><i class="fas fa-file"></i> Load</button>
+                    <button id="ai-preview-edit" class="btn btn-primary btn-small"><i class="fas fa-eye"></i> Preview Edit</button>
+                    <button id="ai-apply-edit" class="btn btn-success btn-small" disabled><i class="fas fa-check"></i> Apply Edit</button>
+                    <button id="ai-clear-diff" class="btn btn-small"><i class="fas fa-eraser"></i> Clear</button>
+                </div>
+                <label style="font-size:12px;color:#6b7280;margin-top:4px">Diff Preview</label>
+                <pre id="ai-diff" style="background:#0f172a;color:#e2e8f0;padding:10px;overflow:auto;max-height:320px;font-size:12px"></pre>
+                <label style="font-size:12px;color:#6b7280">Proposed File</label>
+                <pre id="ai-proposed" style="background:#1e293b;color:#f1f5f9;padding:10px;overflow:auto;max-height:320px;font-size:12px"></pre>
+                <div id="ai-edit-status" class="muted" style="font-size:12px"></div>
+            </div>
+        </div>
+        <div style="display:none" id="ai-original-file"></div>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>

@@ -119,6 +119,99 @@ VS Code tasks (Terminal > Run Task):
 - `FAST: Build+Upload OutdoorAP (COM10 Turbo)`
 - `PIO: Upload OutdoorAP (choose port)`
 
+### 4.1 Web UI Flasher (New Unified Page)
+
+Navigate to `flash.html` (now SPA-ready) for an integrated flashing dashboard:
+
+Components:
+
+- Environment selector (auto-populates from `/api/platformio-envs` when available; falls back to OutdoorAP/IndoorAP/Debug)
+- COM port selector (queried from `/api/com-ports` with graceful fallback list)
+- Baud rate selector (115200 / 460800 / 921600)
+- Flags:
+  - FS Only: run filesystem-only upload (`-FilesystemOnly`)
+  - Skip Upload: build only (`-SkipUpload`)
+  - Skip Build: upload only (`-SkipBuild`)
+  - Fast: convenience toggle (Python path currently uses standard scripts; dedicated fast buttons provided separately)
+- Action Toolbar:
+  - Build+Upload Py (compile.py)
+  - Build Only Py (compile.py -SkipUpload)
+  - Fast Py (fast_compile.py)
+  - Build+Upload PS (compile.ps1)
+  - Fast PS (fast_compile.ps1)
+  - Monitor (opens `pio device monitor` with selected port & baud)
+  - Clean (`pio run -e <env> -t clean`)
+  - Stop (terminates current process via socket `stop_process`)
+  - Clear (clears log panel)
+- Firmware Upload / OTA:
+  - Upload File: POST `/api/firmware/upload` (stores path for later use)
+  - Trigger OTA: POST `/api/firmware/trigger` with host + uploaded path
+  - Host field: target device IP/hostname for OTA
+- Artifacts Meta: Attempts GET `/api/build-artifacts?env=<env>` (shows count + latest name; falls back to “(none)” if unsupported)
+- Console Panel:
+  - Live merged output (stdout/stderr color coded)
+  - Auto trims to 1500 lines (drops oldest 10%)
+  - Copy button copies all visible lines to clipboard
+
+Process Lifecycle:
+
+1. Button emits either `run_script` (for .py / .ps1) or `run_command` (pio monitor / clean)
+2. Buttons disable & Stop enables while a process is active
+3. Output channels consumed: `process-output`, `output`, `serial-data` (all timestamped)
+4. On `process-finished` or `process_complete`, buttons re-enable and artifacts metadata refreshes
+
+SPA Behavior: The script (`flash.js`) self-guards with `window.__FLASH_INIT` and re-initializes on `spa:navigated` events so navigating away and back does not double-bind handlers.
+
+Persistence:
+
+- LocalStorage keys: `oepl:flash:env`, `oepl:flash:port`, `oepl:flash:baud`, `oepl:flash:flags` (JSON) automatically updated on change.
+
+Troubleshooting:
+
+- If PowerShell scripts fail to launch ensure `pwsh` (PowerShell 7) is on PATH.
+- If COM list empty, fallback entries appear; verify board enumerates in Device Manager.
+- If fast scripts hang early, confirm the Web UI server is not already shutting down (fast script attempts shutdown first).
+- OTA requires the device’s HTTP OTA endpoint to be reachable and powered; confirm network path and that firmware server path exists.
+
+Future Enhancements (tracked separately): artifact selection for OTA directly, progress % parsing, integrated diff for filesystem-only uploads.
+
+### 4.2 Shared Device Header (dev-common.js)
+
+A central script (`dev-common.js`) now powers the device / communication controls rendered in the header of all development pages (`device.html`, `wifi.html`, `ap-list.html`, `flash.html`, `settings.html`, etc.).
+
+Responsibilities:
+
+`dev-common` events:
+
+- `dev-common:devices:updated` (payload: `{ devices, selectedId }`)
+- `dev-common:device:changed` (payload: `{ id }`)
+- `dev-common:comm:mode` (payload: `{ mode }`)
+- `dev-common:comm:port` (payload: `{ port }`)
+- `dev-common:com:updated` (payload: `{ port }`)
+
+Integration Notes:
+
+### 4.3 Firmware Features Panel (device-features.js)
+
+On `device.html` a new "Firmware Features" section introspects `/api/features` on the selected device. The module (`device-features.js`) listens to `dev-common:device:changed` and provides a manual Refresh button.
+
+Behavior:
+
+- Attempts `GET <deviceBase>/api/features` (4s timeout).
+- Accepts either an object `{ featureName: true/false }` or a simple array `["FeatureA", "FeatureB"]`. Arrays are normalized to an object where each name maps to `1`.
+- Renders each feature as a small card (green = enabled / present, red = missing / falsey).
+- If the endpoint is missing or returns error, displays "No features reported" (status shows Error).
+
+Extensibility Ideas:
+
+- Link each feature to documentation, or expose action buttons (e.g. enable/disable module) if firmware adds APIs.
+- Merge telemetry to show last update or version per feature.
+- Add caching + diff indicator (highlight newly appeared features after a firmware update).
+
+Troubleshooting:
+
+- If every feature shows MISSING, verify the device firmware implements `/api/features` and that the selected IP is reachable directly from the browser (CORS is same‑origin through device host). If not available, implement a fallback mapping in the firmware.
+
 ---
 
 ## 5. Serial Monitoring
@@ -133,6 +226,148 @@ pio device monitor --baud 115200 --port COM10
 Or VS Code launch config **PlatformIO: Monitor (COM10)**.
 
 Use while booting to observe `[BOOT-TEST]` line and WiFi / filesystem diagnostics.
+
+---
+
+### 5.1 Enhanced Serial APIs & UI (New)
+
+The development Web UI now provides richer serial management to quickly recover from baud mismatches or stuck ports.
+
+Defaults:
+
+- Firmware baseline console baud: **115200**.
+- Server default `baudRate` aligns at 115200.
+- `manualComOnly` mode restricts operations to a single allowed port (default `COM10`).
+
+Endpoints:
+
+| Method | Path | Purpose | Body / Query |
+| ------ | ---- | ------- | ------------ |
+| POST | `/api/serial/reopen` | Close (if needed) and open the port at a baud | `{ path:"COM10", baudRate:115200 }` |
+| GET | `/api/serial/diagnose` | Report status and send a newline poke | None |
+| POST | `/api/serial/write?autoNL=1` | Send data (auto adds `\n` when `autoNL=1`) | `{ path, data }` |
+| POST | `/api/com/check` | One-shot health check (write + wait for bytes) | `{ path, timeout, testCmd? }` |
+| GET | `/api/serial/commands` | Quick command list for dropdown | (none) |
+
+PowerShell examples:
+
+```pwsh
+# Diagnose
+Invoke-RestMethod http://localhost:3000/api/serial/diagnose
+
+# Reopen (ensure correct baud)
+Invoke-RestMethod http://localhost:3000/api/serial/reopen -Method Post -Body (@{ path='COM10'; baudRate=115200 } | ConvertTo-Json) -ContentType 'application/json'
+
+# Send command with auto newline
+Invoke-RestMethod "http://localhost:3000/api/serial/write?autoNL=1" -Method Post -Body (@{ path='COM10'; data='help' } | ConvertTo-Json) -ContentType 'application/json'
+
+# COM health quick check (800 ms timeout)
+Invoke-RestMethod http://localhost:3000/api/com/check -Method Post -Body (@{ path='COM10'; timeout=800 } | ConvertTo-Json) -ContentType 'application/json'
+```
+
+UI controls added:
+
+- Baud selector (115200 / 460800 / 921600 / 2000000*)
+- Reopen button
+- Diagnose button
+- Auto NL checkbox
+- Quick Commands dropdown (populated from `/api/serial/commands`)
+
+*Use very high baud values only if firmware switches and cable/driver quality are sufficient.
+
+Recovery workflow:
+
+1. Diagnose -> check `open=yes` and baud.
+2. If closed / wrong baud: adjust + Reopen.
+3. Send `help` (Auto NL). Expect a response / prompt.
+4. If silent: COM Check; then verify cable / Device Manager / other process lock.
+5. Still stuck: power-cycle device and Reopen.
+
+Common errors:
+
+| Message | Meaning | Fix |
+| ------- | ------- | --- |
+| Failed to fetch | Browser can’t reach server | Start server / verify port |
+| port not open | Write attempted before open | Reopen first |
+| Manual COM mode active | Attempted different port | Change allowed port or disable manual mode |
+| Garbled chars | Baud mismatch | Select matching baud & Reopen |
+
+Future improvements (planned): High-speed auto-detect, firmware status command integration, log verbosity toggles.
+
+---
+
+### 5.2 Built-in Developer Serial CLI (New)
+
+### 5.3 WiFi LED State Legend (Advanced Scheme)
+
+If `ENABLE_ADV_WIFI_LED` is compiled (default enabled when `wifi_led_hooks.cpp` present), the single RGB status LED encodes WiFi state:
+
+| State | Color / Pattern | Meaning |
+|-------|-----------------|---------|
+| Disconnected (STA idle / trying) | Fast breathing Blue | STA searching / not associated |
+| STA Connected only | Very slow breathing Blue (appears solid) | STA up, AP not running |
+| AP only (no STA) | Breathing Purple | Management / fallback AP active, no STA link |
+| STA + AP both active | Alternating 4s Blue / 4s Purple | STA connected while AP kept available |
+
+Notes:
+
+- “Breathing” speed controlled by `rgbIdlePeriod`: lower = faster.
+- Purple = RGB(128,0,128) (balanced brightness). Adjust in `wifi_led_hooks.cpp` if your LED has color bias.
+- To disable this scheme, define `ENABLE_ADV_WIFI_LED=0` (compile flag) or remove the `wifi_led_hooks.cpp` file.
+- The original weak hooks remain if the feature is disabled (no color changes by WiFi events).
+
+---
+
+The firmware now includes a minimal line-oriented serial CLI intended for quick diagnostics without flashing a dedicated shell. It coexists with the Improv provisioning protocol by only consuming ASCII text that does not match a valid Improv frame.
+
+Current commands:
+
+| Command | Description |
+| ------- | ----------- |
+| `help` | List available commands |
+| `sysinfo` | Show uptime, heap (and PSRAM if present), WiFi mode/status/IP |
+| `tasks` | Show FreeRTOS task count (more detail requires trace facility) |
+| `reboot` | Soft reboot the MCU |
+
+Behavior & notes:
+
+- Prompt shown as `>` after boot and after each completed command.
+- Commands are case-sensitive (lowercase).
+- Either `\n` or `\r` (or both) terminate a line.
+- Backspace (BS / DEL) editing supported locally.
+- Lines longer than 127 characters are cleared with a warning.
+- If a line accidentally starts with the Improv magic (`IMPROV`) and then diverges, the buffered characters are gracefully redirected into the CLI, but the initial `I`..`M` characters will echo only after mismatch resolution (rare edge case).
+
+Example session (115200 baud):
+
+```text
+> help
+Commands: help, sysinfo, tasks, reboot
+> sysinfo
+--- sysinfo ---
+Uptime: 12345 ms
+Heap free: 210000 / 390000
+WiFi mode: 3 status: 3 IP: 192.168.1.50
+> tasks
+--- tasks ---
+Task count: 18
+> reboot
+Rebooting...
+```
+
+Troubleshooting:
+
+| Symptom | Explanation | Action |
+|---------|-------------|--------|
+| No `>` prompt after boot | Serial not open yet or baud mismatch | Open/adjust to 115200 and press Enter (will re-print prompt) |
+| Characters echo but no response on Enter | Line not terminated (e.g. using Ctrl+J in some terminals) | Ensure CR/LF or LF is sent |
+| Command returns "Unknown" | Typo or unsupported | Type `help` to list commands |
+
+Extensibility ideas:
+
+- Add `wifi` subcommands (scan, reconnect, show creds status) guarded by feature flag.
+- Add `loglevel <n>` to adjust verbosity at runtime.
+- Provide a `mem` command with fragmentation stats.
 
 ---
 

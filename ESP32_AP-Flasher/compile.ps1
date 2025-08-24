@@ -32,6 +32,8 @@ param(
     [int]$Jobs = 0,
     [switch]$SkipFilesystem,
     [switch]$LiveProgress
+    , [int]$UploadTimeoutSec = 300
+    , [int]$UploadStallTimeoutSec = 30
 )
 
 # Configuration
@@ -102,6 +104,83 @@ if ($FlashMode -eq 'opi') {
     Write-ColorOutput "Mode: Octal (OPI) flash selected - will use default boot flash mode/freq (no override)" "Info"
 }
 Write-ColorOutput "========================================" "Info"
+
+# Helper: Run an upload command with live progress but enforce total timeout and stall timeout.
+function Invoke-LiveUploadWithWatchdog {
+    param(
+        [Parameter(Mandatory=$true)][string[]]$CommandParts, # first item executable, rest args
+        [int]$TotalTimeoutSec = 300,
+        [int]$StallTimeoutSec = 30
+    )
+    Write-ColorOutput "🏁 Live upload (timeout=${TotalTimeoutSec}s stall=${StallTimeoutSec}s)" "Info"
+    $exe = $CommandParts[0]
+    $args = if ($CommandParts.Length -gt 1) { $CommandParts[1..($CommandParts.Length-1)] } else { @() }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = ($args -join ' ')
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    $null = $proc.Start()
+
+    $lastOutput = [DateTime]::UtcNow
+    $stdoutSb = New-Object System.Text.StringBuilder
+    $stderrSb = New-Object System.Text.StringBuilder
+    $outReader = $proc.StandardOutput
+    $errReader = $proc.StandardError
+
+    while (-not $proc.HasExited) {
+        $line = $null
+        while (-not $outReader.EndOfStream) {
+            $line = $outReader.ReadLine()
+            if ($line -ne $null) {
+                $stdoutSb.AppendLine($line) | Out-Null
+                $lastOutput = [DateTime]::UtcNow
+                Write-Host $line
+            }
+        }
+        while (-not $errReader.EndOfStream) {
+            $eline = $errReader.ReadLine()
+            if ($eline -ne $null) {
+                $stderrSb.AppendLine($eline) | Out-Null
+                $lastOutput = [DateTime]::UtcNow
+                Write-Host $eline -ForegroundColor Yellow
+            }
+        }
+        $elapsed = (Get-Date) - $proc.StartTime
+        $sinceLast = [DateTime]::UtcNow - $lastOutput
+        if ($elapsed.TotalSeconds -ge $TotalTimeoutSec) {
+            Write-ColorOutput "⏱️ Upload total timeout (${TotalTimeoutSec}s) reached. Terminating process." "Error"
+            try { $proc.Kill() } catch {}
+            break
+        }
+        if ($sinceLast.TotalSeconds -ge $StallTimeoutSec) {
+            Write-ColorOutput "⚠️ No upload output for ${StallTimeoutSec}s (stall). Terminating process." "Error"
+            try { $proc.Kill() } catch {}
+            break
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    # Flush remaining
+    try {
+        while (-not $outReader.EndOfStream) {
+            $l2 = $outReader.ReadLine(); if ($l2 -ne $null) { Write-Host $l2; $stdoutSb.AppendLine($l2) | Out-Null }
+        }
+        while (-not $errReader.EndOfStream) {
+            $l3 = $errReader.ReadLine(); if ($l3 -ne $null) { Write-Host $l3 -ForegroundColor Yellow; $stderrSb.AppendLine($l3) | Out-Null }
+        }
+    } catch {}
+
+    return [PSCustomObject]@{
+        ExitCode = $proc.ExitCode
+        StdOut   = $stdoutSb.ToString()
+        StdErr   = $stderrSb.ToString()
+    }
+}
 
 # Centralized pio detection (so monitor and other steps can reuse)
 $possiblePio = @(
@@ -848,15 +927,16 @@ if (-not $SkipUpload) {
                     # Stream esptool output live for progress visibility
                     $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing:$AutoInstallEsptool
                     if (-not $esptoolInvoker) { throw "esptool not found for live progress." }
-                    if ($esptoolInvoker[0] -eq 'esptool.py') {
-                        & esptool.py @($uploadArgs)
-                    }
-                    else {
-                        $python = $esptoolInvoker[0]
-                        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
-                        & $python @moduleArgs
-                    }
-                    if ($LASTEXITCODE -ne 0) { throw "Upload failed (live mode)" }
+                        $cmdParts = @()
+                        if ($esptoolInvoker[0] -eq 'esptool.py') {
+                            $cmdParts += 'esptool.py'
+                        } else {
+                            $cmdParts += $esptoolInvoker[0]
+                            $cmdParts += $esptoolInvoker[1..($esptoolInvoker.Length - 1)]
+                        }
+                        $cmdParts += $uploadArgs
+                        $liveResult = Invoke-LiveUploadWithWatchdog -CommandParts $cmdParts -TotalTimeoutSec $UploadTimeoutSec -StallTimeoutSec $UploadStallTimeoutSec
+                        if ($liveResult.ExitCode -ne 0) { throw "Upload failed (live mode watchdog)" }
                     $uploadTimer.Stop()
                     Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
                     # Skip retry wrapper when using live progress
@@ -889,15 +969,16 @@ if (-not $SkipUpload) {
                     # Stream esptool output live for progress visibility
                     $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing:$AutoInstallEsptool
                     if (-not $esptoolInvoker) { throw "esptool not found for live progress." }
+                    $cmdParts = @()
                     if ($esptoolInvoker[0] -eq 'esptool.py') {
-                        & esptool.py @($uploadArgs)
+                        $cmdParts += 'esptool.py'
+                    } else {
+                        $cmdParts += $esptoolInvoker[0]
+                        $cmdParts += $esptoolInvoker[1..($esptoolInvoker.Length - 1)]
                     }
-                    else {
-                        $python = $esptoolInvoker[0]
-                        $moduleArgs = $esptoolInvoker[1..($esptoolInvoker.Length - 1)] + $uploadArgs
-                        & $python @moduleArgs
-                    }
-                    if ($LASTEXITCODE -ne 0) { throw "Upload failed (live mode)" }
+                    $cmdParts += $uploadArgs
+                    $liveResult = Invoke-LiveUploadWithWatchdog -CommandParts $cmdParts -TotalTimeoutSec $UploadTimeoutSec -StallTimeoutSec $UploadStallTimeoutSec
+                    if ($liveResult.ExitCode -ne 0) { throw "Upload failed (live mode watchdog)" }
                     $uploadTimer.Stop()
                     Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
                     # Skip retry wrapper when using live progress

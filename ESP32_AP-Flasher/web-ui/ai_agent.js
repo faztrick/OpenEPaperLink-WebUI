@@ -10,6 +10,7 @@ class ESP32AIAgent {
         this.anthropic = null;
         this.config = this.loadConfig();
         this.initializeClients();
+        this._lastProviderError = null;
 
         // Context about the ESP32 project
         this.projectContext = {
@@ -50,7 +51,15 @@ class ESP32AIAgent {
                 errorDiagnosis: true,
                 buildOptimization: true,
                 autoSuggestions: true,
-                documentation: true
+                documentation: true,
+                codeEditing: false
+            },
+            editing: {
+                enableFileEdits: false,
+                maxFileSize: 200 * 1024,
+                allowedExtensions: ['.h', '.hpp', '.c', '.cpp', '.ino', '.txt', '.md', '.js', '.json', '.py', '.ini'],
+                blockList: ['ai_config.json', 'package-lock.json'],
+                root: path.join(__dirname, '..')
             }
         };
     }
@@ -61,20 +70,25 @@ class ESP32AIAgent {
     }
 
     initializeClients() {
+        // Refresh keys from environment if placeholders present
+        if (!this.config.openai.apiKey && process.env.OPENAI_API_KEY) this.config.openai.apiKey = process.env.OPENAI_API_KEY;
+        if (!this.config.anthropic.apiKey && process.env.ANTHROPIC_API_KEY) this.config.anthropic.apiKey = process.env.ANTHROPIC_API_KEY;
+        this.openai = null; this.anthropic = null;
         if (this.config.openai.apiKey && this.config.openai.enabled) {
             try {
                 this.openai = new OpenAI({ apiKey: this.config.openai.apiKey });
                 console.log('✓ OpenAI client initialized');
             } catch (error) {
+                this._lastProviderError = { provider: 'openai', error: error.message };
                 console.error('Failed to initialize OpenAI:', error.message);
             }
         }
-
         if (this.config.anthropic.apiKey && this.config.anthropic.enabled) {
             try {
                 this.anthropic = new Anthropic({ apiKey: this.config.anthropic.apiKey });
                 console.log('✓ Anthropic client initialized');
             } catch (error) {
+                this._lastProviderError = { provider: 'anthropic', error: error.message };
                 console.error('Failed to initialize Anthropic:', error.message);
             }
         }
@@ -155,35 +169,38 @@ Be concise but thorough in your explanations.`;
     }
 
     async sendMessage(activeClient, systemPrompt, message) {
-        if (activeClient.type === 'openai') {
-            const response = await activeClient.client.chat.completions.create({
-                model: this.config.openai.model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    ...this.conversationHistory.slice(-10).map(h => [
-                        { role: 'user', content: h.message },
-                        { role: 'assistant', content: h.response }
-                    ]).flat(),
-                    { role: 'user', content: message }
-                ],
-                max_tokens: 2048,
-                temperature: 0.7
-            });
-            return response.choices[0].message.content;
-        } else if (activeClient.type === 'anthropic') {
-            const response = await activeClient.client.messages.create({
-                model: this.config.anthropic.model,
-                max_tokens: 2048,
-                system: systemPrompt,
-                messages: [
-                    ...this.conversationHistory.slice(-10).map(h => [
-                        { role: 'user', content: h.message },
-                        { role: 'assistant', content: h.response }
-                    ]).flat(),
-                    { role: 'user', content: message }
-                ]
-            });
-            return response.content[0].text;
+        const history = this.conversationHistory.slice(-10).map(h => [
+            { role: 'user', content: h.message },
+            { role: 'assistant', content: h.response }
+        ]).flat();
+        const timeoutMs = 45000;
+        const withTimeout = (p) => Promise.race([
+            p,
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('AI request timeout')), timeoutMs))
+        ]);
+        try {
+            if (activeClient.type === 'openai') {
+                const model = this.config.openai.model || 'gpt-4o-mini';
+                const response = await withTimeout(activeClient.client.chat.completions.create({
+                    model,
+                    messages: [ { role: 'system', content: systemPrompt }, ...history, { role: 'user', content: message } ],
+                    max_tokens: 2048,
+                    temperature: 0.7
+                }));
+                return response.choices?.[0]?.message?.content || '(no response)';
+            } else {
+                const model = this.config.anthropic.model || 'claude-3-5-haiku-20241022';
+                const response = await withTimeout(activeClient.client.messages.create({
+                    model,
+                    max_tokens: 2048,
+                    system: systemPrompt,
+                    messages: [ ...history, { role: 'user', content: message } ]
+                }));
+                return response.content?.[0]?.text || '(no response)';
+            }
+        } catch (e) {
+            this._lastProviderError = { provider: activeClient.type, error: e.message };
+            throw e;
         }
     }
 
@@ -369,6 +386,61 @@ Format as a JSON array of objects with 'action', 'description', and 'priority' f
             safeConfig.anthropic.apiKey = '***';
         }
         return safeConfig;
+    }
+
+    async generateFileEdit(filePath, originalContent, instruction) {
+        if (!this.config.features.codeEditing || !this.config.editing.enableFileEdits) {
+            throw new Error('Code editing disabled');
+        }
+        if (!this.isAvailable()) throw new Error('AI provider not configured');
+        const activeClient = this.getActiveClient();
+        if (!activeClient) throw new Error('No active AI client');
+
+        const systemPrompt = 'You are an AI pair programmer for an ESP32 firmware project. You will update a single source file given an instruction. Return ONLY JSON {"reasoning":"short rationale","content":"<full new file>"}. Preserve style, headers, includes. Make smallest necessary change.';
+        const userPrompt = `PATH: ${filePath}\nINSTRUCTION: ${instruction}\nCURRENT FILE:\n<FILE>\n${originalContent}\n</FILE>`;
+        let raw;
+        const timeoutMs = 60000;
+        const withTimeout = (p) => Promise.race([
+            p,
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('AI edit request timeout')), timeoutMs))
+        ]);
+        if (activeClient.type === 'openai') {
+            const model = this.config.openai.model || 'gpt-4o-mini';
+            const r = await withTimeout(activeClient.client.chat.completions.create({
+                model,
+                messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt } ],
+                temperature: 0.25,
+                max_tokens: 3000
+            }));
+            raw = r.choices?.[0]?.message?.content || '';
+        } else {
+            const model = this.config.anthropic.model || 'claude-3-5-haiku-20241022';
+            const r = await withTimeout(activeClient.client.messages.create({
+                model,
+                max_tokens: 3000,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }]
+            }));
+            raw = r.content?.[0]?.text || '';
+        }
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('AI response missing JSON');
+        let parsed; try { parsed = JSON.parse(match[0]); } catch (e) { throw new Error('Bad AI JSON: ' + e.message); }
+        if (!parsed.content) throw new Error('AI JSON missing content field');
+        return { reasoning: parsed.reasoning || '', content: parsed.content };
+    }
+
+    getHealth() {
+        return {
+            available: this.isAvailable(),
+            providers: {
+                openai: { enabled: this.config.openai.enabled, model: this.config.openai.model, ok: !!this.openai },
+                anthropic: { enabled: this.config.anthropic.enabled, model: this.config.anthropic.model, ok: !!this.anthropic }
+            },
+            lastError: this._lastProviderError,
+            features: this.config.features,
+            editing: this.config.editing
+        };
     }
 }
 

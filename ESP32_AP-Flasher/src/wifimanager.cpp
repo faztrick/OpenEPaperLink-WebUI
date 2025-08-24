@@ -1,44 +1,86 @@
-/*
- * WifiManager.cpp - Optimized WiFi management for ESP32-S3
- *
- * Key optimizations implemented:
- * - Enhanced error handling with detailed disconnect reasons
- * - Improved NVS storage management with proper error checking
- * - ESP32-S3 specific power and performance optimizations
- * - Better memory management in WiFi scanning
- * - Optimized connection timeouts and retry logic
- * - Proper WiFi configuration validation
- * - Enhanced AP mode with better client handling
- * - Improved serial interface polling
- *
- * ESP32-S3 specific features:
- * - WIFI_PS_NONE for better performance
- * - WIFI_POWER_19_5dBm optimal power setting
- * - PMF (Protected Management Frames) capability
- * - Optimized scan parameters for faster network discovery
- * - Enhanced bandwidth configuration for AP mode
- */
+// ============================================================================
+// DEPRECATED: Legacy WifiManager (historical reference only)
+// ----------------------------------------------------------------------------
+// This file contains the old WifiManager implementation kept solely for
+// reference during the transition to the unified WiFiModule (see
+// include/wifi_module.h / wifi_module.cpp). A global search confirmed no
+// translation units include wifimanager.h anymore, so this code is no longer
+// part of the active firmware logic.
+//
+// Removal Plan:
+//   1. Perform on-device regression tests (AP mode, STA connect/reconnect,
+//      Improv provisioning, Ethernet if enabled).
+//   2. If all pass, delete wifimanager.cpp & wifimanager.h entirely.
+//   3. Update docs to remove references to "WifiManager".
+//
+// Until removal, the implementation is excluded from compilation via #if 0
+// to avoid increasing binary size / compile time.
+// ============================================================================
+#if 0 // LEGACY WIFI MANAGER DISABLED (compile excluded)
 
-#include "wifimanager.h"
+// (legacy code begins)
 
-#include <ETH.h>
-#include <ArduinoJson.h>
-#include <WiFi.h>
-#include <esp_wifi.h>
-#include <esp_wifi_types.h>
-#include "compat_wifi_modes.h"
-#include <vector>
-
-#include "ips_display.h"
-#include "newproto.h"
-#include "system.h"
-#include "tag_db.h"
-#include "oepl_udp.h"
-#include "web.h"
-#include "storage.h"
-#include "leds.h"
-
-uint8_t WifiManager::apClients = 0;
+void WifiManager::rankCandidateNetworks(std::vector<std::pair<String, String>> &candidates)
+{
+    if (candidates.size() <= 1)
+        return;
+    wifi_mode_t currentMode; // ensure STA active for scan
+    if (esp_wifi_get_mode(&currentMode) == ESP_OK)
+    {
+        if (currentMode == WIFI_MODE_AP)
+            WiFi.mode(WIFI_AP_STA);
+    }
+    terminalLog("[WiFi] Scanning to rank candidate networks...");
+    int16_t found = WiFi.scanNetworks(false, true);
+    if (found < 0)
+    {
+        Serial.println("[WiFi] Scan failed or returned no networks; retaining original candidate order");
+        WiFi.scanDelete();
+        return;
+    }
+    struct Ranked
+    {
+        String ssid;
+        String pass;
+        int rssi;
+        bool present;
+    };
+    std::vector<Ranked> ranked;
+    ranked.reserve(candidates.size());
+    for (auto &p : candidates)
+    {
+        int bestRssi = -300;
+        bool present = false;
+        for (int i = 0; i < found; ++i)
+        {
+            String scanned = WiFi.SSID(i);
+            if (scanned == p.first)
+            {
+                int r = WiFi.RSSI(i);
+                if (r > bestRssi)
+                {
+                    bestRssi = r;
+                    present = true;
+                }
+            }
+        }
+        ranked.push_back({p.first, p.second, bestRssi, present});
+    }
+    std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked &a, const Ranked &b)
+                     { if (a.present!=b.present) return a.present && !b.present; if (a.present && b.present) return a.rssi > b.rssi; return false; });
+    std::vector<std::pair<String, String>> reordered;
+    reordered.reserve(ranked.size());
+    for (auto &r : ranked)
+    {
+        reordered.emplace_back(r.ssid, r.pass);
+        if (r.present)
+            Serial.printf("[WiFi] Candidate SSID '%s' RSSI %d dBm\n", r.ssid.c_str(), r.rssi);
+        else
+            Serial.printf("[WiFi] Candidate SSID '%s' not currently visible\n", r.ssid.c_str());
+    }
+    candidates.swap(reordered);
+    WiFi.scanDelete();
+}
 uint8_t x_buffer[100];
 uint8_t x_position = 0;
 
@@ -192,11 +234,12 @@ void WifiManager::poll()
     // Enhanced connection monitoring
     if (wifiStatus == CONNECTED && millis() > _nextReconnectCheck)
     {
-        wl_status_t wifiStatus = WiFi.status();
-        if (wifiStatus != WL_CONNECTED)
+        // rename variable to avoid shadowing member wifiStatus
+        wl_status_t currentStaStatus = WiFi.status();
+        if (currentStaStatus != WL_CONNECTED)
         {
             _connected = false;
-            Serial.printf("WiFi connection lost (status: %d). Attempting to reconnect.\n", wifiStatus);
+            Serial.printf("WiFi connection lost (status: %d). Attempting to reconnect.\n", currentStaStatus);
             terminalLog("WiFi connection lost. Attempting to reconnect.");
             logLine("WiFi connection lost. Attempting to reconnect.");
 
@@ -314,112 +357,31 @@ bool WifiManager::connectToWifi()
         return true;
 #endif
 
-    // Build a list of candidate networks from staconfig.json (fallback to apconfig.json)
+    // Collect candidates: NVS first, then file-defined
     std::vector<std::pair<String, String>> candidates;
-
-    // First, include NVS-stored creds (may be empty depending on persistence settings)
     String nvs_ssid = WiFi_SSID();
     String nvs_pass = WiFi_psk();
     if (!nvs_ssid.isEmpty())
-    {
         candidates.emplace_back(nvs_ssid, nvs_pass);
-    }
 
-    // Then, parse /current/staconfig.json for single and multi-STA entries (with backward compatibility)
-    _ssid = "";
-    _pass = "";
-    if (contentFS)
+    StationConfig scfg;
+    loadStationConfig(scfg);
+    for (auto &p : scfg.networks)
     {
-        fs::File f = contentFS->open("/current/staconfig.json", "r");
-        if (f)
+        bool exists = false;
+        for (auto &c : candidates)
         {
-            JsonDocument cfg;
-            if (deserializeJson(cfg, f) == DeserializationError::Ok)
+            if (c.first == p.first)
             {
-                // legacy single ssid/password
-                if (cfg["ssid"].is<String>())
-                    _ssid = cfg["ssid"].as<String>();
-                if (cfg["password"].is<String>())
-                    _pass = cfg["password"].as<String>();
-
-                if (!_ssid.isEmpty())
-                {
-                    candidates.emplace_back(_ssid, _pass);
-                }
-
-                // new: networks array support
-                if (cfg["networks"].is<JsonArray>())
-                {
-                    for (JsonVariant v : cfg["networks"].as<JsonArray>())
-                    {
-                        String ss = v["ssid"].as<String>();
-                        String pw = v["password"].as<String>();
-                        if (!ss.isEmpty())
-                        {
-                            candidates.emplace_back(ss, pw);
-                        }
-                    }
-                }
-            }
-            f.close();
-        }
-        else
-        {
-            // Backward compatibility: read from legacy apconfig.json if present
-            fs::File f2 = contentFS->open("/current/apconfig.json", "r");
-            if (f2)
-            {
-                JsonDocument cfg;
-                if (deserializeJson(cfg, f2) == DeserializationError::Ok)
-                {
-                    if (cfg["ssid"].is<String>())
-                        _ssid = cfg["ssid"].as<String>();
-                    if (cfg["password"].is<String>())
-                        _pass = cfg["password"].as<String>();
-
-                    if (!_ssid.isEmpty())
-                    {
-                        candidates.emplace_back(_ssid, _pass);
-                    }
-
-                    if (cfg["networks"].is<JsonArray>())
-                    {
-                        for (JsonVariant v : cfg["networks"].as<JsonArray>())
-                        {
-                            String ss = v["ssid"].as<String>();
-                            String pw = v["password"].as<String>();
-                            if (!ss.isEmpty())
-                            {
-                                candidates.emplace_back(ss, pw);
-                            }
-                        }
-                    }
-                }
-                f2.close();
+                exists = true;
+                break;
             }
         }
+        if (!exists)
+            candidates.push_back(p);
     }
-
-    // De-duplicate by SSID preserving order (keep first occurrence)
-    if (!candidates.empty())
-    {
-        std::vector<std::pair<String, String>> unique;
-        for (auto &p : candidates)
-        {
-            bool exists = false;
-            for (auto &u : unique)
-            {
-                if (u.first == p.first)
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists)
-                unique.push_back(p);
-        }
-        candidates.swap(unique);
-    }
+    _ssid = scfg.networks.empty() ? String() : scfg.networks.front().first;
+    _pass = scfg.networks.empty() ? String() : scfg.networks.front().second;
 
     if (candidates.empty())
     {
@@ -430,177 +392,11 @@ bool WifiManager::connectToWifi()
     }
 
     terminalLog("Trying saved WiFi networks (" + String((int)candidates.size()) + ")...");
+    // Rank candidates by current RSSI
+    rankCandidateNetworks(candidates);
 
-    // If multiple candidate networks are available, perform a pre-scan and reorder
-    // them by current RSSI (strongest first). This increases initial connect success
-    // while keeping AP mode available for configuration.
-    if (candidates.size() > 1)
-    {
-        bool wasApStarted = _APstarted; // AP is normally up already
-        // Ensure STA is enabled for scanning without tearing down AP
-        wifi_mode_t currentMode;
-        if (esp_wifi_get_mode(&currentMode) == ESP_OK)
-        {
-            if (currentMode == WIFI_MODE_AP)
-            {
-                WiFi.mode(WIFI_AP_STA); // add STA interface
-            }
-        }
-
-        terminalLog("[WiFi] Scanning to rank candidate networks...");
-        int16_t found = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true);
-        if (found >= 0)
-        {
-            struct Ranked
-            {
-                String ssid;
-                String pass;
-                int rssi;
-                bool present;
-            };
-            std::vector<Ranked> ranked;
-            ranked.reserve(candidates.size());
-
-            for (auto &p : candidates)
-            {
-                int bestRssi = -300; // impossible low
-                bool present = false;
-                for (int i = 0; i < found; ++i)
-                {
-                    String scanned = WiFi.SSID(i);
-                    if (scanned == p.first)
-                    {
-                        int r = WiFi.RSSI(i);
-                        if (r > bestRssi)
-                        {
-                            bestRssi = r;
-                            present = true;
-                        }
-                    }
-                }
-                Ranked rnk{p.first, p.second, bestRssi, present};
-                ranked.push_back(rnk);
-            }
-
-            // Sort: present first (descending RSSI), then absent (retain original relative order among absent)
-            std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked &a, const Ranked &b)
-                             {
-                                 if (a.present != b.present)
-                                     return a.present && !b.present; // present comes first
-                                 if (a.present && b.present)
-                                     return a.rssi > b.rssi; // stronger RSSI first
-                                 return false;               // keep original order for both absent
-                             });
-
-            // Rebuild candidates vector in new order
-            std::vector<std::pair<String, String>> reordered;
-            reordered.reserve(ranked.size());
-            for (auto &r : ranked)
-            {
-                reordered.emplace_back(r.ssid, r.pass);
-                if (r.present)
-                {
-                    Serial.printf("[WiFi] Candidate SSID '%s' RSSI %d dBm\n", r.ssid.c_str(), r.rssi);
-                }
-                else
-                {
-                    Serial.printf("[WiFi] Candidate SSID '%s' not currently visible\n", r.ssid.c_str());
-                }
-            }
-            candidates.swap(reordered);
-        }
-        else
-        {
-            Serial.println("[WiFi] Scan failed or returned no networks; retaining original candidate order");
-        }
-
-        // Optionally clear scan results to reclaim memory
-        WiFi.scanDelete();
-    }
-
-    String ip = "";
-    String mask = "";
-    String gw = "";
-    String dns = "";
-    if (contentFS)
-    {
-        // Station static IP/DNS settings now live in staconfig.json
-        fs::File f = contentFS->open("/current/staconfig.json", "r");
-        if (f)
-        {
-            JsonDocument cfg;
-            if (deserializeJson(cfg, f) == DeserializationError::Ok)
-            {
-                ip = cfg["ip"].as<String>();
-                mask = cfg["mask"].as<String>();
-                gw = cfg["gw"].as<String>();
-                dns = cfg["dns"].as<String>();
-            }
-            f.close();
-        }
-        else
-        {
-            // Fallback to legacy apconfig.json
-            fs::File f2 = contentFS->open("/current/apconfig.json", "r");
-            if (f2)
-            {
-                JsonDocument cfg;
-                if (deserializeJson(cfg, f2) == DeserializationError::Ok)
-                {
-                    ip = cfg["ip"].as<String>();
-                    mask = cfg["mask"].as<String>();
-                    gw = cfg["gw"].as<String>();
-                    dns = cfg["dns"].as<String>();
-                }
-                f2.close();
-            }
-        }
-    }
-
-    // Configure static IP if available
-    if (ip.length() > 0 && mask.length() > 0 && gw.length() > 0)
-    {
-        IPAddress staticIP, subnetMask, gatewayIP, dnsIP;
-        if (staticIP.fromString(ip) && subnetMask.fromString(mask) && gatewayIP.fromString(gw))
-        {
-            if (dns.length() > 0 && dnsIP.fromString(dns))
-            {
-                WiFi.config(staticIP, gatewayIP, subnetMask, dnsIP);
-                terminalLog("Setting static IP with DNS: " + ip + ", DNS: " + dns);
-            }
-            else
-            {
-                // Use OpenDNS as fallback when no DNS is configured for static IP
-                IPAddress openDNS(208, 67, 222, 222); // OpenDNS primary
-                WiFi.config(staticIP, gatewayIP, subnetMask, openDNS);
-                terminalLog("Setting static IP with OpenDNS fallback: " + ip);
-            }
-        }
-        else
-        {
-            Serial.println("WARNING: Invalid static IP configuration, using DHCP");
-        }
-    }
-    else
-    {
-        // For DHCP, set DNS if specified, otherwise use OpenDNS as fallback
-        if (dns.length() > 0)
-        {
-            IPAddress dnsIP;
-            if (dnsIP.fromString(dns))
-            {
-                WiFi.config(IPAddress(), IPAddress(), IPAddress(), dnsIP); // Set only DNS for DHCP
-                terminalLog("Setting DNS for DHCP: " + dns);
-            }
-        }
-        else
-        {
-            // Set OpenDNS as fallback for public access
-            IPAddress openDNS(208, 67, 222, 222); // OpenDNS primary
-            WiFi.config(IPAddress(), IPAddress(), IPAddress(), openDNS);
-            terminalLog("Setting OpenDNS fallback for public access");
-        }
-    }
+    // Apply network IP/DNS settings
+    applyStationIpConfig(scfg);
 
     // Try each candidate until one connects
     for (size_t i = 0; i < candidates.size(); ++i)
@@ -704,8 +500,7 @@ bool WifiManager::connectToWifi(String ssid, String pass, bool savewhensuccessfu
     Serial.printf("WiFi optimizations applied for ESP32-S3 - SSID: %s\n", ssid.c_str());
 
     // Configure WiFi connection parameters
-    wifi_config_t wifi_config;
-    memset(&wifi_config, 0, sizeof(wifi_config));
+    wifi_config_t wifi_config{}; // value-initialize to zero
 
     // Safely copy SSID and password
     strncpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid) - 1);
@@ -867,76 +662,17 @@ void WifiManager::startManagementServer()
 {
     if (!_APstarted && wifiStatus != ETHERNET)
     {
-        // Load AP configuration from /current/apconfig.json
-        String apSsid = "OpenEPaperLink";
-        String apPassword = ""; // open by default (no password)
-        int apChannel = 1;
-        bool apHidden = false;
-        int apMaxClients = 8;
-        bool apEnabled = true; // default: enabled
-
-        // Optional static IP settings for AP
-        String apIPStr = "";
-        String apMaskStr = "";
-        String apGwStr = "";
-
-        if (contentFS)
-        {
-            fs::File f = contentFS->open("/current/apconfig.json", "r");
-            if (f)
-            {
-                JsonDocument cfg;
-                if (deserializeJson(cfg, f) == DeserializationError::Ok)
-                {
-                    // Prefer nested object: { "ap": { enabled, ssid, password, channel, hidden, max_clients, ip, mask, gw } }
-                    JsonVariant ap = cfg["ap"];
-                    if (ap.is<JsonObject>())
-                    {
-                        if (ap["enabled"].is<bool>())
-                            apEnabled = ap["enabled"].as<bool>();
-                        if (ap["ssid"].is<String>())
-                            apSsid = ap["ssid"].as<String>();
-                        if (ap["password"].is<String>())
-                            apPassword = ap["password"].as<String>();
-                        if (ap["channel"].is<int>())
-                            apChannel = ap["channel"].as<int>();
-                        if (ap["hidden"].is<bool>())
-                            apHidden = ap["hidden"].as<bool>();
-                        if (ap["max_clients"].is<int>())
-                            apMaxClients = ap["max_clients"].as<int>();
-                        if (ap["ip"].is<String>())
-                            apIPStr = ap["ip"].as<String>();
-                        if (ap["mask"].is<String>())
-                            apMaskStr = ap["mask"].as<String>();
-                        if (ap["gw"].is<String>())
-                            apGwStr = ap["gw"].as<String>();
-                    }
-                    else
-                    {
-                        // Legacy flat keys: ap_ssid, ap_password, ap_channel, ap_hidden, ap_max_clients, ap_ip, ap_mask, ap_gw
-                        if (cfg["ap_enabled"].is<bool>())
-                            apEnabled = cfg["ap_enabled"].as<bool>();
-                        if (cfg["ap_ssid"].is<String>())
-                            apSsid = cfg["ap_ssid"].as<String>();
-                        if (cfg["ap_password"].is<String>())
-                            apPassword = cfg["ap_password"].as<String>();
-                        if (cfg["ap_channel"].is<int>())
-                            apChannel = cfg["ap_channel"].as<int>();
-                        if (cfg["ap_hidden"].is<bool>())
-                            apHidden = cfg["ap_hidden"].as<bool>();
-                        if (cfg["ap_max_clients"].is<int>())
-                            apMaxClients = cfg["ap_max_clients"].as<int>();
-                        if (cfg["ap_ip"].is<String>())
-                            apIPStr = cfg["ap_ip"].as<String>();
-                        if (cfg["ap_mask"].is<String>())
-                            apMaskStr = cfg["ap_mask"].as<String>();
-                        if (cfg["ap_gw"].is<String>())
-                            apGwStr = cfg["ap_gw"].as<String>();
-                    }
-                }
-                f.close();
-            }
-        }
+        ApConfig apcfg;
+        loadApConfig(apcfg); // load if present
+        String apSsid = apcfg.ssid;
+        String apPassword = apcfg.password; // will be ignored for open AP
+        int apChannel = apcfg.channel;
+        bool apHidden = apcfg.hidden;
+        int apMaxClients = apcfg.maxClients;
+        bool apEnabled = apcfg.enabled;
+        String apIPStr = apcfg.ip;
+        String apMaskStr = apcfg.mask;
+        String apGwStr = apcfg.gw;
 
         // Sanitize configuration
         if (apSsid.length() == 0)
@@ -1560,10 +1296,16 @@ namespace improv
     ImprovCommand parse_improv_data(const uint8_t *data, size_t length, bool check_checksum)
     {
         ImprovCommand improv_command;
+        // basic length sanity
+        if (length < 2)
+        {
+            improv_command.command = UNKNOWN;
+            return improv_command;
+        }
         Command command = (Command)data[0];
         uint8_t data_length = data[1];
 
-        if (data_length != length - 2 - check_checksum)
+        if (data_length != length - 2 - (check_checksum ? 1 : 0))
         {
             improv_command.command = UNKNOWN;
             return improv_command;
@@ -1588,17 +1330,30 @@ namespace improv
 
         if (command == WIFI_SETTINGS)
         {
+            if (data_length < 2)
+            { // at least ssid len + pass len
+                improv_command.command = UNKNOWN;
+                return improv_command;
+            }
             uint8_t ssid_length = data[2];
-            uint8_t ssid_start = 3;
+            size_t ssid_start = 3;
             size_t ssid_end = ssid_start + ssid_length;
-
+            if (ssid_end >= length - (check_checksum ? 1 : 0))
+            {
+                improv_command.command = UNKNOWN;
+                return improv_command;
+            }
             uint8_t pass_length = data[ssid_end];
             size_t pass_start = ssid_end + 1;
             size_t pass_end = pass_start + pass_length;
-
-            std::string ssid(data + ssid_start, data + ssid_end);
-            std::string password(data + pass_start, data + pass_end);
-            return {.command = command, .ssid = ssid, .password = password};
+            if (pass_end > length - (check_checksum ? 1 : 0))
+            {
+                improv_command.command = UNKNOWN;
+                return improv_command;
+            }
+            std::string ssid(reinterpret_cast<const char *>(data + ssid_start), ssid_length);
+            std::string password(reinterpret_cast<const char *>(data + pass_start), pass_length);
+            return {.command = command, .ssid = std::move(ssid), .password = std::move(password)};
         }
 
         improv_command.command = command;
@@ -1690,7 +1445,7 @@ namespace improv
         for (const auto &str : datum)
         {
             uint8_t len = str.length();
-            length += len;
+            length += len + 1; // include length byte like std::string variant
             out.push_back(len);
             out.insert(out.end(), str.begin(), str.end());
         }
@@ -1710,3 +1465,4 @@ namespace improv
     }
 
 } // namespace improv
+#endif // LEGACY WIFI MANAGER DISABLED

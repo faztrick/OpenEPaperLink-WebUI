@@ -16,6 +16,17 @@
     "xstring": "cpp",
     "xutility": "cpp",
     "string": "cpp",
-    "string_view": "cpp"
+    "string_view": "cpp",
+    "valarray": "cpp",
+    "map": "cpp"
+  },
+  "chat.mcp.serverSampling": {
+    "OpenEPaperLink-WebUI/.vscode/mcp.json: github": {
+      "allowedModels": [
+        "copilot/gpt-4.1",
+        "copilot/gpt-4o",
+        "copilot/gpt-5"
+      ]
+    }
   }
 }

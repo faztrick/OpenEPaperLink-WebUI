@@ -20,26 +20,26 @@ class APIManager {
             config: { url: 'get_ap_config', cache: 10000, retry: true },
             sysinfo: { url: 'sysinfo', cache: 5000, retry: true },
             version: { url: 'version.txt', cache: 60000, retry: false },
-
             // Tag management
             tagDB: { url: 'get_db', cache: 2000, retry: true },
             tagCmd: { url: 'tag_cmd', cache: false, retry: true },
             tagConfig: { url: 'save_tagconfig', cache: false, retry: true },
-
-            // WiFi and network
+            // WiFi (legacy WifiManager endpoints retained only for compatibility: wifiConfig, wifiSave)
             wifiConfig: { url: 'get_wifi_config', cache: 30000, retry: true },
             wifiSave: { url: 'save_wifi_config', cache: false, retry: true },
-            ssidList: { url: 'get_ssid_list', cache: 10000, retry: true },
-
+            // Unified WiFi module endpoints
+            wifiStatus: { url: 'api/wifi/status', cache: 3000, retry: true },
+            wifiScanStart: { url: 'api/wifi/scan', cache: false, retry: true },
+            wifiScanResults: { url: 'api/wifi/scan/results', cache: 3000, retry: true },
+            wifiSummary: { url: 'api/wifi/summary', cache: 3000, retry: true },
+            wifiAp: { url: 'api/wifi/ap', cache: 5000, retry: true },
             // Content and updates
             contentCards: { url: 'content_cards.json', cache: 60000, retry: false },
             updateActions: { url: 'update_actions', cache: false, retry: true },
             updateOTA: { url: 'update_ota', cache: false, retry: false },
-
             // File operations
             littlefsPut: { url: 'littlefs_put', cache: false, retry: true },
             backup: { url: 'backup_db', cache: false, retry: false },
-
             // System actions
             reboot: { url: 'reboot', cache: false, retry: false },
             rollback: { url: 'rollback', cache: false, retry: false }
@@ -428,6 +428,44 @@ class APIManager {
                 reject(err);
             }
         });
+    }
+
+    // ==== Unified WiFi convenience layer ====
+    async startWifiScan(verbose = false) {
+        const url = verbose ? `${this.endpoints.wifiScanStart.url}?verbose=1` : this.endpoints.wifiScanStart.url;
+        const resp = await fetch(url, { method: 'GET' });
+        if (!resp.ok) throw new Error(`Scan start failed: ${resp.status}`);
+        return resp.json();
+    }
+
+    async getWifiScanResults() {
+        return this.fetch('wifiScanResults');
+    }
+
+    async unifiedScan(options = {}) {
+        const { timeoutMs = 12000, pollInterval = 750, verbose = false } = options;
+        const start = await this.startWifiScan(verbose);
+        if (start.completed) {
+            return this.getWifiScanResults();
+        }
+        const t0 = Date.now();
+        while (Date.now() - t0 < timeoutMs) {
+            const res = await this.getWifiScanResults();
+            if (!res.running) return res;
+            await this.delay(pollInterval);
+        }
+        throw new Error('WiFi scan timeout');
+    }
+
+    async getWifiStatus() { return this.fetch('wifiStatus'); }
+    async getWifiSummary() { return this.fetch('wifiSummary'); }
+    async getWifiAp() { return this.fetch('wifiAp'); }
+
+    // Legacy shim: emulate old get_ssid_list simplified output
+    async getSsidListCompat() {
+        console.warn('Deprecated get_ssid_list requested; forwarding to unified scan results');
+        const res = await this.getWifiScanResults();
+        return (res.networks || []).map(n => ({ ssid: n.ssid, rssi: n.rssi, channel: n.channel, enc: n.enc }));
     }
 }
 

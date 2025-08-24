@@ -1,6 +1,6 @@
 // OpenAI GPT-4.1 Agent API Module for ESP32 AP-Flasher
 // ====================================================
-// 
+//
 // OPTIMIZATION FEATURES:
 // - Centralized HTTP request handling with makeApiRequest()
 // - Standardized file operations with performFileOperation()
@@ -493,16 +493,16 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     <h3>🤖 OpenAI Agent Assistant</h3>
                     <button class="btn btn-sm" onclick="openAIAgent.togglePanel()">✕</button>
                 </div>
-                
+
                 <div class="agent-content">
                     <div class="agent-chat" id="agent-chat">
                         <div class="agent-message system">
-                            <strong>GPT-4.1 AI Assistant:</strong> Hello! I'm your advanced AI assistant powered by GPT-4.1 for managing the ESP32 AP-Flasher system. 
-                            I can help you with intelligent system analysis, structured data processing, advanced reasoning tasks, 
+                            <strong>GPT-4.1 AI Assistant:</strong> Hello! I'm your advanced AI assistant powered by GPT-4.1 for managing the ESP32 AP-Flasher system.
+                            I can help you with intelligent system analysis, structured data processing, advanced reasoning tasks,
                             and comprehensive device management. What would you like me to help you with?
                         </div>
                     </div>
-                    
+
                     <div class="agent-input-area">
                         <div class="agent-suggestions">
                             <button class="suggestion-btn" onclick="openAIAgent.sendPredefinedMessage('List all files in the system')">
@@ -518,9 +518,9 @@ Remember: You're not just executing commands, you're providing intelligent analy
                                 📡 Scan Networks
                             </button>
                         </div>
-                        
+
                         <div class="agent-input-container">
-                            <textarea id="agent-input" placeholder="Ask me anything about your ESP32 system..." 
+                            <textarea id="agent-input" placeholder="Ask me anything about your ESP32 system..."
                                      rows="2" onkeydown="openAIAgent.handleKeyPress(event)"></textarea>
                             <button id="agent-send-btn" onclick="openAIAgent.sendMessage()" class="btn btn-primary">
                                 Send
@@ -529,7 +529,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
                     </div>
                 </div>
             </div>
-            
+
             <button id="agent-toggle-btn" onclick="openAIAgent.togglePanel()" class="floating-agent-btn">
                 🤖 GPT-4.1 Assistant
             </button>
@@ -1156,14 +1156,34 @@ Remember: You're not just executing commands, you're providing intelligent analy
     }
 
     async scanNetworks() {
-        const result = await this.performFileOperation('/get_ssid_list', { method: 'GET' }, 'Network scan');
+        try {
+            // Prefer global apiManager unified scan helper if available
+            if (window.apiManager && typeof window.apiManager.unifiedScan === 'function') {
+                const scanData = await window.apiManager.unifiedScan({ maxWaitMs: 15000, pollIntervalMs: 1200 });
+                return { success: true, networks: scanData.networks || [], meta: {
+                    networkCount: scanData.networkCount || (scanData.networks ? scanData.networks.length : 0),
+                    source: 'unified'
+                }};
+            }
 
-        if (result.success) {
-            result.networks = result.data;
-            delete result.data; // Clean up for consistency
+            // Fallback: manual unified endpoint sequence
+            await fetch('/api/wifi/scan', { method: 'POST' });
+            let attempts = 0;
+            let data = null;
+            while (attempts < 12) { // up to ~15s
+                const resp = await fetch('/api/wifi/scan/results');
+                data = await resp.json();
+                if (!data.scanRunning) break;
+                await new Promise(r => setTimeout(r, 1200));
+                attempts++;
+            }
+            if (!data || data.scanRunning) {
+                return { success: false, error: 'Scan timeout' };
+            }
+            return { success: true, networks: data.networks || [], meta: { networkCount: data.networkCount || (data.networks ? data.networks.length : 0), source: 'unified-fallback' } };
+        } catch (e) {
+            return { success: false, error: e.message };
         }
-
-        return result;
     }
 
     // UI Helper methods
@@ -1201,7 +1221,7 @@ Remember: You're not just executing commands, you're providing intelligent analy
         typingDiv.id = 'typing-indicator';
         typingDiv.className = 'agent-message typing-indicator';
         typingDiv.innerHTML = `
-            <strong>AI Assistant:</strong> 
+            <strong>AI Assistant:</strong>
             <span class="typing-dots">
                 <span class="typing-dot"></span>
                 <span class="typing-dot"></span>

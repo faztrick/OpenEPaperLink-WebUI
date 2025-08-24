@@ -3449,10 +3449,8 @@ const WiFiSetup = {
         return t.padEnd(count, "\u00A0").slice(0, count);
     },
 
-    getSsidList() {
-		console.log('Starting optimized WiFi scan...');
-
-		// Show scanning status immediately
+	getSsidList() {
+		console.log('Starting unified WiFi scan...');
 		this.showStatus('scan_status', 'Scanning for WiFi networks...', 'info');
 		const button = $('#listssid');
 		if (button) {
@@ -3460,237 +3458,105 @@ const WiFiSetup = {
 			button.innerHTML = 'Scanning...';
 			document.body.style.cursor = 'wait';
 		}
-
-		fetch("wifi_scan", {
-			method: 'GET',
-			headers: {
-				'Cache-Control': 'no-cache'
-			}
-		})
-            .then(response => {
-                console.log('Received response:', response.status, response.statusText);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('WiFi scan response:', data);
-
-				// Handle scan still running
-				if (data.scanRunning || !data.success) {
-					if (data.scanRunning) {
-						console.log('Scan in progress, retrying in 3 seconds...');
-						this.showStatus('scan_status', 'Scan in progress. Waiting for results...', 'info');
-						setTimeout(() => this.getSsidList(), 3000);
-						return;
-					} else {
-						console.error('WiFi scan failed:', data.message || 'Unknown error');
-						this.showStatus('scan_status', data.message || 'WiFi scan failed. Trying fallback...', 'error');
-						this.tryFallbackScan();
-						return;
-					}
+		window.apiManager.unifiedScan({ timeoutMs: 15000, pollInterval: 800 })
+			.then(res => {
+				const networks = res.networks || [];
+				if (networks.length === 0) {
+					this.showStatus('scan_status', 'No networks found. Retrying in 3 seconds...', 'info');
+					setTimeout(() => this.getSsidList(), 3000);
+					return;
 				}
-
-                if (data.networkCount === 0) {
-                    console.log('No networks found, retrying in 3 seconds...');
-                    this.showStatus('scan_status', 'No networks found. Retrying in 3 seconds...', 'info');
-                    setTimeout(() => this.getSsidList(), 3000);
-                    return;
-                }
-
-				// Create and populate select element
-                const select = document.createElement('select');
-                select.id = 'ssid';
+				const select = document.createElement('select');
+				select.id = 'ssid';
 				select.className = 'wifi-ssid-select';
-				console.log('Created optimized select element with id:', select.id);
-
-				// Networks are already sorted by signal strength from the backend
-				console.log('Processing', data.networks.length, 'sorted networks');
-
-				data.networks.forEach((network, index) => {
-                    if (network.ssid && network.ssid.trim() !== '') {
-                        const option = document.createElement('option');
-						option.value = network.ssid;
-
-						// Enhanced formatting with better signal and security info
-						const rssiText = this.formatSignalStrength(network.rssi);
-						const ssidText = this.pad(network.ssid, 28);
-						const securityText = this.formatSecurity(network.encryption);
-						const channelText = `Ch${network.channel}`;
-
-						option.text = `${rssiText} ${ssidText} ${securityText} ${channelText}`;
-						option.title = `SSID: ${network.ssid}, Signal: ${network.rssi}dBm, Channel: ${network.channel}, Security: ${this.getSecurityType(network.encryption)}`;
-
-                        select.appendChild(option);
-
-						if (index < 5) { // Log first 5 for debugging
-							console.log('Added network:', network);
-						}
-                    }
-                });
-
-                if (select.options.length === 0) {
-					console.log('No valid SSIDs found, trying fallback...');
+				networks.forEach((n, idx) => {
+					if (!n.ssid || !n.ssid.trim()) return;
+					const option = document.createElement('option');
+					option.value = n.ssid;
+					const rssiText = this.formatSignalStrength(n.rssi);
+					const ssidText = this.pad(n.ssid, 28);
+					const securityText = this.formatSecurity(n.enc || n.encryption);
+					const channelText = `Ch${n.channel}`;
+					option.text = `${rssiText} ${ssidText} ${securityText} ${channelText}`;
+					option.title = `SSID: ${n.ssid}, Signal: ${n.rssi}dBm, Channel: ${n.channel}, Security: ${this.getSecurityType(n.enc || n.encryption)}`;
+					select.appendChild(option);
+					if (idx < 5) console.log('Added network:', n);
+				});
+				if (select.options.length === 0) {
 					this.showStatus('scan_status', 'No valid networks found. Trying alternative scan...', 'info');
 					this.tryFallbackScan();
-                    return;
-                }
-
-				// Replace existing SSID input with dropdown
-                let ssidval = $('#ssid') ? $('#ssid').value : '';
-                console.log('Current SSID value before replacement:', ssidval);
-                const currentSSIDInput = $('#ssid');
-
-                if (currentSSIDInput) {
-                    currentSSIDInput.replaceWith(select);
-
-					// Set the selected value after DOM update
-                    setTimeout(() => {
+					return;
+				}
+				let previous = $('#ssid') ? $('#ssid').value : '';
+				const currentSSIDInput = $('#ssid');
+				if (currentSSIDInput) {
+					currentSSIDInput.replaceWith(select);
+					setTimeout(() => {
 						const newSelect = $('#ssid');
-                        if (newSelect && ssidval) {
-							// Try to find matching SSID
+						if (newSelect && previous) {
 							for (let i = 0; i < newSelect.options.length; i++) {
-								if (newSelect.options[i].value === ssidval) {
-									newSelect.selectedIndex = i;
-									console.log('Set select value to:', ssidval);
-									break;
+								if (newSelect.options[i].value === previous) {
+									newSelect.selectedIndex = i; break;
 								}
 							}
-                        }
-                    }, 10);
-                } else {
-                    console.error('SSID input element not found in DOM');
-					this.showStatus('scan_status', 'Configuration error: SSID field not found', 'error');
-                    this.resetScanButton();
-                    return;
-                }
-
-				const successMsg = `Found ${data.networkCount} WiFi networks (showing ${data.networksReturned || data.networks.length}). Select one from the dropdown.`;
-				this.showStatus('scan_status', successMsg, 'success');
-                this.resetScanButton();
-            })
-            .catch(error => {
-                console.error('WiFi scan error:', error);
+						}
+					}, 10);
+				}
+				this.showStatus('scan_status', `Found ${networks.length} WiFi networks. Select one from the dropdown.`, 'success');
+				this.resetScanButton();
+			})
+			.catch(err => {
+				console.error('Unified scan error:', err);
 				this.showStatus('scan_status', 'Primary scan failed. Trying alternative method...', 'error');
 				this.tryFallbackScan();
 			});
 	},
 
-	tryFallbackScan() {
-		console.log('Trying fallback scan method...');
-		setTimeout(() => {
-			fetch("get_ssid_list", {
-				method: 'GET',
-				headers: {
-					'Cache-Control': 'no-cache'
-				}
-			})
-				.then(response => response.json())
-				.then(data => {
-					console.log('Fallback scan response:', data);
-
-					if (data.scanstatus < 0) {
-						this.showStatus('scan_status', 'Alternative scan in progress. Please wait...', 'info');
-						setTimeout(() => this.getSsidList(), 4000);
-						return;
-					}
-
-					if (!data.networks || data.networks.length === 0) {
-						this.showStatus('scan_status', 'No networks found with any method. Please enter SSID manually.', 'error');
-						this.resetScanButton();
-						return;
-					}
-
-					const select = document.createElement('select');
-					select.id = 'ssid';
-					select.className = 'wifi-ssid-select fallback';
-
-					data.networks.forEach(network => {
-						if (network.ssid && network.ssid.trim() !== '') {
-							const option = document.createElement('option');
-							option.value = network.ssid;
-
-							const rssiText = this.formatSignalStrength(network.rssi);
-							const ssidText = this.pad(network.ssid, 26);
-							const securityText = this.formatSecurity(network.enc);
-
-							option.text = `${rssiText} ${ssidText} ${securityText}`;
-							option.title = `SSID: ${network.ssid}, Signal: ${network.rssi}dBm, Security: ${this.getSecurityType(network.enc)}`;
-
-							select.appendChild(option);
-						}
-					});
-
-					let ssidval = $('#ssid') ? $('#ssid').value : '';
-					const currentSSIDInput = $('#ssid');
-					if (currentSSIDInput) {
-						currentSSIDInput.replaceWith(select);
-
-						setTimeout(() => {
-							const newSelect = $('#ssid');
-							if (newSelect && ssidval) {
-								for (let i = 0; i < newSelect.options.length; i++) {
-									if (newSelect.options[i].value === ssidval) {
-										newSelect.selectedIndex = i;
-										break;
-									}
-								}
-							}
-						}, 10);
-					}
-
-					this.showStatus('scan_status', `Found ${data.networks.length} networks using alternative method.`, 'success');
-					this.resetScanButton();
-				})
-				.catch(fallbackError => {
-					console.error('Fallback scan also failed:', fallbackError);
-					this.showStatus('scan_status', 'All scan methods failed. Please enter SSID manually.', 'error');
-					this.resetScanButton();
-				});
-		}, 2000);
-	},
-
-	formatSignalStrength(rssi) {
-		if (rssi >= -30) return '[████]';
-		if (rssi >= -50) return '[███▪]';
-		if (rssi >= -70) return '[██▪▪]';
-		if (rssi >= -90) return '[█▪▪▪]';
-		return '[▪▪▪▪]';
-	},
-
-	formatSecurity(encType) {
-		if (encType === 0) return '[Open]';
-		if (encType === 2) return '[WPA]';
-		if (encType === 3) return '[WPA2]';
-		if (encType === 4) return '[WPA/2]';
-		if (encType === 5) return '[WPA2]';
-		if (encType === 7) return '[Open]';
-		if (encType === 8) return '[WPA3]';
-		return '[Secured]';
-	},
-
-	getSecurityType(encType) {
-		const securityTypes = {
-			0: 'Open',
-			2: 'WPA-PSK',
-			3: 'WPA2-PSK',
-			4: 'WPA/WPA2-PSK',
-			5: 'WPA2-Enterprise',
-			7: 'Open',
-			8: 'WPA3-PSK'
-		};
-		return securityTypes[encType] || 'Unknown';
+    tryFallbackScan() {
+        console.log('Trying fallback (cached unified results)...');
+        window.apiManager.getWifiScanResults()
+            .then(res => {
+                const networks = res.networks || [];
+                if (networks.length === 0) {
+                    this.showStatus('scan_status', 'No networks found with any method. Please enter SSID manually.', 'error');
+                    this.resetScanButton();
+                    return;
+                }
+                const select = document.createElement('select');
+                select.id = 'ssid';
+                select.className = 'wifi-ssid-select';
+                networks.forEach(n => {
+                    if (!n.ssid || !n.ssid.trim()) return;
+                    const option = document.createElement('option');
+                    option.value = n.ssid;
+                    const rssiText = this.formatSignalStrength(n.rssi);
+                    const ssidText = this.pad(n.ssid, 28);
+                    const securityText = this.formatSecurity(n.enc || n.encryption);
+                    const channelText = `Ch${n.channel}`;
+                    option.text = `${rssiText} ${ssidText} ${securityText} ${channelText}`;
+                    option.title = `SSID: ${n.ssid}, Signal: ${n.rssi}dBm, Channel: ${n.channel}, Security: ${this.getSecurityType(n.enc || n.encryption)}`;
+                    select.appendChild(option);
+                });
+                const current = $('#ssid');
+                let prev = current ? current.value : '';
+                if (current) current.replaceWith(select);
+                if (prev) {
+                    setTimeout(() => {
+                        const s = $('#ssid');
+                        if (s) {
+                            for (let i = 0; i < s.options.length; i++) if (s.options[i].value === prev) { s.selectedIndex = i; break; }
+                        }
+                    }, 10);
+                }
+                this.showStatus('scan_status', `Found ${networks.length} WiFi networks (cached path).`, 'success');
+                this.resetScanButton();
+            })
+            .catch(err => {
+                console.error('Fallback scan failed:', err);
+                this.showStatus('scan_status', 'All scan methods failed. Enter SSID manually.', 'error');
+                this.resetScanButton();
+            });
     },
-
-    resetScanButton() {
-        const button = $('#listssid');
-        if (button) {
-            document.body.style.cursor = 'default';
-            button.disabled = false;
-            button.innerHTML = 'find SSID';
-        }
-    }
 };
 
 // Initialize WiFi setup when document is ready
