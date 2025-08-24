@@ -6,7 +6,16 @@
       "host": "192.168.128.200",
       "port": null,
       "meta": {}
+    },
+    {
+      "id": "new_1756048052070",
+      "name": "NEW",
+      "host": "192.168.128.200",
+      "port": null,
+      "meta": {
+        "commMode": "wifi"
+      }
     }
   ],
-  "selectedId": "esp32_s3_1755362127480"
+  "selectedId": "new_1756048052070"
 }

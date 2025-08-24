@@ -1,11 +1,12 @@
 <!DOCTYPE HTML>
-<html>
+<html data-page="setup" data-page-title="WiFi Setup">
 
 <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
-    <title>setup page - Open EPaper Link Access Point</title>
+    <title>WiFi Setup - OpenEPaperLink</title>
+    <!-- Styles now injected via shared head (head-loader) -->
     <link rel="stylesheet" href="merged-styles.css" type="text/css" />
     <link rel="icon" type="image/vnd.icon" href="favicon.ico">
     <style>
@@ -54,18 +55,16 @@
             border-left: 3px solid #4facfe;
         }
     </style>
+    </style>
 </head>
 
 <body>
-    <header>
-        <div class="logo">Open EPaper Link Access Point</div>
-    </header>
-
+    <!-- Navigation injected by shared-nav.js via core manifest scripts -->
     <div class="container">
         <div class="window">
-            <h1>WiFi config</h1>
-            <p>WiFi mac address: <span id="mac">-</span></p>
-            <div id="wifi_status" class="wifi-info" style="display: none;">
+            <h1>WiFi Configuration</h1>
+            <p>WiFi MAC address: <span id="mac">-</span></p>
+            <div id="wifi_status" class="wifi-info" style="display:none;">
                 <strong>WiFi Status:</strong> <span id="wifi_status_text">Checking...</span>
             </div>
             <pre>
@@ -73,7 +72,7 @@ SSID            <input type="text" id="ssid"> <button id="listssid">find SSID</b
 Password        <input type="password" id="pw">
             </pre>
             <div id="scan_status"></div>
-            <p>Fill in fields below for static IP. Otherwise, leave empty.<br></p>
+            <p>Fill in fields below for static IP (optional). Leave blank for DHCP.</p>
             <pre>
 Static IP       <input type="text" id="ip">
 Subnet mask     <input type="text" id="mask">
@@ -82,12 +81,12 @@ DNS             <input type="text" id="dns">
             </pre>
             <button id="connect">Save WiFi settings and reboot</button><br>
             <div id="save_status"></div>
-
         </div>
     </div>
-    <script src="constants.js"></script>
-    <script src="main.js"></script>
 
+    <!-- Page scripts now loaded through page-manifest + boot loader -->
+    <script src="core/page-manifest.js"></script>
+    <script src="core/boot.js"></script>
 </body>
 
 </html>

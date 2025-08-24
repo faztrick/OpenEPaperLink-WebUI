@@ -1,34 +1,14 @@
 <!DOCTYPE HTML>
-<html>
+<html data-page="index">
 
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
 	<title>OpenEPL ESP32 - Advanced Control Center</title>
-	<!-- Core JavaScript modules -->
-	<script src="constants.js?3.2" defer></script>
-	<script src="utils.js?3.2" defer></script>
-	<script src="app-core.js?3.2" defer></script>
-	<script src="performance.js?3.2" defer></script>
-	<script src="ui-components.js?3.2" defer></script>
-	<script src="tag-manager.js?3.2" defer></script>
-	<script src="canvas-renderer.js?3.2" defer></script>
-	<script src="main.js?3.2" defer></script>
-	<!-- Enhanced Feature & API Management -->
-	<script src="feature-manager.js?3.2" defer></script>
-	<script src="api-manager-enhanced.js?3.2" defer></script>
-	<script src="debug-system.js?3.2" defer></script>
-	<!-- OpenAI Agent Integration -->
-	<script src="openai-agent-enhanced.js?3.2" defer></script>
-	<!-- Feature-specific modules -->
-	<script src="compact-ui.js?3.2" defer></script>
-	<script src="g5decoder.js?3.2" defer></script>
-	<script src="universal-menu.js?3.2" defer></script>
-	<script src="module-manager-ui.js?3.2" defer></script>
-	<script src="module-status-icons.js" defer></script>
-	<script src="device-card.js?1.0" defer></script>
-	<script src="shared-nav.js" defer></script>
+	<!-- Unified boot + manifest (replaces long list of individual scripts) -->
+	<script src="core/page-manifest.js"></script>
+	<script src="core/boot.js" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?3.2" type="text/css" />
 	<!--<link rel="icon" type="image/vnd.icon" href="favicon.ico">-->
 	<link rel="stylesheet"
@@ -181,98 +161,10 @@
 	<div class="container">
 		<!-- Enhanced Dashboard -->
 		<div class="dashboard-grid">
-			<!-- System Overview Card -->
-			<div class="dashboard-card overview-card">
-				<div class="card-header">
-					<span class="material-symbols-outlined">dashboard</span>
-					<h3>System Overview</h3>
-					<div class="card-actions">
-						<button onclick="refreshData()" class="icon-btn" title="Refresh">
-							<span class="material-symbols-outlined">refresh</span>
-						</button>
-					</div>
-				</div>
-					<div class="card-content">
-						<div class="overview-grid">
-							<div class="overview-item">
-								<div class="overview-icon">📱</div>
-								<div class="overview-data">
-									<span class="overview-value" id="dash-total-tags">0</span>
-									<span class="overview-label">Total Tags</span>
-								</div>
-							</div>
-							<div class="overview-item" onclick="showOnlineTagsDetails()" style="cursor: pointer;" title="Click for detailed information">
-								<div class="overview-icon online">✅</div>
-								<div class="overview-data">
-									<span class="overview-value" id="dash-online-tags">0</span>
-									<span class="overview-label">Online</span>
-									<span class="overview-sublabel" id="dash-online-details" style="font-size: 0.8em; color: rgba(255,255,255,0.7);">Click for details</span>
-								</div>
-							</div>
-							<div class="overview-item">
-								<div class="overview-icon offline">❌</div>
-								<div class="overview-data">
-									<span class="overview-value" id="dash-offline-tags">0</span>
-									<span class="overview-label">Offline</span>
-								</div>
-							</div>
-							<div class="overview-item">
-								<div class="overview-icon">🔋</div>
-								<div class="overview-data">
-									<span class="overview-value" id="dash-avg-battery">0%</span>
-									<span class="overview-label">Avg Battery</span>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-
-			<!-- Real-time Analytics Card -->
-			<div class="dashboard-card analytics-card">
-				<div class="card-header">
-					<span class="material-symbols-outlined">analytics</span>
-					<h3>Real-time Analytics</h3>
-				</div>
-				<div class="card-content">
-					<canvas id="batteryChart" width="300" height="200"></canvas>
-				</div>
-			</div>
-
-			<!-- Quick Actions Card -->
-			<div class="dashboard-card actions-card">
-				<div class="card-header">
-					<span class="material-symbols-outlined">flash_on</span>
-					<h3>Quick Actions</h3>
-				</div>
-				<div class="card-content">
-					<div class="actions-grid">
-						<button class="action-card" onclick="findAllTags()">
-							<span class="material-symbols-outlined">search</span>
-							<span>Find All Tags</span>
-						</button>
-						<button class="action-card" id="scan-wi-btn">
-							<span class="material-symbols-outlined">wifi_tethering</span>
-							<span>Scan Wi</span>
-						</button>
-						<button class="action-card" onclick="blinkAllTags()">
-							<span class="material-symbols-outlined">visibility</span>
-							<span>Blink All</span>
-						</button>
-						<button class="action-card" id="led-off-btn">
-							<span class="material-symbols-outlined">lightbulb</span>
-							<span>LED Off</span>
-						</button>
-						<button class="action-card" onclick="refreshAllTags()">
-							<span class="material-symbols-outlined">refresh</span>
-							<span>Refresh All</span>
-						</button>
-						<button class="action-card" onclick="openAdvancedControl()">
-							<span class="material-symbols-outlined">tune</span>
-							<span>Advanced Control</span>
-						</button>
-					</div>
-				</div>
-			</div>
+			<!-- Component placeholders -->
+			<div data-component="system-overview"></div>
+			<div data-component="analytics"></div>
+			<div data-component="quick-actions"></div>
 
 			<!-- System Control Card -->
 			<div class="dashboard-card system-control-card">
@@ -598,31 +490,17 @@
 				}
 			};
 
-			// Also wait for menu to load
-			const waitForMenu = () => {
-				if (window.universalMenu && (window.universalMenu.menuLoaded || document.getElementById('universal-menu'))) {
-					console.log('Index page: Menu is ready');
-					return true;
-				}
-				return false;
-			};
-
-			// Start both checks
+			// Kick off app class load polling
 			waitForClasses();
 
-			// Menu check with timeout
-			let menuCheckCount = 0;
-			const checkMenu = () => {
-				menuCheckCount++;
-				if (waitForMenu() || menuCheckCount > 50) { // 5 second timeout
-					if (menuCheckCount > 50) {
-						console.warn('Index page: Menu loading timed out');
-					}
-					return;
+			// Shared nav presence log (no retry loop needed)
+			setTimeout(() => {
+				if (document.querySelector('.shared-global-nav')) {
+					console.log('Index page: shared navigation detected');
+				} else {
+					console.warn('Index page: shared navigation not detected yet');
 				}
-				setTimeout(checkMenu, 100);
-			};
-			checkMenu();
+			}, 1200);
 		});
 
 		// Enhanced Dashboard Functionality

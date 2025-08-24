@@ -1,0 +1,25 @@
+<!-- Shared Header Component -->
+<header class="header" data-component-root="header">
+  <div class="header-content">
+    <div class="logo">
+      <i class="fas fa-microchip"></i>
+      <h1>ESP32 DevWebUi</h1>
+    </div>
+    <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
+      <div class="status-item" title="API">
+        <span id="api-status-dot" class="status-dot disconnected"></span>
+        <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
+      </div>
+      <div class="status-item" title="WebSocket">
+        <span id="ws-status-dot" class="status-dot disconnected"></span>
+        <small id="ws-status-text" style="margin-left:6px;color:#9ca3af">WS(ip:port)</small>
+      </div>
+      <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
+        <span id="serial-status-dot" class="status-dot disconnected"></span>
+        <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
+        <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111"></select>
+        <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;">⟳</button>
+      </div>
+    </div>
+  </div>
+</header>

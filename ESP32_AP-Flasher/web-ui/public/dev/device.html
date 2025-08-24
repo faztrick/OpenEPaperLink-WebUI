@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="styles.css" rel="stylesheet">
     <link href="ai-agent-widget.css" rel="stylesheet">
+    <script src="layout-fix.js"></script>
+    <script src="shared-devices.js" defer></script>
 </head>
 <body>
     <header class="header">
@@ -160,10 +162,9 @@
                     </div>
                 </div>
 
-                <div id="saved-devices" class="device-grid"></div>
+                <div id="selected-device-card" style="margin-bottom:16px"></div>
+                <!-- Removed saved devices grid per request -->
             </div>
-
-
 
             <!-- Primary Build/Process Console (unified) -->
             <div class="console-panel" id="primary-console-panel">
@@ -183,8 +184,6 @@
                 </div>
                 <div id="console" class="console" aria-live="polite" aria-label="Primary build and process output"></div>
             </div>
-
-
 
             <!-- Debug Console (secondary targeted debug log) -->
             <div class="dev-section">
@@ -472,6 +471,7 @@
     <script src="spa.js"></script>
     <!-- Reuse shared application logic -->
     <script src="app.js"></script>
+    <script src="device-sidebar.js"></script>
         <script>
             // Optional soft-redirect: if a query flag is present, redirect to index.html
             // Otherwise keep this page loaded but with unified behavior.
@@ -533,6 +533,7 @@
                 const now = root.classList.contains('theme-dark') ? 'light' : 'dark';
                 localStorage.setItem('oepl_theme', now);
                 apply(now);
+                if(window.updateLayoutHeights) window.updateLayoutHeights();
             });
         })();
     </script>

@@ -1,24 +1,16 @@
 <!DOCTYPE HTML>
-<html>
+<html data-page="logs">
 
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 
 	<title>OpenEPL ESP32 - System Logs</title>
-	<!-- Core JavaScript modules -->
-	<script src="constants.js?3.0" defer></script>
-	<script src="utils.js?3.0" defer></script>
-	<script src="app-core.js?3.0" defer></script>
-	<script src="ui-components.js?3.0" defer></script>
-	<script src="main.js?3.0" defer></script>
-	<!-- Feature-specific modules -->
-	<script src="compact-ui.js?2.75" defer></script>
-	<script src="shared-nav.js" defer></script>
-	<!-- Socket.IO client for live device log streaming via the Node server -->
-	<script src="/socket.io/socket.io.js"></script>
-	<!-- Logs page controller -->
-	<script src="logs-page.js?v=1" defer></script>
+	<!-- Unified boot system -->
+	<script src="core/page-manifest.js"></script>
+	<script src="core/boot.js" defer></script>
+	<!-- Socket.IO client retained (external to boot manifest) -->
+	<script src="/socket.io/socket.io.js" defer></script>
 	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
 
 	<link rel="stylesheet"

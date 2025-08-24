@@ -1,0 +1,35 @@
+<!-- Shared Sidebar Component -->
+<aside class="sidebar" data-component-root="sidebar">
+  <div class="project-info">
+    <h3><i class="fas fa-project-diagram"></i> Project Info</h3>
+    <div class="info-item">
+      <span class="label">Target:</span>
+      <span class="value">ESP32-S3 DevKit C-1</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Environment:</span>
+      <span class="value" id="current-env">OutdoorAP</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Last Build:</span>
+      <span class="value" id="last-build">Never</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Firmware Size:</span>
+      <span class="value" id="firmware-size">-</span>
+    </div>
+  </div>
+  <div class="advanced-pages" style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.05)">
+    <h4><i class="fas fa-folder-open"></i> Advanced Pages</h4>
+    <div id="advanced-list">Loading...</div>
+  </div>
+  <div class="sidebar-settings">
+    <h3><i class="fas fa-wrench"></i> Settings</h3>
+    <p>Move configuration and remote server options to a dedicated settings page.</p>
+    <div class="button-grid">
+      <button id="open-settings-btn" class="btn btn-primary">
+        <i class="fas fa-cog"></i> Open Settings
+      </button>
+    </div>
+  </div>
+</aside>

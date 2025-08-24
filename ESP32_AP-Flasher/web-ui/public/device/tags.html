@@ -1,32 +1,15 @@
 <!DOCTYPE HTML>
-<html>
-
+<html data-page="tags" data-page-title="Tags Management">
 <head>
-	<meta http-equiv="content-type" content="text/html; charset=utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-
-	<title>OpenEPL ESP32 - Tags Management</title>
-	<!-- Core JavaScript modules -->
-	<script src="constants.js?3.0" defer></script>
-	<script src="utils.js?3.0" defer></script>
-	<script src="app-core.js?3.0" defer></script>
-	<script src="ui-components.js?3.0" defer></script>
-	<script src="tag-manager.js?3.0" defer></script>
-	<script src="canvas-renderer.js?3.0" defer></script>
-	<script src="main.js?3.0" defer></script>
-	<!-- Feature-specific modules -->
-	<script src="g5decoder.js?2.74"></script>
-	<script src="universal-menu.js" defer></script>
-	<script src="shared-nav.js" defer></script>
-	<link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
-	<link rel="stylesheet"
-		  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <title>Tags Management</title>
+    <!-- External libraries still loaded directly (CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <!-- Page manifest + boot loader -->
+    <script src="core/page-manifest.js"></script>
+    <script src="core/boot.js"></script>
 </head>
-
 <body>
     <!-- Header replaced by shared-nav.js injection -->
 
@@ -35,106 +18,7 @@
 			<!-- Tags Tab Content -->
 			<div id="tagtab" class="tabcontent active">
 				<div class="tagheader">
-					<h3>Currently active tags</h3>
-					<div id="activefilter"></div><button class="material-symbols-outlined" id="toggleFilters">filter_alt</button>
-				</div>
-				<div id="filterOptions">
-					<div>
-						<div>group by</div>
-						<div>
-							<input type="radio" name="group" value="" id="rnone"><label for="rnone">None</label>
-						</div>
-						<div>
-							<input type="radio" name="group" value="model" id="rtagtype"><label for="rtagtype">Tag model</label>
-						</div>
-						<div>
-							<input type="radio" name="group" value="contentmode" id="rcontent"><label for="rcontent">Content</label>
-						</div>
-						<div>
-							<input type="radio" name="group" value="data-channel" id="rchannel"><label for="rchannel">Channel</label>
-						</div>
-					</div>
-					<div>
-						<div>sort by</div>
-						<div>
-							<input type="radio" name="sort" value="alias" id="ralias" checked><label for="ralias">Alias</label>
-						</div>
-						<div>
-							<input type="radio" name="sort" value="mac" id="rmac"><label for="rmac">Mac</label>
-						</div>
-						<div>
-							<input type="radio" name="sort" value="data-lastseen" id="rlastseen"><label for="rlastseen">Last seen</label>
-						</div>
-						<div>
-							<input type="radio" name="sort" value="data-nextupdate" id="rnext"><label for="rnext">Next update</label>
-						</div>
-					</div>
-					<div>
-						<div>filter</div>
-						<div>
-							<input type="checkbox" name="filter" value="local" id="rlocal"><label for="rlocal">local</label>
-						</div>
-						<div>
-							<input type="checkbox" name="filter" value="remote" id="rremote"><label for="rremote">remote</label>
-						</div>
-						<div>
-							<input type="checkbox" name="filter" value="inactive" id="rinactive"><label for="rinactive">timed out</label>
-						</div>
-						<div>
-							<input type="checkbox" name="filter" value="pending" id="rpending"><label for="rpending">pending</label>
-						</div>
-						<div>
-							<input type="checkbox" name="filter" value="lowbatt" id="rlowbatt"><label for="rlowbatt">low battery</label>
-						</div>
-					</div>
-				</div>
-
-				<!-- No Tags Found Message -->
-				<div id="noTagsMessage" class="no-tags-message" style="display: none;">
-					<div class="no-tags-content">
-						<span class="material-symbols-outlined no-tags-icon">device_unknown</span>
-						<h3>No tags found</h3>
-						<p>No e-paper tags are currently connected to this access point.</p>
-						<div class="no-tags-actions">
-							<button id="addTagManually" class="btn-primary">
-								<span class="material-symbols-outlined">add</span>
-								Add Tag Manually
-							</button>
-							<button id="refreshTags" class="btn-secondary">
-								<span class="material-symbols-outlined">refresh</span>
-								Refresh
-							</button>
-						</div>
-						<div class="no-tags-help">
-							<h4>To connect tags:</h4>
-							<ul>
-								<li>Put your e-paper tag in pairing mode (press button or remove battery briefly)</li>
-								<li>Wait for the tag to appear in the list</li>
-								<li>Or use "Add Tag Manually" if you know the MAC address</li>
-							</ul>
-						</div>
-					</div>
-				</div>
-
-				<div id="taglist" class="taglist">
-					<div class="tagcard" id="tagtemplate">
-						<div class="currimg"><canvas class="tagimg"></div>
-						<div class="alias"></div>
-						<div class="mac"></div>
-						<div class="model"></div>
-						<div class="resolution"></div>
-						<div class="received"></div>
-						<div class="contentmode"></div>
-						<div class="lastseen"></div>
-						<div class="nextcheckin"></div>
-						<div class="nextupdate"></div>
-						<div class="corner">
-							<div class="waitingicon" title="New content is scheduled to be generated (as soon as possible, or shortly before the next expected checkin time)">&#9203;</div>
-							<div class="pendingicon" title="A new message is waiting for the tag to pick up">&circlearrowright;</div>
-							<div class="warningicon" title="This tag has not been seen for a long time">&#9888;
-							</div>
-						</div>
-					</div>
+				    <!-- Page-specific scripts are loaded via manifest/boot system -->
 				</div>
 			</div>
 		</div>

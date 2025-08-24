@@ -22,8 +22,8 @@
     return LINKS.map(l=>`<a href="${l.href}" class="${cur===l.href?'active':''}">${l.label}</a>`).join('');
   }
   function buildNav(){
-    return `\n<header class="oepl-nav">\n  <div class="nav-left">\n    <div class="brand" title="OpenEPaperLink">📰 <span>OpenEPL</span></div>\n    <nav class="nav-links">${buildLinks()}<span class="nav-more-sep"></span></nav>\n  </div>\n  <div class="nav-right">\n    <span id="nav-device-method" class="nav-pill">${getDeviceMethod()}</span>\n    <span id="nav-device-target" class="nav-pill" title="Current target">${getDeviceTarget()||'—'}</span>\n    <button id="nav-open-device" title="Scroll to device card" class="nav-icon">🔧</button>\n  </div>\n</header>`; }
-  function getDeviceMethod(){ try { const cfg = JSON.parse(localStorage.getItem('oepl_device_cfg_v1')||'null'); return cfg? (cfg.method||'api') : 'api'; } catch(_){ return 'api'; } }
+    return `\n<header class="oepl-nav">\n  <div class="nav-left">\n    <div class="brand" title="OpenEPaperLink">📰 <span>OpenEPL</span></div>\n    <nav class="nav-links">${buildLinks()}<span class="nav-more-sep"></span></nav>\n  </div>\n  <div class="nav-right">\n    <span id="nav-device-target" class="nav-pill" title="Current target">${getDeviceTarget()||'—'}</span>\n    <button id="nav-open-device" title="Scroll to device card" class="nav-icon">🔧</button>\n  </div>\n</header>`; }
+  // Removed device method pill (nav-device-method) per request; device method now implicit and not shown in nav.
   function getDeviceTarget(){ try { const cfg = JSON.parse(localStorage.getItem('oepl_device_cfg_v1')||'null'); if(!cfg) return ''; return cfg.method==='api'? (cfg.host||'') : (cfg.serialPort||''); } catch(_){ return ''; } }
   function inject(){
     if(document.querySelector('.oepl-nav')) return; // already
@@ -41,7 +41,7 @@
     }); }
   }
   function persist(){ try { localStorage.setItem(NAV_KEY, Date.now()); } catch(_){ } }
-  function refreshPills(){ const m=document.getElementById('nav-device-method'); const t=document.getElementById('nav-device-target'); if(m) m.textContent=getDeviceMethod(); if(t) t.textContent=getDeviceTarget()||'—'; refreshActive(); }
+  function refreshPills(){ const t=document.getElementById('nav-device-target'); if(t) t.textContent=getDeviceTarget()||'—'; refreshActive(); }
   function refreshActive(){ const cur = location.pathname.split('/').pop() || 'index.html'; document.querySelectorAll('.oepl-nav .nav-links a').forEach(a=>{ if(a.getAttribute('href')===cur) a.classList.add('active'); else a.classList.remove('active'); }); }
   window.oeplSharedNav = { refreshPills };
   const style = document.createElement('style');

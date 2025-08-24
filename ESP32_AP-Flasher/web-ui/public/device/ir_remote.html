@@ -1,15 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-page="ir_remote">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <t .remote-btn.channel { background: linear-gradient(135deg, #a855f7, rgba(168, 85, 247, 0.8)); border-color: #a855f7; }
-        .remote-btn.channel:hover { background: linear-gradient(135deg, #a855f7, #9333ea); box-shadow: 0 8px 20px rgba(168,
-        85, 247, 0.4); } .remote-btn.nav { background: linear-gradient(135deg, var(--primary-color, #3b82f6), rgba(59, 130,
-        246, 0.8)); border-color: var(--primary-color, #3b82f6); } .remote-btn.nav:hover { background:
-        linear-gradient(135deg, #3b82f6, #2563eb); box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4); }emote Control -
-        OpenEPL</title>
-    <link rel="stylesheet" href="merged-styles.css">
+    <!-- Shared head injected dynamically by head-loader.js -->
+    <title data-page-title>IR Remote Control - OpenEPL</title>
     <style>
         /* Ensure CSS variables are available */
         :root {
@@ -23,13 +16,13 @@
             --glass-border: rgba(255, 255, 255, 0.2);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
-        
+
         .ir-container {
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         .remote-section {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(20px);
@@ -40,12 +33,12 @@
             box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
             transition: all 0.3s ease;
         }
-        
+
         .remote-section:hover {
             transform: translateY(-2px);
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
-        
+
         .remote-section h3 {
             color: var(--text-primary, #ffffff);
             margin-bottom: 20px;
@@ -55,7 +48,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .status-display {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
@@ -65,7 +58,7 @@
             font-family: 'Courier New', monospace;
             backdrop-filter: blur(10px);
         }
-        
+
         .status-item {
             display: flex;
             justify-content: space-between;
@@ -73,26 +66,26 @@
             padding: 8px 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
+
         .status-item:last-child {
             border-bottom: none;
             margin-bottom: 0;
         }
-        
+
         .status-label {
             font-weight: 500;
             color: var(--text-secondary, rgba(255, 255, 255, 0.7));
         }
-        
+
         .status-value {
             color: var(--success-color, #4ade80);
             font-weight: 600;
         }
-        
+
         .status-value.inactive {
             color: var(--error-color, #f87171);
         }
-        
+
         .remote-grid {
             display: grid;
             grid-template-columns: 1fr 80px 1fr;
@@ -107,7 +100,7 @@
             border-radius: 16px;
             box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
         }
-        
+
         .remote-btn {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(10px);
@@ -123,65 +116,65 @@
             font-size: 14px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
-        
+
         .remote-btn:hover {
             background: rgba(255, 255, 255, 0.2);
             border-color: var(--primary-color, #3b82f6);
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
-        
+
         .remote-btn:active {
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
-        
+
         .remote-btn.power {
             background: linear-gradient(135deg, var(--error-color, #f87171), rgba(248, 113, 113, 0.8));
             border-color: var(--error-color, #f87171);
         }
-        
+
         .remote-btn.power:hover {
             background: linear-gradient(135deg, #f87171, #ef4444);
             box-shadow: 0 8px 20px rgba(248, 113, 113, 0.4);
         }
-        
+
         .remote-btn.volume {
             background: linear-gradient(135deg, var(--warning-color, #fbbf24), rgba(251, 191, 36, 0.8));
             border-color: var(--warning-color, #fbbf24);
         }
-        
+
         .remote-btn.volume:hover {
             background: linear-gradient(135deg, #fbbf24, #f59e0b);
             box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
         }
-        
+
         .remote-btn.channel {
             background: linear-gradient(135deg, #9b59b6, #8e44ad);
             border-color: #9b59b6;
         }
-        
+
         .remote-btn.nav {
             background: linear-gradient(135deg, var(--primary-color, #3b82f6), rgba(59, 130, 246, 0.8));
             border-color: var(--primary-color, #3b82f6);
         }
-        
+
         .remote-btn.nav:hover {
             background: linear-gradient(135deg, #3b82f6, #2563eb);
             box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
         }
-        
+
         .remote-btn.ok {
             background: linear-gradient(135deg, var(--success-color, #4ade80), rgba(74, 222, 128, 0.8));
             border-color: var(--success-color, #4ade80);
             border-radius: 50%;
         }
-        
+
         .remote-btn.ok:hover {
             background: linear-gradient(135deg, #4ade80, #22c55e);
             box-shadow: 0 8px 20px rgba(74, 222, 128, 0.4);
         }
-        
+
         /* Grid positioning */
         .power { grid-column: 2; grid-row: 1; }
         .vol-up { grid-column: 1; grid-row: 2; }
@@ -196,14 +189,14 @@
         .menu { grid-column: 1; grid-row: 5; }
         .back { grid-column: 2; grid-row: 5; }
         .home { grid-column: 3; grid-row: 5; }
-        
+
         .control-buttons {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 15px;
             margin-bottom: 25px;
         }
-        
+
         .ctrl-btn {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(10px);
@@ -216,14 +209,14 @@
             transition: all 0.3s ease;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
-        
+
         .ctrl-btn:hover {
             background: rgba(59, 130, 246, 0.2);
             border-color: var(--primary-color, #3b82f6);
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
         }
-        
+
         .ctrl-btn:disabled {
             background: rgba(108, 117, 125, 0.3);
             border-color: rgba(108, 117, 125, 0.5);
@@ -232,7 +225,7 @@
             transform: none;
             box-shadow: none;
         }
-        
+
         .learn-section {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(20px);
@@ -243,12 +236,12 @@
             box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
             transition: all 0.3s ease;
         }
-        
+
         .learn-section:hover {
             transform: translateY(-2px);
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
-        
+
         .learn-section h4 {
             color: var(--text-primary, #ffffff);
             margin-bottom: 15px;
@@ -256,19 +249,19 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .learn-controls {
             display: flex;
             gap: 15px;
             align-items: center;
             flex-wrap: wrap;
         }
-        
+
         .learn-controls label {
             color: var(--text-secondary, rgba(255, 255, 255, 0.7));
             font-weight: 500;
         }
-        
+
         .learn-timeout {
             padding: 10px 14px;
             border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
@@ -280,14 +273,14 @@
             font-size: 14px;
             transition: all 0.2s ease;
         }
-        
+
         .learn-timeout:focus {
             outline: none;
             border-color: var(--primary-color, #3b82f6);
             background: rgba(255, 255, 255, 0.15);
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
-        
+
         .received-commands {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(20px);
@@ -297,7 +290,7 @@
             margin-top: 20px;
             box-shadow: var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.3));
         }
-        
+
         .received-commands h4 {
             color: var(--success-color, #4ade80);
             margin-bottom: 15px;
@@ -305,7 +298,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .command-item {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
@@ -317,16 +310,16 @@
             color: var(--text-primary, #ffffff);
             transition: all 0.2s ease;
         }
-        
+
         .command-item:hover {
             background: rgba(255, 255, 255, 0.1);
             transform: translateX(4px);
         }
-        
+
         .command-item:last-child {
             margin-bottom: 0;
         }
-        
+
         .log-display {
             background: var(--glass-bg, rgba(255, 255, 255, 0.1));
             backdrop-filter: blur(10px);
@@ -343,27 +336,27 @@
             scrollbar-width: thin;
             scrollbar-color: var(--glass-border) transparent;
         }
-        
+
         .log-display::-webkit-scrollbar {
             width: 6px;
         }
-        
+
         .log-display::-webkit-scrollbar-track {
             background: transparent;
         }
-        
+
         .log-display::-webkit-scrollbar-thumb {
             background: var(--glass-border);
             border-radius: 3px;
         }
-        
+
         .profile-selector {
             display: flex;
             gap: 15px;
             align-items: center;
             margin-bottom: 20px;
         }
-        
+
         .profile-select {
             padding: 10px 14px;
             border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.2));
@@ -373,58 +366,61 @@
             min-width: 150px;
             transition: all 0.2s ease;
         }
-        
+
         .profile-select:focus {
             outline: none;
             border-color: var(--primary-color, #3b82f6);
             background: rgba(255, 255, 255, 0.15);
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
-        
+
         .profile-select option {
             background: #1a1a1a;
             color: #ffffff;
         }
-        
+
         .responsive-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
         }
-        
+
         @media (max-width: 768px) {
             .ir-container {
                 padding: 10px;
             }
-            
+
             .remote-grid {
                 max-width: 250px;
                 grid-template-rows: repeat(5, 40px);
                 padding: 15px;
             }
-            
+
             .remote-btn {
                 font-size: 12px;
             }
-            
+
             .control-buttons {
                 grid-template-columns: 1fr;
             }
-            
+
             .learn-controls {
                 flex-direction: column;
                 align-items: stretch;
             }
         }
     </style>
+    </style>
+    <script src="core/page-manifest.js"></script>
+    <script src="core/boot.js" defer></script>
 </head>
-<body>
+<body class="themed-body">
     <div class="ir-container">
         <div class="header-section">
             <h1>🔴 IR Remote Control</h1>
             <p>Control infrared devices through your OpenEPL ESP32</p>
         </div>
-        
+
         <!-- Status Section -->
         <div class="remote-section">
             <h3>📊 System Status</h3>
@@ -451,12 +447,12 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="responsive-grid">
             <!-- Remote Control Section -->
             <div class="remote-section">
                 <h3>🎮 Remote Control</h3>
-                
+
                 <div class="profile-selector">
                     <label for="profile-select">Profile:</label>
                     <select class="profile-select" id="profile-select">
@@ -464,7 +460,7 @@
                     </select>
                     <button class="ctrl-btn" onclick="loadProfiles()">🔄 Refresh</button>
                 </div>
-                
+
                 <div class="remote-grid">
                     <button class="remote-btn power" onclick="sendCommand('Power')" title="Power">⏻</button>
                     <button class="remote-btn volume vol-up" onclick="sendCommand('Volume Up')" title="Volume Up">🔊+</button>
@@ -480,22 +476,22 @@
                     <button class="remote-btn nav back" onclick="sendCommand('Back')" title="Back">↶</button>
                     <button class="remote-btn nav home" onclick="sendCommand('Home')" title="Home">🏠</button>
                 </div>
-                
+
                 <div class="control-buttons">
                     <button class="ctrl-btn" onclick="sendCommand('Mute')">🔇 Mute</button>
                     <button class="ctrl-btn" onclick="testConnection()">🔧 Test</button>
                     <button class="ctrl-btn" onclick="refreshStatus()">🔄 Refresh</button>
                 </div>
             </div>
-            
+
             <!-- Learning Section -->
             <div class="remote-section">
                 <h3>🎓 Learn Commands</h3>
-                
+
                 <div class="learn-section">
                     <h4>📡 IR Learning Mode</h4>
                     <p>Point your existing remote at the ESP32 and press a button to learn its IR code.</p>
-                    
+
                     <div class="learn-controls">
                         <label>Timeout (ms):</label>
                         <input type="number" class="learn-timeout" id="learn-timeout" value="10000" min="1000" max="60000">
@@ -503,19 +499,19 @@
                         <button class="ctrl-btn" onclick="clearReceived()">🗑️ Clear</button>
                     </div>
                 </div>
-                
+
                 <div class="received-commands" id="received-commands" style="display: none;">
                     <h4>📨 Received Commands</h4>
                     <div id="command-list"></div>
                 </div>
-                
+
                 <div class="control-buttons">
                     <button class="ctrl-btn" onclick="checkReceived()">📡 Check for Commands</button>
                     <button class="ctrl-btn" onclick="toggleReceiver()">🔄 Toggle Receiver</button>
                 </div>
             </div>
         </div>
-        
+
         <!-- Log Section -->
         <div class="remote-section">
             <h3>📋 Activity Log</h3>
@@ -527,301 +523,6 @@
         </div>
     </div>
 
-    <script>
-        class IRRemoteControl {
-            constructor() {
-                this.isLearning = false;
-                this.receiverEnabled = false;
-                this.logEntries = [];
-                this.init();
-            }
-            
-            async init() {
-                this.log('🚀 IR Remote Control initialized');
-                await this.refreshStatus();
-                await this.loadProfiles();
-                
-                // Auto-refresh status every 5 seconds
-                setInterval(() => this.refreshStatus(), 5000);
-                
-                // Auto-check for received commands every 2 seconds
-                setInterval(() => this.checkReceived(), 2000);
-            }
-            
-            async refreshStatus() {
-                try {
-                    const response = await fetch('/ir/status');
-                    if (response.ok) {
-                        const status = await response.json();
-                        this.updateStatusDisplay(status);
-                    } else {
-                        this.log('❌ Failed to get IR status');
-                    }
-                } catch (error) {
-                    this.log(`❌ Error getting status: ${error.message}`);
-                }
-            }
-            
-            updateStatusDisplay(status) {
-                document.getElementById('ir-status').textContent = status.enabled ? 'Enabled' : 'Disabled';
-                document.getElementById('ir-status').className = status.enabled ? 'status-value' : 'status-value inactive';
-                
-                document.getElementById('receiver-status').textContent = status.receiverEnabled ? 'Active' : 'Inactive';
-                document.getElementById('receiver-status').className = status.receiverEnabled ? 'status-value' : 'status-value inactive';
-                
-                document.getElementById('send-pin').textContent = status.sendPin || '--';
-                document.getElementById('recv-pin').textContent = status.recvPin || '--';
-                document.getElementById('current-profile').textContent = status.currentProfile || 'None';
-                
-                this.receiverEnabled = status.receiverEnabled;
-            }
-            
-            async loadProfiles() {
-                try {
-                    const response = await fetch('/ir/profiles');
-                    if (response.ok) {
-                        const data = await response.json();
-                        this.updateProfileSelector(data);
-                    } else {
-                        this.log('❌ Failed to load profiles');
-                    }
-                } catch (error) {
-                    this.log(`❌ Error loading profiles: ${error.message}`);
-                }
-            }
-            
-            updateProfileSelector(data) {
-                const select = document.getElementById('profile-select');
-                select.innerHTML = '';
-                
-                if (data.profiles && data.profiles.length > 0) {
-                    data.profiles.forEach(profile => {
-                        const option = document.createElement('option');
-                        option.value = profile;
-                        option.textContent = profile;
-                        if (profile === data.current) {
-                            option.selected = true;
-                        }
-                        select.appendChild(option);
-                    });
-                } else {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = 'No profiles available';
-                    select.appendChild(option);
-                }
-                
-                this.log(`📂 Loaded ${data.profiles?.length || 0} profiles`);
-            }
-            
-            async sendCommand(command) {
-                this.log(`📤 Sending command: ${command}`);
-                
-                try {
-                    const response = await fetch('/ir/send', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: `command=${encodeURIComponent(command)}`
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        this.log(`✅ Command sent successfully: ${command}`);
-                    } else {
-                        this.log(`❌ Failed to send command: ${result.error}`);
-                    }
-                } catch (error) {
-                    this.log(`❌ Error sending command: ${error.message}`);
-                }
-            }
-            
-            async startLearning() {
-                if (this.isLearning) {
-                    this.log('⚠️ Already in learning mode');
-                    return;
-                }
-                
-                const timeout = parseInt(document.getElementById('learn-timeout').value) || 10000;
-                const learnBtn = document.getElementById('learn-btn');
-                
-                this.isLearning = true;
-                learnBtn.textContent = '⏳ Learning...';
-                learnBtn.disabled = true;
-                
-                this.log(`🎓 Starting IR learning (timeout: ${timeout}ms)`);
-                
-                try {
-                    const response = await fetch('/ir/learn', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: `timeout=${timeout}`
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        this.log(`✅ Learned command: ${result.protocol} 0x${result.code} (${result.bits} bits)`);
-                        this.displayLearnedCommand(result);
-                    } else {
-                        this.log(`⏰ Learning timeout or error: ${result.error}`);
-                    }
-                } catch (error) {
-                    this.log(`❌ Learning error: ${error.message}`);
-                } finally {
-                    this.isLearning = false;
-                    learnBtn.textContent = '🎓 Start Learning';
-                    learnBtn.disabled = false;
-                }
-            }
-            
-            displayLearnedCommand(command) {
-                const commandsDiv = document.getElementById('received-commands');
-                const commandList = document.getElementById('command-list');
-                
-                const commandItem = document.createElement('div');
-                commandItem.className = 'command-item';
-                commandItem.innerHTML = `
-                    <strong>Protocol:</strong> ${command.protocol}<br>
-                    <strong>Code:</strong> ${command.code}<br>
-                    <strong>Bits:</strong> ${command.bits}<br>
-                    <strong>Description:</strong> ${command.description || 'Unknown'}
-                `;
-                
-                commandList.appendChild(commandItem);
-                commandsDiv.style.display = 'block';
-            }
-            
-            async checkReceived() {
-                try {
-                    const response = await fetch('/ir/receive');
-                    if (response.ok) {
-                        const result = await response.json();
-                        
-                        if (result.hasCommand) {
-                            this.log(`📡 Received: ${result.protocol} ${result.code} - ${result.description}`);
-                            this.displayLearnedCommand(result);
-                        }
-                    }
-                } catch (error) {
-                    // Silent fail for background checks
-                }
-            }
-            
-            clearReceived() {
-                const commandList = document.getElementById('command-list');
-                const commandsDiv = document.getElementById('received-commands');
-                
-                commandList.innerHTML = '';
-                commandsDiv.style.display = 'none';
-                
-                this.log('🗑️ Cleared received commands');
-            }
-            
-            async testConnection() {
-                this.log('🔧 Testing IR connection...');
-                await this.refreshStatus();
-                this.log('✅ Connection test completed');
-            }
-            
-            async toggleReceiver() {
-                this.log(`🔄 Toggling receiver (currently ${this.receiverEnabled ? 'enabled' : 'disabled'})`);
-                // This would require an API endpoint to toggle receiver
-                // For now, just refresh status
-                await this.refreshStatus();
-            }
-            
-            log(message) {
-                const timestamp = new Date().toLocaleTimeString();
-                const logMessage = `[${timestamp}] ${message}`;
-                
-                this.logEntries.push(logMessage);
-                
-                // Keep only last 100 entries
-                if (this.logEntries.length > 100) {
-                    this.logEntries.shift();
-                }
-                
-                const logDisplay = document.getElementById('log-display');
-                logDisplay.textContent = this.logEntries.join('\n');
-                logDisplay.scrollTop = logDisplay.scrollHeight;
-            }
-            
-            clearLog() {
-                this.logEntries = [];
-                document.getElementById('log-display').textContent = '';
-                this.log('🗑️ Log cleared');
-            }
-            
-            exportLog() {
-                const logText = this.logEntries.join('\n');
-                const blob = new Blob([logText], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `ir-remote-log-${new Date().toISOString().split('T')[0]}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                this.log('💾 Log exported');
-            }
-        }
-        
-        // Global functions
-        let irRemote;
-        
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            irRemote = new IRRemoteControl();
-        });
-        
-        // Global function wrappers
-        function sendCommand(command) {
-            irRemote.sendCommand(command);
-        }
-        
-        function startLearning() {
-            irRemote.startLearning();
-        }
-        
-        function clearReceived() {
-            irRemote.clearReceived();
-        }
-        
-        function checkReceived() {
-            irRemote.checkReceived();
-        }
-        
-        function refreshStatus() {
-            irRemote.refreshStatus();
-        }
-        
-        function loadProfiles() {
-            irRemote.loadProfiles();
-        }
-        
-        function testConnection() {
-            irRemote.testConnection();
-        }
-        
-        function toggleReceiver() {
-            irRemote.toggleReceiver();
-        }
-        
-        function clearLog() {
-            irRemote.clearLog();
-        }
-        
-        function exportLog() {
-            irRemote.exportLog();
-        }
-    </script>
+    <script src="ir-remote-page.js"></script>
 </body>
-</html>
+<\/html>

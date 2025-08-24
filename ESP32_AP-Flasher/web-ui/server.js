@@ -337,6 +337,31 @@ const devicesFile = path.join(dataDir, 'devices.json');
 // Initialize Device Manager
 const deviceManager = new DeviceManager(devicesFile);
 
+// Unified device config (replaces historical dev-config.json)
+// Expose a virtual /device.json so all UIs can consume one canonical source
+// Schema aligns with prior dev-config.json for backwards compatibility:
+// { version:1, customDevices:[ {id,name,host,com}], defaultSelectedDevice }
+app.get('/device.json', (req, res) => {
+    try {
+        const devices = deviceManager.list().map(d => ({
+            id: d.id,
+            name: d.name,
+            host: d.host || d.ip || '',
+            com: d.port || d.meta?.com || ''
+        }));
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            version: 1,
+            customDevices: devices,
+            defaultSelectedDevice: deviceManager.selectedId || (devices[0] && devices[0].id) || null,
+            selectedId: deviceManager.selectedId || null,
+            unified: true
+        });
+    } catch (e) {
+        res.status(500).json({ success:false, error:e.message });
+    }
+});
+
 // DeviceManager event bridging
 try {
     deviceManager.on('changed', (list) => {
@@ -762,6 +787,60 @@ app.post('/api/device/select', (req, res) => {
         res.json({ success: true, selected: dev ? dev.id : null });
     } catch (e) {
         res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+// Simple LED off action placeholder (extend to send real command via serial or network later)
+app.post('/api/device/:id/led/off', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const dev = deviceManager.get(id);
+        if (!dev) return res.status(404).json({ success:false, error:'device not found' });
+        const mode = dev.meta?.commMode || 'serial';
+        appendLog('api', `LED off requested for ${id} mode=${mode}`);
+
+        // SERIAL path
+        if (mode === 'serial') {
+            if (!serialManager) return res.status(503).json({ success:false, error:'serial manager unavailable' });
+            const st = serialManager.getStatus();
+            if (!st.open) return res.status(409).json({ success:false, error:'serial port not open' });
+            // Placeholder command; adjust to actual firmware protocol
+            const cmd = 'LED:OFF\n';
+            try {
+                await serialManager.write(cmd);
+                appendLog('serial', `LED off command sent (${cmd.trim()})`);
+                return res.json({ success:true, id, method:'serial', command:cmd.trim() });
+            } catch (e) {
+                return res.status(500).json({ success:false, error:'serial write failed: '+(e.message||e), method:'serial' });
+            }
+        }
+
+        // WIFI / HTTP path
+        if (mode === 'wifi') {
+            const host = dev.host || dev.ip || '';
+            if (!host) return res.status(400).json({ success:false, error:'device host/ip missing' });
+            const base = host.match(/^https?:\/\//) ? host : `http://${host}`;
+            // Try /led/off then /api/led/off
+            const endpoints = ['led/off', 'api/led/off'];
+            let lastErr = null;
+            for (const ep of endpoints) {
+                const url = `${base.replace(/\/$/, '')}/${ep}`;
+                try {
+                    const r = await fetch(url, { method:'POST' }).catch(e=>{ throw e; });
+                    if (r.ok) {
+                        appendLog('api', `LED off via HTTP ${url}`);
+                        return res.json({ success:true, id, method:'http', url });
+                    }
+                    lastErr = new Error(`HTTP ${r.status}`);
+                } catch (e) { lastErr = e; }
+            }
+            return res.status(502).json({ success:false, error:'http request failed: '+(lastErr?.message||lastErr||'error'), method:'http' });
+        }
+
+        // Unknown mode
+        return res.status(400).json({ success:false, error:'unsupported comm mode '+mode });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 

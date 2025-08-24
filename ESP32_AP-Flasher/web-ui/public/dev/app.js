@@ -96,6 +96,15 @@ class ESP32DevUI {
             console.warn('socket.io client (io) not found on the page; socket features disabled');
             return;
         }
+      // Inline SVG icon set (monochrome, inherits currentColor)
+                const icons = {
+                    select: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.6 16.2 5.3 12l1.4-1.4 2.9 2.9 7.7-7.7 1.4 1.4z"/></svg>',
+                    edit: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.71-10.04c.19-.19.29-.44.29-.71 0-.27-.1-.52-.29-.71l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.79-1.66z"/></svg>',
+                    ping: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm6.36-2.05 1.42 1.42C21.3 17.85 22 15.49 22 13c0-2.49-.7-4.85-2.22-6.36l-1.42 1.42A8.94 8.94 0 0 1 20 13c0 2.03-.76 3.91-1.64 4.95ZM4.22 6.64 2.8 5.22A10.94 10.94 0 0 0 2 13c0 2.49.7 4.85 2.22 6.36l1.42-1.42A8.94 8.94 0 0 1 4 13c0-2.03.76-3.91 1.64-5.95Zm12.02-.95L14.83 9.1A4.02 4.02 0 0 1 16 13a4 4 0 0 1-8 0c0-.88.29-1.69.77-2.36L7.76 9.63A5.98 5.98 0 0 0 6 13a6 6 0 0 0 12 0c0-1.63-.62-3.11-1.76-4.31Z"/></svg>',
+                    delete: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>',
+                    adv: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Zm7.94-2.81-.82-.63c.05-.35.08-.71.08-1.06 0-.36-.03-.72-.08-1.06l.82-.63c.18-.14.23-.39.12-.6l-.75-1.3a.5.5 0 0 0-.58-.22l-.96.36c-.55-.47-1.17-.84-1.85-1.1l-.15-1.02a.5.5 0 0 0-.5-.42h-1.5a.5.5 0 0 0-.5.42l-.15 1.02c-.68.26-1.3.63-1.85 1.1l-.96-.36a.5.5 0 0 0-.58.22l-.75 1.3c-.11.21-.06.46.12.6l.82.63c-.05.34-.08.7-.08 1.06 0 .35.03.71.08 1.06l-.82.63a.5.5 0 0 0-.12.6l.75 1.3c.11.21.36.3.58.22l.96-.36c.55.47 1.17.84 1.85 1.1l.15 1.02c.05.24.26.42.5.42h1.5c.24 0 .45-.18.5-.42l.15-1.02c.68-.26 1.3-.63 1.85-1.1l.96.36c.22.08.47-.01.58-.22l.75-1.3a.5.5 0 0 0-.12-.6Z"/></svg>',
+                    save: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4ZM12 19a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm3-10H5V5h10v4Z"/></svg>'
+                };
 
         const tryConnect = () => {
             // Build socket URL when remote is enabled+connected
@@ -938,9 +947,17 @@ class ESP32DevUI {
     selectDevice(id) {
         this.selectedDeviceId = id;
         this.saveDevices();
+        // Optimistically render locally
         const dev = this.getSelectedDevice();
         if (dev) this.applySelectedDevice(dev);
         this.renderDevices();
+        // Inform backend so other clients / server state stay in sync
+        try {
+            fetch('/api/device/select', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) })
+                .then(r=>r.json()).then(j=>{
+                    if(!j.success){ this.log('Server selection update failed','warning'); }
+                }).catch(e=> this.log('Selection sync error: '+e.message,'error'));
+        } catch(e){ /* ignore */ }
     }
 
     deleteDevice(id) {
@@ -952,10 +969,63 @@ class ESP32DevUI {
         if (dev) this.applySelectedDevice(dev);
     }
 
+    // Central helper to change device communication mode and persist to backend
+    async setDeviceMode(deviceId, mode) {
+        if (!deviceId || (mode !== 'serial' && mode !== 'wifi')) return;
+        const dev = this.devices.find(d => d.id === deviceId);
+        if (!dev) return;
+        dev.meta = dev.meta || {};
+        if (dev.meta.commMode === mode) return; // no change
+        dev.meta.commMode = mode;
+        // Persist to backend
+        try {
+            const r = await fetch(`/api/device/${encodeURIComponent(dev.id)}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port: dev.com || dev.port || null, meta: dev.meta })
+            });
+            const j = await r.json();
+            if (!j.success) {
+                this.log('Failed to update mode: ' + (j.error || 'error'), 'error');
+            } else {
+                this.log(`Mode set to ${mode} for ${dev.id}`, 'info');
+                if (dev.id === this.selectedDeviceId) this.applySelectedDevice(dev);
+                // Re-render affected UIs
+                this.renderDevices();
+                try { this.refreshTestControlsMode(); } catch(_){}
+            }
+        } catch (e) {
+            this.log('Mode update error: ' + e.message, 'error');
+        }
+    }
+
     renderDevices() {
         const container = document.getElementById('saved-devices');
         if (!container) return;
         container.innerHTML = '';
+        // Inject icon button styles (idempotent)
+        if(!document.getElementById('device-card-icon-style')){
+            const st = document.createElement('style');
+            st.id='device-card-icon-style';
+            st.textContent = `
+            .device-card{position:relative;border:1px solid #30363d;border-radius:8px;padding:12px;background:#161b22;min-width:250px;}
+            .device-card .device-status{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px;}
+            .device-card .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#8b949e;}
+            .device-card .status-online{background:#238636!important;}
+            .device-card .status-offline{background:#d1242f!important;}
+            .device-card .action-bar{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+            .device-card button.icon-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid #30363d;background:#1f242b;color:#e6e6e6;border-radius:6px;cursor:pointer;font-size:16px;line-height:1;transition:background .15s,border-color .15s;}
+            .device-card button.icon-btn:hover{background:#30363d;border-color:#3a4149;}
+            .device-card button.icon-btn.active{background:#238636;border-color:#238636;color:#fff;}
+            .device-card button.icon-btn.danger{background:#3d1f1f;border-color:#593131;color:#ffb4b4;}
+            .device-card button.icon-btn.danger:hover{background:#a40e26;border-color:#a40e26;color:#fff;}
+            .device-card button.icon-btn.secondary{background:#1f242b;}
+            .device-card .wifi-line{margin-top:4px;font-size:11px;min-height:16px;}
+            .device-card .muted{opacity:.55;}
+            .device-card.selected{outline:2px solid #238636;}
+            .device-card .tooltip-wrap{display:none;}
+            `;
+            document.head.appendChild(st);
+        }
         // Ensure test controls container exists (only once)
         this._ensureTestControls();
         if (!Array.isArray(this.devices) || this.devices.length === 0) {
@@ -965,29 +1035,53 @@ class ESP32DevUI {
             container.appendChild(empty);
             return;
         }
-    this.devices.forEach(d => {
+                this.devices.forEach(d => {
             const card = document.createElement('div');
-            card.className = 'device-card';
             const selected = d.id === this.selectedDeviceId;
+            card.className = 'device-card'+(selected?' selected':'');
             card.innerHTML = `
                 <div class="device-status">
-                    <span class="status-dot ${selected ? 'status-online' : 'status-offline'}"></span>
+                    <span class="status-dot ${selected ? 'status-online' : 'status-offline'}" aria-label="${selected?'Selected':'Not Selected'}"></span>
                     <strong>${d.name || d.id}</strong>
                 </div>
-                <div><small>IP: ${d.ip || '-'}</small></div>
-                <div><small>COM: ${d.com || '-'}</small></div>
-        <div class="wifi-line"><small id="wifi-status-${d.id}"><span class="muted">WiFi: —</span></small></div>
-                <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-                    <button class="btn btn-small ${selected ? 'btn-success' : 'btn-outline'}" data-act="select" data-id="${d.id}">${selected ? 'Selected' : 'Select'}</button>
-                    <button class="btn btn-small" data-act="edit" data-id="${d.id}">Edit</button>
-                    <button class="btn btn-small btn-outline" data-act="ping" data-id="${d.id}">Ping</button>
-                    <button class="btn btn-small btn-danger" data-act="delete" data-id="${d.id}">Delete</button>
-                </div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;margin-bottom:2px;align-items:center;">
+                                    <div>IP: <span>${d.ip || '-'}</span></div>
+                                    <div>COM: <span class="dev-com-label">${d.com || '-'}</span></div>
+                                    <div style="display:flex;align-items:center;gap:4px;">
+                                        <span style="font-size:10px;opacity:.6;">Mode</span>
+                                        <div class="mode-btn-group" data-id="${d.id}" style="display:inline-flex;gap:4px;">
+                                            <button class="icon-btn mode-btn ${ (d.meta&&d.meta.commMode==='serial')||(!d.meta||!d.meta.commMode)?'active':'' }" data-mode="serial" title="Serial mode">S</button>
+                                            <button class="icon-btn mode-btn ${ d.meta&&d.meta.commMode==='wifi' ? 'active':'' }" data-mode="wifi" title="WiFi mode">W</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="wifi-line"><small id="wifi-status-${d.id}"><span class="muted">WiFi: —</span></small><span class="ping-spinner" id="ping-spin-${d.id}" style="display:none;margin-left:6px;font-size:12px;">⏳</span></div>
+                                <div class="action-bar">
+                                    <div class="icon-btn-wrap"><button class="icon-btn ${selected?'active':''}" data-act="select" data-id="${d.id}" aria-label="Select Device">${selected?'✔':'✓'}</button><span class="lbl">${selected?'Sel':'Select'}</span></div>
+                                    <div class="icon-btn-wrap"><button class="icon-btn secondary" data-act="edit" data-id="${d.id}" aria-label="Edit">✎</button><span class="lbl">Edit</span></div>
+                                    <div class="icon-btn-wrap"><button class="icon-btn secondary" data-act="ping" data-id="${d.id}" aria-label="Ping">📡</button><span class="lbl">Ping</span></div>
+                                    <div class="icon-btn-wrap"><button class="icon-btn secondary" data-act="led-off" data-id="${d.id}" aria-label="LED Off">💡✕</button><span class="lbl">LED</span></div>
+                                    <div class="icon-btn-wrap"><button class="icon-btn danger" data-act="delete" data-id="${d.id}" aria-label="Delete">🗑</button><span class="lbl">Del</span></div>
+                                    <div class="icon-btn-wrap"><button class="icon-btn secondary" data-act="adv" data-id="${d.id}" aria-label="Advanced">⚙</button><span class="lbl">Adv</span></div>
+                                </div>
+                                <div class="adv-panel" id="adv-${d.id}" style="display:none;margin-top:8px;padding:6px;border:1px solid #30363d;border-radius:6px;background:#1c2128;font-size:11px;line-height:1.4;">
+                                     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
+                                         <label style="font-size:10px;opacity:.65;">Comm Mode</label>
+                                         <select data-role="comm-mode" style="background:#0d1117;color:#e6e6e6;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:2px 4px;">
+                                             <option value="serial" ${(d.meta&&d.meta.commMode==='wifi')?'':'selected'}>Serial</option>
+                                             <option value="wifi" ${(d.meta&&d.meta.commMode==='wifi')?'selected':''}>WiFi</option>
+                                         </select>
+                                         <label style="font-size:10px;opacity:.65;">Port</label>
+                                         <select data-role="comm-port" style="background:#0d1117;color:#e6e6e6;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:2px 4px;min-width:90px;"></select>
+                                         <button class="icon-btn secondary" data-act="apply-comm" data-id="${d.id}" title="Apply" aria-label="Apply">💾</button>
+                                     </div>
+                                     <div style="font-size:10px;opacity:.55;">ID: ${d.id}</div>
+                                </div>
             `;
             container.appendChild(card);
 
             // wire actions
-            card.querySelectorAll('button[data-act]')?.forEach(btn => {
+                        card.querySelectorAll('button[data-act]')?.forEach(btn => {
                 const act = btn.getAttribute('data-act');
                 const id = btn.getAttribute('data-id');
                 btn.addEventListener('click', async () => {
@@ -1000,16 +1094,35 @@ class ESP32DevUI {
                     if (act === 'ping') {
                         const dev = this.devices.find(x => x.id === id);
                         if (dev && dev.ip) {
+                                                        const spin = document.getElementById(`ping-spin-${id}`); if(spin) spin.style.display='inline';
                             try {
                                 const ok = await this.testRemoteHost(dev.ip);
                                 alert(ok ? `Device ${dev.name} reachable` : `Device ${dev.name} not reachable`);
                             } catch (_) { alert('Ping failed'); }
+                                                        finally { if(spin) spin.style.display='none'; }
                         } else {
                             alert('No IP set for device');
                         }
                     }
+                    if (act === 'led-off') {
+                        this.sendLedOff(id);
+                    }
+                                        if (act === 'adv') {
+                                             const panel = document.getElementById(`adv-${id}`); if(panel){ panel.style.display = panel.style.display==='none'?'block':'none'; }
+                                        }
                 });
             });
+
+                        // Mode button group handling
+                        const modeGroup = card.querySelector('.mode-btn-group');
+                        if(modeGroup){
+                            modeGroup.querySelectorAll('button.mode-btn').forEach(btn=>{
+                                btn.addEventListener('click', ()=>{
+                                    const newMode = btn.getAttribute('data-mode');
+                                    this.setDeviceMode(d.id, newMode);
+                                });
+                            });
+                        }
 
             // Fetch WiFi status for this device (non-blocking)
             this.updateDeviceWifiStatus(d).catch(() => {
@@ -1053,7 +1166,7 @@ class ESP32DevUI {
                         dev.meta = dev.meta || {};
                         dev.meta.commMode = commMode;
                         // Persist to backend
-                        fetch(`/api/devices/${encodeURIComponent(id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port: portVal || null, meta: dev.meta }) })
+                        fetch(`/api/device/${encodeURIComponent(id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port: portVal || null, meta: dev.meta }) })
                             .then(r=>r.json()).then(j=>{
                                 if(!j.success) this.log(`Failed saving comm settings for ${id}: ${j.error}`,'error');
                                 else this.log(`Updated communication settings for ${id}`,'info');
@@ -1098,7 +1211,14 @@ class ESP32DevUI {
             if (!sel.dataset.bound) {
                 sel.addEventListener('change', () => {
                     const id = sel.value;
-                    fetch('/api/device/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+                    // local optimistic update
+                    this.selectedDeviceId = id;
+                    const dev = this.getSelectedDevice();
+                    if (dev) this.applySelectedDevice(dev);
+                    this.renderDevices();
+                    fetch('/api/device/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+                        .then(r=>r.json()).then(j=>{ if(!j.success) this.log('Header selection sync failed','warning'); })
+                        .catch(e=> this.log('Header selection error: '+e.message,'error'));
                 });
                 sel.dataset.bound = '1';
             }
@@ -1109,37 +1229,51 @@ class ESP32DevUI {
 
     updateHeaderCommControls() {
         try {
-            const modeSel = document.getElementById('header-comm-mode');
             const portSel = document.getElementById('header-comm-port');
-            if (!modeSel || !portSel) return;
+            if (!portSel) return;
+            // Replace mode select with button group if not already transformed
+            let modeContainer = document.getElementById('header-comm-mode');
+            if (modeContainer && modeContainer.tagName === 'SELECT') {
+                const parent = modeContainer.parentElement;
+                const grp = document.createElement('div');
+                grp.id = 'header-comm-mode';
+                grp.className = 'mode-btn-group-header';
+                grp.innerHTML = `
+                  <button class="icon-btn mode-btn" data-mode="serial">Serial</button>
+                  <button class="icon-btn mode-btn" data-mode="wifi">WiFi</button>`;
+                parent.replaceChild(grp, modeContainer);
+                modeContainer = grp;
+            }
             const dev = this.getSelectedDevice();
-            // Populate port list from available ports (mirror main com-port-select if present)
-            const headerSerialSelect = document.getElementById('com-port-select');
+            // Populate port list from master com select
+            const master = document.getElementById('com-port-select');
             portSel.innerHTML = '';
-            if (headerSerialSelect && headerSerialSelect.options.length) {
-                Array.from(headerSerialSelect.options).forEach(o => {
-                    const opt = document.createElement('option');
-                    opt.value = o.value; opt.textContent = o.textContent || o.value;
-                    portSel.appendChild(opt);
+            if (master && master.options.length) {
+                Array.from(master.options).forEach(o => {
+                    const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent || o.value; portSel.appendChild(opt);
                 });
             }
+            let currentMode = 'serial';
             if (dev) {
-                const commMode = dev.meta?.commMode || 'serial';
-                modeSel.value = commMode;
-                if (dev.port) portSel.value = dev.port;
-                else if (dev.com) portSel.value = dev.com;
-            } else {
-                modeSel.value = 'serial';
+                currentMode = dev.meta?.commMode || 'serial';
+                if (dev.port) portSel.value = dev.port; else if (dev.com) portSel.value = dev.com;
             }
-            // Enable / disable
-            const disabled = !dev;
-            modeSel.disabled = disabled;
-            portSel.disabled = disabled || (modeSel.value !== 'serial');
-            // Bind events once
-            if (!modeSel.dataset.bound) {
-                modeSel.addEventListener('change', () => this._persistHeaderComm());
-                modeSel.dataset.bound = '1';
+            // Update header mode buttons active state
+            if (modeContainer) {
+                modeContainer.querySelectorAll('button.mode-btn').forEach(btn => {
+                    const m = btn.getAttribute('data-mode');
+                    if (m === currentMode) btn.classList.add('active'); else btn.classList.remove('active');
+                    if (!btn.dataset.bound) {
+                        btn.addEventListener('click', () => {
+                            if (!dev) return;
+                            this.setDeviceMode(dev.id, m);
+                        });
+                        btn.dataset.bound = '1';
+                    }
+                    btn.disabled = !dev;
+                });
             }
+            portSel.disabled = !dev || currentMode !== 'serial';
             if (!portSel.dataset.bound) {
                 portSel.addEventListener('change', () => this._persistHeaderComm());
                 portSel.dataset.bound = '1';
@@ -1148,11 +1282,10 @@ class ESP32DevUI {
     }
 
     _persistHeaderComm() {
-        const modeSel = document.getElementById('header-comm-mode');
-        const portSel = document.getElementById('header-comm-port');
-        const dev = this.getSelectedDevice();
-        if (!dev || !modeSel || !portSel) return;
-        const commMode = modeSel.value;
+    const portSel = document.getElementById('header-comm-port');
+    const dev = this.getSelectedDevice();
+    if (!dev || !portSel) return;
+    const commMode = dev.meta?.commMode || 'serial';
         const port = portSel.value || null;
         // Update local model
         dev.meta = dev.meta || {}; dev.meta.commMode = commMode;
@@ -1163,7 +1296,7 @@ class ESP32DevUI {
         } else {
             portSel.disabled = false;
         }
-        fetch(`/api/devices/${encodeURIComponent(dev.id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port, meta: dev.meta }) })
+    fetch(`/api/device/${encodeURIComponent(dev.id)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ port, meta: dev.meta }) })
             .then(r=>r.json()).then(j=>{
                 if (!j.success) this.log('Failed to persist comm settings: '+(j.error||'error'),'error');
                 else this.log('Comm settings updated for '+dev.id,'info');
@@ -1221,6 +1354,75 @@ class ESP32DevUI {
 
     // Refresh WiFi status line immediately for selected device
     try { if (dev) this.updateDeviceWifiStatus(dev); } catch (e) { /* ignore */ }
+    // Render dedicated selected card
+    try { this.renderSelectedDeviceCard(); } catch (e) { /* ignore */ }
+    // Update bottom test controls visibility based on mode
+    try { this.refreshTestControlsMode(); } catch (e) { /* ignore */ }
+    }
+
+    // Send LED off command to backend (placeholder implementation)
+    async sendLedOff(id){
+        const targetId = id || this.selectedDeviceId;
+        if(!targetId){ alert('No device selected'); return; }
+        try {
+            const r = await fetch(`/api/device/${encodeURIComponent(targetId)}/led/off`, { method:'POST' });
+            const j = await r.json();
+            if(!j.success) throw new Error(j.error||'failed');
+            this.log(`LED off (${j.method||'?'}) OK for ${targetId}`,'info');
+            // Optionally provide lightweight visual feedback
+            try {
+                const btns = document.querySelectorAll(`button[data-act='led-off'][data-id='${targetId}']`);
+                btns.forEach(b=>{ b.classList.add('active'); setTimeout(()=>b.classList.remove('active'), 600); });
+            } catch(_){}
+        } catch(e){
+            this.log('LED off error: '+e.message,'error');
+            alert('LED off failed: '+e.message);
+        }
+    }
+
+    // Dedicated selected device card renderer
+    renderSelectedDeviceCard(){
+        const host = document.getElementById('selected-device-card');
+        if(!host) return;
+        const dev = this.getSelectedDevice();
+        if(!dev){ host.innerHTML = '<div class="device-card" style="opacity:.6"><em>No device selected</em></div>'; return; }
+        const commMode = dev.meta?.commMode || 'serial';
+        host.innerHTML = `<div class="device-card selected">
+            <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>
+               <div style='display:flex;align-items:center;gap:8px;'>
+                   <span class="status-dot status-online"></span>
+                   <strong>${dev.name || dev.id}</strong>
+               </div>
+               <button class='icon-btn' data-act='led-off' data-id='${dev.id}' title='LED Off' aria-label='LED Off'>💡✕</button>
+            </div>
+            <div style='display:flex;flex-wrap:wrap;gap:12px;font-size:12px;margin-bottom:6px;'>
+                <div>IP: <span>${dev.ip||'-'}</span></div>
+                <div>COM: <span>${dev.com||dev.port||'-'}</span></div>
+                <div style='display:flex;align-items:center;gap:6px;'>
+                    <span style='font-size:10px;opacity:.6;'>Mode</span>
+                    <div class='mode-btn-group-selected' data-id='${dev.id}' style='display:inline-flex;gap:6px;'>
+                        <button class='icon-btn mode-btn ${commMode==='serial'?'active':''}' data-mode='serial' title='Serial mode'>Serial</button>
+                        <button class='icon-btn mode-btn ${commMode==='wifi'?'active':''}' data-mode='wifi' title='WiFi mode'>WiFi</button>
+                    </div>
+                </div>
+            </div>
+            <div class='wifi-line' style='font-size:11px'><small id='wifi-status-${dev.id}'><span class='muted'>WiFi: —</span></small></div>
+        </div>`;
+        // wire LED button
+        const ledBtn = host.querySelector("button[data-act='led-off']");
+        ledBtn?.addEventListener('click', ()=> this.sendLedOff(dev.id));
+        // mode buttons in selected card
+        const selGroup = host.querySelector('.mode-btn-group-selected');
+        if(selGroup){
+            selGroup.querySelectorAll('button.mode-btn').forEach(btn=>{
+                btn.addEventListener('click', ()=>{
+                    const m = btn.getAttribute('data-mode');
+                    this.setDeviceMode(dev.id, m);
+                });
+            });
+        }
+        // fetch WiFi status line for selected device (fresh)
+        try { this.updateDeviceWifiStatus(dev); } catch (e) { /* ignore */ }
     }
 
     refreshHeaderComListToDeviceForm() {
@@ -1241,9 +1443,11 @@ class ESP32DevUI {
             wrap.style.margin = '12px 0';
             wrap.innerHTML = `
                 <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-                    <button id="btn-run-api-tests" class="btn btn-outline btn-small">Run API Tests</button>
-                    <button id="btn-run-serial-test" class="btn btn-outline btn-small">Serial Status</button>
-                    <button id="btn-run-serial-poke" class="btn btn-outline btn-small">Serial Poke</button>
+                    <button id="btn-run-api-tests" class="btn btn-outline btn-small mode-wifi-only" title="Run a set of HTTP health checks">Run API Tests</button>
+                    <button id="btn-wifi-ping" class="btn btn-outline btn-small mode-wifi-only" title="Ping selected device host">Ping Device</button>
+                    <button id="btn-wifi-status" class="btn btn-outline btn-small mode-wifi-only" title="Refresh WiFi status line">WiFi Status</button>
+                    <button id="btn-run-serial-test" class="btn btn-outline btn-small mode-serial-only" title="Query serial manager status">Serial Status</button>
+                    <button id="btn-run-serial-poke" class="btn btn-outline btn-small mode-serial-only" title="Send small poke over open serial">Serial Poke</button>
                     <span id="dev-test-summary" class="muted" style="margin-left:4px;"></span>
                 </div>
                 <details id="dev-test-details" style="margin-top:6px;">
@@ -1296,7 +1500,56 @@ class ESP32DevUI {
                     document.getElementById('dev-test-details').open = true;
                 } catch (e) { append('Serial poke error: '+e.message); setSummary('Serial poke error'); }
             });
+
+            // WiFi / HTTP specific buttons
+            const wifiPingBtn = document.getElementById('btn-wifi-ping');
+            wifiPingBtn?.addEventListener('click', async () => {
+                clear(); setSummary('Pinging device...');
+                try {
+                    const dev = this.getSelectedDevice();
+                    if(!dev || !dev.ip) throw new Error('No selected device IP');
+                    const ok = await this.testRemoteHost(dev.ip);
+                    append(JSON.stringify({ host: dev.ip, reachable: ok }, null, 2));
+                    setSummary(ok ? 'Ping OK' : 'Ping failed');
+                    document.getElementById('dev-test-details').open = true;
+                } catch(e){ append('Ping error: '+e.message); setSummary('Ping error'); }
+            });
+            const wifiStatusBtn = document.getElementById('btn-wifi-status');
+            wifiStatusBtn?.addEventListener('click', async () => {
+                clear(); setSummary('Fetching WiFi status...');
+                try {
+                    const dev = this.getSelectedDevice();
+                    if(!dev || !dev.ip) throw new Error('No selected device IP');
+                    await this.updateDeviceWifiStatus(dev);
+                    append('WiFi status updated in device card.');
+                    setSummary('WiFi status refreshed');
+                } catch(e){ append('WiFi status error: '+e.message); setSummary('WiFi status error'); }
+            });
+
+            // Initial hide/show based on current selection
+            try { this.refreshTestControlsMode(); } catch(_) {}
         } catch (e) { /* ignore */ }
+    }
+
+    // Toggle visibility of test controls depending on selected device communication mode
+    refreshTestControlsMode(){
+        const wrap = document.getElementById('dev-test-controls');
+        if(!wrap) return;
+        const dev = this.getSelectedDevice();
+        const mode = dev?.meta?.commMode || 'serial';
+        // Hide/show groups
+        wrap.querySelectorAll('.mode-serial-only').forEach(el => {
+            el.style.display = (mode === 'serial') ? '' : 'none';
+        });
+        wrap.querySelectorAll('.mode-wifi-only').forEach(el => {
+            el.style.display = (mode === 'wifi') ? '' : 'none';
+        });
+        // Update summary hint when switching modes
+        const summary = document.getElementById('dev-test-summary');
+        if(summary){
+            if(!dev) summary.textContent = 'No device selected';
+            else summary.textContent = mode === 'serial' ? 'Serial test tools' : 'HTTP/WiFi test tools';
+        }
     }
 
     // Internal helper to enable/disable flash & erase buttons based on serial availability

@@ -156,3 +156,24 @@ Troubleshooting:
 - Link Not Highlighted? The active link match uses `window.location.pathname` – ensure the file name matches the link href exactly (case sensitive on some hosts).
 
 This section supersedes any older documentation referring to `universal-menu.js` or multiple per‑page headers.
+
+## Global Selected Device Sidebar
+
+All development pages (dashboard, wifi, flash, device, AI, AP list, build, development, logs, files, esp32c6, settings, peers, debug console) can display a consistent Selected Device card via `device-sidebar.js`. It reuses the existing device state managed by `app.js` (class `ESP32DevUI`).
+
+Usage:
+
+1. Include the script after `app.js` in the page:
+  `<script src="device-sidebar.js"></script>`
+2. If the page has an element with class `sidebar`, the Selected Device panel is prepended there. Otherwise a lightweight sidebar container is created automatically at the top of the main layout.
+3. The card shows: name, IP, COM/Port, current communication mode (Serial/WiFi) with toggle buttons, and an LED Off action.
+4. It listens to WebSocket events (`device-list`, `device-selected`, `device-removed`) and also performs a periodic refresh every 8s to capture local‑only changes.
+
+Notes:
+
+- No additional markup is required; a placeholder can optionally be added but is not necessary.
+- Styling is scoped; it will not override existing device cards on the Devices page.
+- The LED Off button calls the unified backend endpoint `/api/device/:id/led/off` which routes based on mode.
+- Mode changes propagate through `setDeviceMode` ensuring backend persistence and UI re-render.
+
+If you later introduce a global layout refactor (e.g., a universal left nav), the sidebar wrapper can be relocated without modifying the component logic—only placement code would change.

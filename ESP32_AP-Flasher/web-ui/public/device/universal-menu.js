@@ -1,75 +1,54 @@
 // Universal Menu Loader
 // Enhanced version with feature detection and smart loading
+/*
+ * universal-menu.js (DEPRECATED)
+ * -------------------------------------------------------------
+ * This legacy script has been superseded by shared-nav.js which provides
+ * a unified navigation bar + device/method status pills across all pages.
+ *
+ * Any page still loading this file should migrate:
+ *   1. Remove <script src="universal-menu.js"> tag.
+ *   2. Add   <script src="shared-nav.js" defer></script>
+ *   3. Remove static <header class="advanced-header"> markup.
+ *
+ * For backwards compatibility we expose a minimal stub object so that
+ * existing null / property checks (e.g. window.universalMenu?.menuLoaded)
+ * do not throw. If shared-nav is already present this file does nothing
+ * except log a warning once.
+ */
+(function(){
+	if (window.__UNIVERSAL_MENU_DEPRECATED__) return; // idempotent
+	window.__UNIVERSAL_MENU_DEPRECATED__ = true;
 
-class UniversalMenu {
-	constructor() {
-		this.menuLoaded = false;
-		this.retryCount = 0;
-		this.maxRetries = 3;
-		this.featureManager = null;
-		this.init();
+	const sharedPresent = !!document.querySelector('.shared-global-nav');
+	const warn = (msg) => console.warn('[universal-menu deprecated]', msg);
+
+	warn('Loaded legacy universal-menu.js. Please migrate this page to shared-nav.js.');
+	if (sharedPresent) {
+		console.info('[universal-menu] shared-nav detected; no legacy DOM injected.');
 	}
-	
-	async init() {
-		// Wait for DOM to be ready
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', () => this.loadMenu());
-		} else {
-			// Small delay to ensure all elements are ready
-			setTimeout(() => this.loadMenu(), 100);
-		}
-		
-		// Wait for feature manager if available
-		this.waitForFeatureManager();
-	}
-	
-	async waitForFeatureManager() {
-		let attempts = 0;
-		const maxAttempts = 10;
-		
-		const checkForFeatureManager = () => {
-			if (window.featureManager) {
-				this.featureManager = window.featureManager;
-				console.log('Universal Menu: Feature manager connected');
-				return true;
-			}
-			attempts++;
-			if (attempts < maxAttempts) {
-				setTimeout(checkForFeatureManager, 500);
-			} else {
-				console.log('Universal Menu: Running without feature manager');
-			}
-			return false;
-		};
-		
-		checkForFeatureManager();
-	}
-	
-	async loadMenu() {
-		try {
-			// Find menu container with better fallback logic
-			let menuContainer = document.getElementById('menu-container') || 
-								document.querySelector('.menu-container');
-			
-			if (!menuContainer) {
-				menuContainer = this.createMenuContainer();
-			}
-			
-			// Load menu content with retry logic
-			const response = await this.fetchWithRetry('menu.html');
-			const menuHTML = await response.text();
-			
-			// Extract just the menu div and script from the loaded HTML
-			const parser = new DOMParser();
-			const doc = parser.parseFromString(menuHTML, 'text/html');
-			const menuDiv = doc.querySelector('#universal-menu');
-			const menuScript = doc.querySelector('script');
-			
+
+	// Provide minimal API surface
+	const stub = {
+		menuLoaded: sharedPresent || true,
+		links: [],
+		init: () => {},
+		buildMenu: () => warn('buildMenu() called on deprecated universal-menu stub (ignored).')
+	};
+
+	// Dispatch legacy event for any listeners waiting on 'menuLoaded'
+	setTimeout(() => {
+		try { window.dispatchEvent(new Event('menuLoaded')); } catch(e) {}
+	}, 0);
+
+	window.universalMenu = stub; // single assignment
+})();
+
 			if (menuDiv) {
 				// Clear container and add menu
 				menuContainer.innerHTML = '';
 				menuContainer.appendChild(menuDiv.cloneNode(true));
-				
+
 				// Execute the menu script with error handling
 				if (menuScript) {
 					try {
@@ -78,26 +57,27 @@ class UniversalMenu {
 						console.warn('Menu script error:', scriptError);
 					}
 				}
-				
+
 				// Set active menu item
 				this.setActiveMenuItem();
-				
+
 				this.menuLoaded = true;
 				console.log('Universal menu loaded successfully');
-				
+
 				// Dispatch event for other scripts to know menu is ready
 				window.dispatchEvent(new CustomEvent('menuLoaded'));
 			} else {
 				throw new Error('Menu div not found in loaded HTML');
 			}
-			
+
+		}
+// Wait for shared navigation to be ready
 		} catch (error) {
 			console.error('Error loading universal menu:', error);
 			// Fallback to basic menu if loading fails
 			this.createFallbackMenu();
 		}
-	}
-	
+
 	async fetchWithRetry(url) {
 		for (let i = 0; i <= this.maxRetries; i++) {
 			try {
@@ -115,11 +95,11 @@ class UniversalMenu {
 			}
 		}
 	}
-	
+
 	setActiveMenuItem() {
 		const currentPage = window.location.pathname.split('/').pop().replace('.html', '') || 'index';
 		const menuItems = document.querySelectorAll('#universal-menu .menu-btn');
-		
+
 		menuItems.forEach(item => {
 			item.classList.remove('active');
 			const itemPage = item.getAttribute('data-page') || item.href.split('/').pop().replace('.html', '');
@@ -128,17 +108,17 @@ class UniversalMenu {
 			}
 		});
 	}
-	
+
 	createMenuContainer() {
 		// Create a menu container if none exists
 		const container = document.createElement('div');
 		container.id = 'menu-container';
 		container.className = 'menu-container';
-		
+
 		// Insert at the beginning of body or after header
 		const header = document.querySelector('header');
 		const targetElement = header || document.body.firstElementChild;
-		
+
 		if (header) {
 			header.insertAdjacentElement('afterend', container);
 		} else if (targetElement) {
@@ -146,10 +126,10 @@ class UniversalMenu {
 		} else {
 			document.body.insertBefore(container, document.body.firstChild);
 		}
-		
+
 		return container;
 	}
-	
+
 	createFallbackMenu() {
 		const menuContainer = document.getElementById('menu-container') || this.createMenuContainer();
 		menuContainer.innerHTML = `
@@ -200,7 +180,7 @@ class UniversalMenu {
 				</a>
 			</div>
 		`;
-		
+
 		// Set active menu item for fallback menu
 		this.setActiveMenuItem();
 		console.log('Fallback menu created');

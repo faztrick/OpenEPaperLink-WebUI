@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="merged-styles.css?2.74" type="text/css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
+
     <!-- Core JavaScript modules -->
     <script src="constants.js?3.0" defer></script>
     <script src="utils.js?3.0" defer></script>
@@ -15,15 +15,16 @@
     <script src="ui-components.js?3.0" defer></script>
     <!-- Feature-specific modules -->
     <script src="main.js?3.0" defer></script>
-    <script src="universal-menu.js" defer></script>
-    
+    <script src="shared-nav.js" defer></script>
+    <!-- universal-menu.js deprecated; replaced by shared-nav.js -->
+
     <style>
         .swd-container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         .compact-header {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
@@ -38,34 +39,34 @@
             flex-wrap: wrap;
             gap: 1rem;
         }
-        
+
         .header-left {
             display: flex;
             align-items: center;
             gap: 0.75rem;
         }
-        
+
         .header-title {
             color: white;
             font-size: 1.1rem;
             font-weight: 600;
             margin: 0;
         }
-        
+
         .header-subtitle {
             color: rgba(255, 255, 255, 0.7);
             font-size: 0.8rem;
             margin: 0;
             font-weight: 400;
         }
-        
+
         .header-status {
             display: flex;
             align-items: center;
             gap: 1rem;
             flex-wrap: wrap;
         }
-        
+
         .status-item {
             display: flex;
             align-items: center;
@@ -74,7 +75,7 @@
             font-size: 0.75rem;
             font-weight: 500;
         }
-        
+
         .status-dot {
             width: 6px;
             height: 6px;
@@ -82,17 +83,17 @@
             background: var(--error-color);
             animation: pulse 2s infinite;
         }
-        
+
         .status-dot.online {
             background: var(--success-color);
         }
-        
+
         .quick-menu {
             display: flex;
             gap: 0.5rem;
             align-items: center;
         }
-        
+
         .menu-btn {
             padding: 0.4rem 0.6rem;
             background: rgba(255, 255, 255, 0.1);
@@ -107,12 +108,12 @@
             align-items: center;
             gap: 0.25rem;
         }
-        
+
         .menu-btn:hover {
             background: rgba(255, 255, 255, 0.2);
             transform: translateY(-1px);
         }
-        
+
         .footer-status {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
@@ -126,14 +127,14 @@
             flex-wrap: wrap;
             gap: 1rem;
         }
-        
+
         .footer-left {
             display: flex;
             align-items: center;
             gap: 1rem;
             flex-wrap: wrap;
         }
-        
+
         .footer-item {
             color: rgba(255, 255, 255, 0.7);
             font-size: 0.7rem;
@@ -141,12 +142,12 @@
             align-items: center;
             gap: 0.25rem;
         }
-        
+
         .footer-right {
             color: rgba(255, 255, 255, 0.6);
             font-size: 0.65rem;
         }
-        
+
         .swd-header {
             background: rgba(255, 255, 255, 0.92);
             backdrop-filter: blur(8px);
@@ -155,14 +156,14 @@
             margin-bottom: 12px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
         }
-        
+
         .swd-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 1.5rem;
             margin-bottom: 1.5rem;
         }
-        
+
         .swd-panel {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
@@ -172,12 +173,12 @@
             overflow: hidden;
             transition: all 0.3s ease;
         }
-        
+
         .swd-panel:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
         }
-        
+
         .panel-header {
             background: rgba(255, 255, 255, 0.05);
             padding: 1rem 1.25rem;
@@ -186,34 +187,34 @@
             align-items: center;
             gap: 0.75rem;
         }
-        
+
         .panel-header h3 {
             margin: 0;
             color: var(--text-primary);
             font-weight: 600;
             font-size: 1.1rem;
         }
-        
+
         .panel-content {
             padding: 1.25rem;
         }
-        
+
         .form-group {
             margin-bottom: 1rem;
         }
-        
+
         .form-row {
             display: flex;
             gap: 0.75rem;
             margin-bottom: 0.75rem;
             flex-wrap: wrap;
         }
-        
+
         .form-row > * {
             flex: 1;
             min-width: 120px;
         }
-        
+
         .form-label {
             display: block;
             margin-bottom: 0.5rem;
@@ -221,7 +222,7 @@
             font-weight: 500;
             font-size: 0.9rem;
         }
-        
+
         .form-input {
             width: 100%;
             padding: 0.75rem;
@@ -232,20 +233,20 @@
             font-family: 'Inter', monospace;
             transition: all 0.3s ease;
         }
-        
+
         .form-input:focus {
             outline: none;
             border-color: var(--info-color);
             background: rgba(255, 255, 255, 0.15);
         }
-        
+
         .btn-group {
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
             margin-top: 1rem;
         }
-        
+
         .swd-btn {
             padding: 0.75rem 1rem;
             border: none;
@@ -260,32 +261,32 @@
             flex: 1;
             min-width: 120px;
         }
-        
+
         .swd-btn:hover {
             background: rgba(255, 255, 255, 0.2);
             transform: translateY(-1px);
         }
-        
+
         .swd-btn.primary {
             background: var(--info-color);
             border-color: var(--info-color);
         }
-        
+
         .swd-btn.success {
             background: var(--success-color);
             border-color: var(--success-color);
         }
-        
+
         .swd-btn.warning {
             background: var(--warning-color);
             border-color: var(--warning-color);
         }
-        
+
         .swd-btn.danger {
             background: var(--error-color);
             border-color: var(--error-color);
         }
-        
+
         .status-display {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
@@ -297,34 +298,34 @@
             overflow-y: auto;
             white-space: pre-wrap;
         }
-        
+
         .info-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
             margin-bottom: 1rem;
         }
-        
+
         .info-item {
             background: rgba(255, 255, 255, 0.05);
             padding: 0.75rem;
             border-radius: 8px;
             text-align: center;
         }
-        
+
         .info-value {
             font-size: 1.2rem;
             font-weight: 600;
             color: var(--info-color);
             display: block;
         }
-        
+
         .info-label {
             font-size: 0.8rem;
             color: var(--text-muted);
             margin-top: 0.25rem;
         }
-        
+
         .progress-indicator {
             display: inline-block;
             width: 12px;
@@ -332,34 +333,34 @@
             border-radius: 50%;
             margin-left: 0.5rem;
         }
-        
+
         .progress-indicator.online {
             background: var(--success-color);
             animation: pulse 2s infinite;
         }
-        
+
         .progress-indicator.offline {
             background: var(--error-color);
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        
+
         .canvas-container {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             padding: 1rem;
             text-align: center;
         }
-        
+
         #graph_canvas {
             border: 1px solid var(--glass-border);
             border-radius: 4px;
             background: rgba(255, 255, 255, 0.9);
         }
-        
+
         .instructions {
             background: rgba(59, 130, 246, 0.1);
             border-left: 4px solid var(--info-color);
@@ -367,17 +368,17 @@
             border-radius: 8px;
             margin-top: 1rem;
         }
-        
+
         .instructions h4 {
             color: var(--info-color);
             margin-bottom: 0.75rem;
         }
-        
+
         .instructions ul {
             margin: 0;
             padding-left: 1.5rem;
         }
-        
+
         .instructions li {
             margin-bottom: 0.5rem;
             color: var(--text-secondary);
@@ -396,7 +397,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="header-status">
                 <div class="status-item">
                     <div class="status-dot" id="systemDot"></div>
@@ -415,7 +416,7 @@
                     <span id="uptimeDisplay">--:--</span>
                 </div>
             </div>
-            
+
             			<!-- Universal Menu Container -->
 			<div id="menu-container" class="menu-container"></div>
         </div>
@@ -430,7 +431,7 @@
                     <p class="header-subtitle">Development Tools</p>
                 </div>
             </div>
-            
+
             <div class="header-status">
                 <div class="status-item">
                     <div class="status-dot" id="connectionDot"></div>
@@ -445,7 +446,7 @@
                     <span id="uptimeStatus">00:00</span>
                 </div>
             </div>
-            
+
             			<!-- Universal Menu Container -->
 			<div id="menu-container" class="menu-container"></div>
         </div>
@@ -572,7 +573,7 @@
                         <button class="swd-btn danger" onclick="send('flash_cmd?cmd=erase_all')">Erase All</button>
                         <button class="swd-btn" onclick="send('set_swd?cmd=set_reset')">Reset</button>
                     </div>
-                    
+
                     <div class="form-group">
                         <label class="form-label">Page Erase</label>
                         <div class="form-row">
@@ -732,7 +733,7 @@
         function updateStatusIndicators(connected = false) {
             const indicator = document.getElementById("connectionDot");
             const statusText = document.getElementById("connectionStatus");
-            
+
             if (indicator && statusText) {
                 indicator.className = `status-dot ${connected ? 'online' : ''}`;
                 statusText.textContent = connected ? 'Connected' : 'Disconnected';
@@ -778,31 +779,31 @@
                     throw new Error(`HTTP ${resp.status}`);
                 }
                 let response_text = await resp.text();
-                
+
                 if (response_text.indexOf(';info;') == 0) {
                     let parts = response_text.split(';');
                     const connected = parts[2] == "2";
                     updateStatusIndicators(connected);
-                    
+
                     // Update info cards
-                    document.getElementById('nrf-status').textContent = 
+                    document.getElementById('nrf-status').textContent =
                         connected ? 'Connected' : (parts[2] == "1" ? 'Locked' : 'Disconnected');
-                    document.getElementById('flash-size').textContent = 
+                    document.getElementById('flash-size').textContent =
                         Math.floor(parts[3] / 1024) + ' kB';
-                    document.getElementById('esp-memory').textContent = 
+                    document.getElementById('esp-memory').textContent =
                         Math.floor(parts[12] / 1024) + ' kB';
-                    document.getElementById('soft-device').textContent = 
+                    document.getElementById('soft-device').textContent =
                         '0x' + parseInt(parts[13]).toString(16);
-                    
+
                     // Update header status
                     const flashStatus = document.getElementById('flashStatus');
                     const footerMemory = document.getElementById('footerMemoryInfo');
                     const footerDevice = document.getElementById('footerDeviceInfo');
-                    
+
                     if (flashStatus) flashStatus.textContent = Math.floor(parts[3] / 1024) + ' kB';
                     if (footerMemory) footerMemory.textContent = Math.floor(parts[12] / 1024) + ' KB Free';
                     if (footerDevice) footerDevice.textContent = connected ? 'nRF52 Connected' : 'nRF52 Disconnected';
-                    
+
                     // Detailed info
                     let info = '';
                     if (connected) {
@@ -821,7 +822,7 @@
                     contentDiv.textContent = response_text;
                     updateStatusIndicators(false);
                 }
-                
+
                 // Update footer timestamp
                 updateFooterStatus();
             } catch (err) {
@@ -897,15 +898,15 @@
             const formData = new FormData();
             const fileInput = document.getElementById("flash_file_direct");
             const offset = document.getElementById("flash_up_file_offset").value;
-            
+
             if (!fileInput.files[0]) {
                 answerDiv.textContent = "❌ Please select a file";
                 return;
             }
-            
+
             formData.append("flash_file_direct", fileInput.files[0]);
             formData.append("flash_up_file_offset", offset);
-            
+
             try {
                 answerDiv.textContent = "⏳ Uploading and flashing...";
                 const resp = await fetch("flash_file_direct", {
@@ -926,33 +927,33 @@
         async function captureGraph() {
             const time = document.getElementById("graph_time").value;
             const delay = document.getElementById("graph_delay").value;
-            
+
             try {
                 answerDiv.textContent = "📊 Capturing oscilloscope data...";
                 const resp = await fetch(`get_graph?size=${time}&delay=${delay}`, { method: "GET" });
                 let graph_data = await resp.text();
                 let graph_parts = graph_data.split(',');
                 graph_parts.pop();
-                
+
                 let max_val = Math.max(...graph_parts);
                 let min_val = Math.min(...graph_parts);
-                
+
                 canvas.width = parseInt(time);
                 canvas.height = Math.max(200, max_val - min_val);
-                
+
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
+
                 ctx.beginPath();
                 ctx.strokeStyle = '#3b82f6';
                 ctx.lineWidth = 1;
                 ctx.moveTo(0, max_val - graph_parts[0]);
-                
+
                 for (let i = 1; i < time; i++) {
                     ctx.lineTo(i, max_val - graph_parts[i]);
                 }
                 ctx.stroke();
-                
+
                 answerDiv.textContent = `📊 Graph captured: ${graph_parts.length} samples, range: ${min_val}-${max_val}`;
             } catch (err) {
                 answerDiv.textContent = "❌ Graph capture failed: " + err;

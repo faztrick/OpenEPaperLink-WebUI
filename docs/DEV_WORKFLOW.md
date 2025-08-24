@@ -920,3 +920,212 @@ Supplement: Comprehensive REST Client Collections
 
 - Minimal: `ESP32_AP-Flasher/scripts/rest_client.http`
 - Full coverage: `ESP32_AP-Flasher/web-ui/API_TESTING.http` (includes serial, device WiFi, build, logging, AI, remote, source browsing). Open in VS Code with the REST Client extension to issue requests.
+
+---
+
+### Appendix B: Shared Frontend Utilities (OEPLUtils) (New)
+
+To reduce duplication between the development UI (`web-ui/public/dev`) and the device / legacy UI (`web-ui/public/device`), a lightweight global utility singleton `OEPLUtils` has been introduced (loaded via `shared/oepl-utils.js`). It intentionally avoids ES module semantics so it can be dropped into existing pages without build tooling or script ordering changes (beyond placing it before scripts that consume it).
+
+Core Responsibilities:
+
+| Area | Capability | Notes |
+|------|------------|-------|
+| Fetch helpers | `fetchJSON(url, { timeout, retry })` | Adds timeout + retry (exponential backoff) wrapper around native fetch. |
+| Timeouts | `withTimeout(promise, ms)` | Abort helper used internally. |
+| UI status | `updateStatusDot(dotElOrId, textElOrId, ok, label)` | Normalizes green/red pill + text update logic used across dev & device pages. |
+| Local storage | `loadLocal(key, def)` / `saveLocal(key, val)` | JSON-safe convenience with try/catch. |
+| Performance helpers | `debounce(fn, wait)` / `throttle(fn, wait)` | Standard leading/trailing implementations (safe for UI event binding). |
+| Device cache | `loadDevices()` | Populates internal cache from `/api/devices` (mirrors dev-common). |
+| Device selection | `getSelectedDevice()` / `setSelectedDevice(id)` | Persists to `localStorage` (`oepl:dev:selectedDevice`). |
+| Manual device insert | `upsertDevice({ id, name?, ip?, com? })` | Add or update a device entry (used by dev shared-devices bridging). |
+| Base URL compute | `computeDeviceBase()` | Returns `http://host` form for selected device (or null). |
+| API probe | `probeApi()` | Runs quick `/sysinfo` fetch (2.5s timeout) and emits events w/ success boolean. |
+| Events | `on(event, cb)`, `off(event, cb)`, `emit(event, payload)` | Simple in-memory event bus (no DOM dependency). |
+
+Load Order:
+
+1. `shared/oepl-utils.js`
+2. `dev/dev-common.js` or other consuming scripts
+3. Page-specific large scripts (`app.js`, `main.js`, etc.)
+
+Current Integrations:
+
+- `dev/dev-common.js`: Delegates status pill updates (`setStatus`) and API probing (`probeApi`) to OEPLUtils when present. Future steps will migrate its device polling & interval orchestration.
+- Other dev pages can subscribe to `OEPLUtils.on('devices:updated', ...)` (emitted once broader adoption adds event bridging) – interim use the existing DOM / `dev-common` events.
+
+Migration Path (Incremental):
+
+1. Insert `<script src="../shared/oepl-utils.js"></script>` before existing dev/device scripts (already done for `dev/index.html`).
+2. Replace ad-hoc fetch+timeout snippets with `OEPLUtils.fetchJSON` (remove duplicated AbortController boilerplate).
+3. Swap custom debounce/throttle implementations (if any) with the shared versions to ensure consistent behavior across panels.
+4. Move repeated status dot DOM manipulation (class toggling + text assignment) to `OEPLUtils.updateStatusDot`.
+5. Centralize device list refresh logic: call `OEPLUtils.loadDevices()` on an interval (or reuse `dev-common` until fully migrated). Emit cross-page events from a single source to avoid multiple overlapping `/api/devices` polls.
+6. For device pages (`public/device`), start by using only the status helper + debounce utilities; once stable, integrate device selection to unify persistence keys with dev UI.
+7. (Optional) Introduce a small bundling step (esbuild / rollup) later to convert legacy globals into importable modules; OEPLUtils acts as a bridge until then.
+
+Event Plan (Planned Additions):
+
+| Event | Payload | Purpose |
+|-------|---------|---------|
+| `oepl:devices:updated` | `{ devices, selectedId }` | Published after successful `loadDevices()`; allows any page to update UI. |
+| `oepl:device:selected` | `{ id }` | Fire after `setSelectedDevice()`. |
+| `oepl:api:probe` | `{ ok, host, elapsedMs }` | Result of `probeApi()`. |
+| `devices:updated` (already implemented) | `{ devices, selectedId }` | Low-level event emitted internally & consumable today. |
+
+These will complement existing `dev-common:*` DOM CustomEvents. During migration both channels can coexist; consumers should guard gracefully (subscribe to whichever exists).
+
+Coding Guidelines:
+
+- Keep OEPLUtils dependency‑free (no external libs, only native browser APIs).
+- Avoid storing large mutable state inside OEPLUtils; expose read helpers instead of encouraging direct mutation.
+- Fail soft: all public methods catch & `console.warn` on recoverable errors (network, JSON parse) instead of throwing inside UI loops.
+- Backwards compatibility: never remove an existing OEPLUtils method without a deprecation notice in this appendix first.
+
+Future Enhancements (Ideas):
+
+- Shared WebSocket wrapper with automatic reconnect + unified channel event fan-out.
+- Central build artifact polling helper (currently repeated in dev pages).
+- Unified retry/backoff policy config (global override object).
+- Instrumentation hook (optional callback around each fetch for latency metrics / logging panels).
+
+Verification Checklist for Adopters:
+
+| Step | Check |
+|------|-------|
+| Script order | Utils loaded before consumer scripts (no ReferenceError). |
+| Status dots | Visual class changes still occur & texts update. |
+| Device selection | Persists across page reloads (localStorage key matches old behavior). |
+| API probe | Still updates label/host, errors benign (timeout shows disconnected). |
+| Intervals | No duplicate polling loops (ensure only one source after consolidation). |
+
+If a regression occurs, toggle OEPLUtils off by temporarily commenting out the script tag to confirm whether the issue is related to migration logic.
+
+---
+
+### Appendix C: WiFi Page Layout Modernization (Dev UI)
+
+The development WiFi management page (`public/dev/wifi.html`) was refactored to improve consistency and responsiveness:
+
+Changes:
+
+- Removed extensive inline style attributes; replaced with semantic classes (`page-wrapper`, `page-header-row`, `action-bar`, `wifi-grid`).
+- Compact header variant (`header-compact`) with reduced visual height and standardized select styling (`hc-select`).
+- Responsive grid: collapses to single column below ~980px; action buttons show icons only at narrow widths.
+- Unified status labels (shorter: API, WS, Serial) for better space usage.
+- Toolbar now uses `role="toolbar"` for accessibility; button text wrapped in `<span>` so it can hide responsively while retaining accessible name.
+
+Pending (future):
+
+- Migrate dev header to the same injected `shared-nav.js` approach used by device pages to eliminate duplicate header markup across dev pages.
+- Extract inline status fields grid styling into shared CSS (currently still inline for quick iteration).
+- Relocated device / comm selectors out of the header to a dedicated toolbar below the navigation (`device-toolbar`) to reduce header density and improve visibility of API/WS/Serial status dots.
+
+No functional changes were made to underlying WiFi operations (`wifi.js`).
+
+---
+
+### Appendix D: Dev‑Only Saved Devices & Unified `device.json` (Updated)
+
+The development UI now supports a **separate, optional layer of dev‑only devices** that do not rely on the runtime `/api/devices` endpoint and are persisted independently from the production/device UI selection.
+
+Components Involved:
+
+| Asset | Path | Purpose |
+|-------|------|---------|
+| Config JSON | `/device.json` (virtual, served by server) | Canonical merged device list (replaces legacy static dev-config.json) |
+| Saved Devices Script | `web-ui/public/dev/shared-devices.js` | Renders cards, add/remove/select; now merges config + locally saved list |
+| Utilities (optional sync) | `web-ui/public/shared/oepl-utils.js` | If present, selection is mirrored so API probe/status keeps working |
+
+`/device.json` Schema (version 1):
+
+```jsonc
+{
+  "version": 1,
+  "customDevices": [
+    { "id": "local-sim", "name": "Local Simulator", "host": "127.0.0.1:8080", "com": "" }
+  ],
+  "defaultSelectedDevice": "local-sim",
+  "notes": "(Optional) Not read in production build; purely for developer convenience."
+}
+```
+
+Behavior Merge Rules:
+
+1. Local Saved List (mutable) lives in `localStorage` key `dev_saved_devices_v1` (same key; format unchanged).
+2. Config Custom List (immutable) is now supplied by the server at `/device.json` (no-store); static `dev-config.json` file is deprecated and ignored.
+3. Merge = union by `id`; saved devices always preserved; config devices only added if their `id` not already in saved list.
+4. Selection stored under bumped key `dev_selected_device_v2` (so older key does not auto‑apply if semantics changed).
+5. On first render with no selection: chooses `defaultSelectedDevice` if present and exists after merge; else first device.
+6. Selecting a card updates both the dev saved selection key and (if loaded) calls `OEPLUtils.setSelectedDevice(id)` for shared status/probing.
+
+Events & Interop:
+
+- A DOM CustomEvent `devDeviceSelected` is emitted on `window` with `{ detail:{ id } }` whenever selection changes.
+- Existing dev pages listening for the prior behavior can continue with no changes.
+- If OEPLUtils is present, its persisted key (`oepl:selectedDevice`) still updates through the bridging call but remains logically separate (so device UI pages are not polluted by dev‑only IDs).
+- Bridging leverages `OEPLUtils.upsertDevice()` so API probing/status immediately recognize dev-only hosts without needing `/api/devices` to list them.
+
+Rationale:
+
+- Developers often want to track simulator endpoints, mock hosts, or staging boards that are not discoverable via `/api/devices`.
+- Keeping a clean separation avoids accidental exposure of dev‑only IDs/hosts to production device pages.
+- Config file allows team‑shared defaults (checked into VCS) while preserving each developer's personal additions in localStorage.
+
+Updating / Extending:
+
+- Add new devices using `POST /api/device` or the UI; they appear immediately in `/device.json`.
+- To reset selection, remove `dev_selected_device_v2` from Application > Local Storage in browser dev tools.
+- To clear locally added devices, remove `dev_saved_devices_v1`.
+
+Future Ideas:
+
+| Idea | Benefit |
+|------|---------|
+| Promote a config device into saved list via UI | Let dev tweak name/host then persist |
+| Export / Import saved devices (JSON) | Share across machines |
+| Tagging / grouping | Organize large sets (simulators vs physical) |
+| Inline ping / reachability badge | Quick health glance |
+| Batch select + multi‑probe | Parallel diagnostics |
+
+Troubleshooting:
+
+| Symptom | Cause | Action |
+|---------|-------|--------|
+| Config devices not showing | No devices saved yet | Add a device via UI or POST /api/device |
+| Selection not persisting | LocalStorage blocked (private mode) | Use regular window or allow storage |
+| OEPL status still shows old host | OEPLUtils not loaded before shared-devices | Include `../shared/oepl-utils.js` above `shared-devices.js` |
+| Default selection ignored | No devices present | Add at least one device |
+| API probe uses wrong IP after edit | Cached old device entry | Selecting again triggers `upsertDevice` (or refresh; future: explicit refresh button) |
+
+This appendix will evolve as more dev‑only ergonomics (bulk actions, environment presets) are added.
+
+#### Update: Compact Card Styling (`.compact-device-card`)
+
+Saved Devices now deliberately retain a compact presentation separate from the broader `.device-card` layout used elsewhere. Rationale:
+
+- Keeps quick-access list dense for frequent add/remove cycles.
+- Avoids vertical bloat when many mock/simulator entries exist.
+- Distinguishes ephemeral dev-only entries from runtime enumerated devices.
+
+Class summary:
+
+```css
+.compact-device-card {
+  background:#161b22;
+  border:1px solid #30363d;
+  padding:8px;
+  border-radius:6px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:12px;
+}
+.compact-device-card.selected { outline:2px solid #238636; }
+```
+
+An inline plus tile (`.sd-add-card`) sits as the first card for rapid creation. The header Add button can optionally be removed later without functional impact.
+
+If unifying styles becomes desirable, promote `.compact-device-card` into the main stylesheet and map legacy mini-cards to it via a utility class.
+
+---

@@ -1,0 +1,44 @@
+<div class="dashboard-card overview-card">
+  <div class="card-header">
+    <span class="material-symbols-outlined">dashboard</span>
+    <h3>System Overview</h3>
+    <div class="card-actions">
+      <button onclick="refreshData()" class="icon-btn" title="Refresh">
+        <span class="material-symbols-outlined">refresh</span>
+      </button>
+    </div>
+  </div>
+  <div class="card-content">
+    <div class="overview-grid">
+      <div class="overview-item">
+        <div class="overview-icon">📱</div>
+        <div class="overview-data">
+          <span class="overview-value" id="dash-total-tags">0</span>
+          <span class="overview-label">Total Tags</span>
+        </div>
+      </div>
+      <div class="overview-item" onclick="showOnlineTagsDetails()" style="cursor: pointer;" title="Click for detailed information">
+        <div class="overview-icon online">✅</div>
+        <div class="overview-data">
+          <span class="overview-value" id="dash-online-tags">0</span>
+          <span class="overview-label">Online</span>
+          <span class="overview-sublabel" id="dash-online-details" style="font-size: 0.8em; color: rgba(255,255,255,0.7);">Click for details</span>
+        </div>
+      </div>
+      <div class="overview-item">
+        <div class="overview-icon offline">❌</div>
+        <div class="overview-data">
+          <span class="overview-value" id="dash-offline-tags">0</span>
+          <span class="overview-label">Offline</span>
+        </div>
+      </div>
+      <div class="overview-item">
+        <div class="overview-icon">🔋</div>
+        <div class="overview-data">
+          <span class="overview-value" id="dash-avg-battery">0%</span>
+          <span class="overview-label">Avg Battery</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

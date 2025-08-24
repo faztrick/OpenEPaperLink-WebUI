@@ -94,6 +94,11 @@
   }
 
   function setStatus(dotEl, textEl, ok, label){
+    // Delegate to shared util if available
+    if(window.OEPLUtils && window.OEPLUtils.updateStatusDot){
+      window.OEPLUtils.updateStatusDot(dotEl, textEl, ok, label);
+      return;
+    }
     if(!dotEl) return;
     dotEl.classList.remove('connected','disconnected');
     dotEl.classList.add(ok?'connected':'disconnected');
@@ -108,6 +113,10 @@
   }
 
   async function probeApi(){
+    // Try shared util
+    if(window.OEPLUtils && window.OEPLUtils.probeApi){
+      return window.OEPLUtils.probeApi();
+    }
     const base = computeDeviceBase();
     const { apiDot, apiText } = headerEls();
     if(!base){ setStatus(apiDot, apiText, false, 'API (no host)'); return; }
@@ -156,6 +165,8 @@
   }
 
   function init(){
+    if(init._ran){ return; }
+    init._ran = true;
     loadPersisted();
     populateDeviceSelect();
     bindHeaderEvents();
@@ -163,11 +174,11 @@
     loadDevices().then(()=> probeApi());
     refreshComPorts();
     // periodic refresh (devices + ports)
-    setInterval(()=>{ loadDevices(); refreshComPorts(); probeApi(); }, 15000);
+    init._interval = setInterval(()=>{ loadDevices(); refreshComPorts(); probeApi(); }, 15000);
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  window.addEventListener('spa:navigated', ()=> setTimeout(init,0));
+  window.addEventListener('spa:navigated', ()=> setTimeout(()=>{ if(!init._ran) init(); },0));
 
   global.__OEPL_DEV_COMMON__ = {
     getState: ()=>({ ...STATE }),
@@ -175,4 +186,14 @@
     refreshDevices: loadDevices,
     refreshPorts: refreshComPorts
   };
+
+  // Expose devices to shared util cache if present (one-way sync)
+  try {
+    if(window.OEPLUtils && Array.isArray(STATE.devices) && STATE.devices.length){
+      // Only set selected device if none yet in shared util
+      if(!window.OEPLUtils.getSelectedDevice() && STATE.selectedId){
+        window.OEPLUtils.setSelectedDevice(STATE.selectedId);
+      }
+    }
+  } catch(_) {}
 })(window);

@@ -47,6 +47,11 @@ small.ts { opacity:.5; margin-right:4px; }
     </div>
   </section>
   <aside id="panels">
+    <!-- Global Selected Device Sidebar (injected by device-sidebar.js). We pre-create wrapper so styling/layout fits existing debug panels. -->
+    <div id="global-device-sidebar" class="panel" style="border:1px solid #333;border-radius:6px;margin:0 0 8px 0;padding:6px 8px;background:#181818;">
+      <h2 style="margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:6px"><span style="font-size:14px">🔌</span> Selected Device</h2>
+      <div id="global-selected-device-card"><div style="opacity:.6;font-size:11px"><em>Loading...</em></div></div>
+    </div>
     <div class="panel" id="wifiPanel"><h2>WiFi</h2><pre id="wifiStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
     <div class="panel" id="peerPanel"><h2>Peer</h2><pre id="peerStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
     <div class="panel" id="sensorsPanel"><h2>Sensors</h2><pre id="sensorStatus" style="margin:0;font-size:11px;white-space:pre-wrap;">(waiting)</pre></div>
@@ -86,6 +91,10 @@ small.ts { opacity:.5; margin-right:4px; }
   clearBtn.addEventListener('click', ()=>{ logEl.innerHTML=''; lines=0; statsEl.textContent=''; });
 })();
 </script>
+<!-- Shared utilities + App (for device management) and global selected device sidebar -->
+<script src="../shared/oepl-utils.js"></script>
+<script src="app.js"></script>
+<script src="device-sidebar.js"></script>
 <!-- Floating AI Assistant Widget -->
 <script src="ai-agent-widget.js" defer></script>
 </body>
