@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <FS.h>
+#ifndef SD_CARD_ONLY
+#include <LittleFS.h>
+#endif
 
 #include <unordered_map>
 #include <vector>
@@ -150,6 +153,18 @@ void saveDB(const String &filename)
 
     const long t = millis();
 
+    // Basic sanity check before taking the mutex – if contentFS not yet assigned try to (re)initialize.
+    if (!contentFS)
+    {
+        Serial.println("[FS][WARN] contentFS is null at start of saveDB – attempting Storage.begin() remount");
+        Storage.begin();
+        if (!contentFS)
+        {
+            Serial.println("[FS][ERROR] Remount attempt failed (contentFS still null) – aborting saveDB");
+            return;
+        }
+    }
+
     xSemaphoreTake(fsMutex, portMAX_DELAY);
 
     fs::File existingFile = contentFS->open(filename, "r");
@@ -170,9 +185,41 @@ void saveDB(const String &filename)
     fs::File file = contentFS->open(filename, "w");
     if (!file)
     {
-        Serial.println("saveDB: Failed to open file for writing");
+        Serial.println("[FS][WARN] saveDB first open() failed – checking mount status and free space");
+#ifdef HAS_SDCARD
+        Serial.printf("[FS] SD mounted? %s\n", (contentFS == &SD) ? "yes" : "no");
+#endif
+#ifndef SD_CARD_ONLY
+        Serial.printf("[FS] LittleFS mounted? %s\n", (contentFS == &LittleFS) ? "yes" : "no");
+#endif
+#ifndef SD_CARD_ONLY
+        uint64_t lfTotal = 0, lfUsed = 0;
+        if (contentFS == &LittleFS)
+        {
+            lfTotal = LittleFS.totalBytes();
+            lfUsed = LittleFS.usedBytes();
+            Serial.printf("[FS] LittleFS usage: %llu / %llu bytes (free %llu)\n",
+                          (unsigned long long)lfUsed,
+                          (unsigned long long)lfTotal,
+                          (unsigned long long)(lfTotal - lfUsed));
+        }
+#endif
         xSemaphoreGive(fsMutex);
-        return;
+        // Attempt a one‑time remount & retry outside mutex to avoid deadlocks
+        Serial.println("[FS] Attempting one-time Storage.begin() then retrying saveDB open");
+        Storage.begin();
+        xSemaphoreTake(fsMutex, portMAX_DELAY);
+        file = contentFS->open(filename, "w");
+        if (!file)
+        {
+            Serial.println("saveDB: Failed to open file for writing after retry – aborting");
+            xSemaphoreGive(fsMutex);
+            return;
+        }
+        else
+        {
+            Serial.println("[FS] saveDB retry succeeded");
+        }
     }
 
     file.write('[');

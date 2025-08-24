@@ -10,11 +10,13 @@ const os = require('os');
 const multer = require('multer');
 const net = require('net');
 // Optional modules wrapped so server does not crash if dependencies or native builds are missing.
-let ESP32AIAgent, RemoteServerManager, FileManager, DeviceManager, AgentActionRunner;
+let ESP32AIAgent, RemoteServerManager, FileManager, DeviceManager, AgentActionRunner, ToolSchemas, ToolDispatcher;
 function safeRequire(name, localPath, onFailNote) {
     try { return require(localPath); } catch (e) { console.warn(`[startup] Optional module '${name}' disabled: ${e.message}${onFailNote? ' - '+onFailNote: ''}`); return null; }
 }
 ESP32AIAgent        = safeRequire('ai_agent', './ai_agent');
+ToolSchemas         = safeRequire('ai_tools', './ai_tools');
+ToolDispatcher      = safeRequire('ai_tool_dispatcher', './ai_tool_dispatcher');
 AgentActionRunner   = safeRequire('agent_actions', './agent_actions');
 RemoteServerManager  = safeRequire('remote_manager', './remote_manager');
 FileManager          = safeRequire('file_manager', './file_manager');
@@ -89,6 +91,9 @@ appendLog('node', `server start pid=${process.pid} cwd=${process.cwd()}`);
 
 // Initialize AI Agent, Action Runner and Remote Server Manager
 const aiAgent = ESP32AIAgent ? new ESP32AIAgent() : null;
+// Tool calling dispatcher (independent of legacy aiAgent). Inject device & serial managers once available.
+let aiToolSessionStore = new Map(); // sessionId -> { inputList: [] }
+let aiToolDispatcher = null; // lazily created after serial/device managers ready
 const agentActionRunner = AgentActionRunner ? new AgentActionRunner({
     projectRoot: path.join(__dirname, '..'),
     logFn: (name, line) => appendLog(name, line)
@@ -129,6 +134,60 @@ if (fs.existsSync(repoWwwRoot)) {
 if (!staticRootServed) {
     console.log('No UI static roots found (expected web-ui/public/device or ../wwwroot).');
 }
+
+// --- AI Tool Chat Endpoint (OpenAI Responses API) ---
+// POST /api/ai/chat-tool { message, sessionId?, stream? }
+// Returns: { success, responseText, toolCalls:[...], toolResults:[...], model }
+// If OPENAI_API_KEY missing, returns mock echo.
+app.post('/api/ai/chat-tool', async (req, res) => {
+    try {
+        const { message, sessionId = 'default', stream = false } = req.body || {};
+        if (!message) return res.status(400).json({ success:false, error:'message required' });
+        if (!ToolSchemas || !ToolSchemas.toolSchemas) return res.status(503).json({ success:false, error:'tool schemas unavailable' });
+        if (!aiToolDispatcher) {
+            aiToolDispatcher = ToolDispatcher ? ToolDispatcher.createDispatcher({ deviceManager, serialManager, log: appendLog }) : null;
+        }
+        if (!process.env.OPENAI_API_KEY) {
+            return res.json({ success:true, mock:true, responseText:`[mock] You said: ${message}`, toolCalls:[], toolResults:[] });
+        }
+        const OpenAI = require('openai');
+        const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        // Retrieve session input list
+        const session = aiToolSessionStore.get(sessionId) || { inputList: [] };
+        const inputList = session.inputList;
+        // Append user message
+        inputList.push({ role: 'user', content: message });
+        const tools = ToolSchemas.toolSchemas;
+        const model = process.env.OPEL_AI_TOOL_MODEL || 'gpt-4.1-mini';
+        const basePayload = { model, tools, input: inputList };
+        let response = await client.responses.create(basePayload);
+        inputList.push(...response.output); // keep raw tool call objects
+        const toolCalls = [];
+        const toolResults = [];
+        for (const item of response.output) {
+            if (item.type === 'function_call') {
+                let argsParsed = {};
+                try { argsParsed = JSON.parse(item.arguments || '{}'); } catch (_) {}
+                toolCalls.push({ name: item.name, call_id: item.call_id, arguments: argsParsed });
+                if (aiToolDispatcher) {
+                    const result = await aiToolDispatcher.dispatch(item.name, argsParsed);
+                    const outObj = { type: 'function_call_output', call_id: item.call_id, output: JSON.stringify(result) };
+                    inputList.push(outObj);
+                    toolResults.push({ call_id: item.call_id, result });
+                }
+            }
+        }
+        if (toolResults.length) {
+            response = await client.responses.create({ model, tools, input: inputList, instructions: 'Incorporate tool results. If errors, explain next step. Be concise.' });
+            inputList.push(...response.output);
+        }
+        aiToolSessionStore.set(sessionId, { inputList });
+        res.json({ success:true, responseText: response.output_text, toolCalls, toolResults, model });
+    } catch (e) {
+        appendLog('ai-tools', 'error '+(e.message||e));
+        res.status(500).json({ success:false, error:e.message||String(e) });
+    }
+});
 
 // Fallback to the web-ui/public folder for the built-in UI assets
 app.use(express.static(path.join(__dirname, 'public/dev')));
@@ -282,59 +341,119 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Device proxy: forward calls to a remote device (C6) so the UI doesn't need CORS or direct IPs.
-// Usage: GET/POST /device/<path>?host=192.168.4.2
-app.all('/device/*', async (req, res) => {
+// Enhancements: configurable timeout, per-host concurrency cap, circuit breaker, metrics.
+const DEVICE_PROXY_DEFAULT_TIMEOUT = parseInt(process.env.DEVICE_PROXY_TIMEOUT_MS || '15000', 10);
+const DEVICE_PROXY_MAX_CONCURRENT = parseInt(process.env.DEVICE_PROXY_MAX_CONCURRENT || '4', 10); // per host
+const DEVICE_PROXY_CIRCUIT_FAILS = parseInt(process.env.DEVICE_PROXY_CIRCUIT_FAILS || '5', 10); // open after N consecutive failures
+const DEVICE_PROXY_CIRCUIT_RESET_MS = parseInt(process.env.DEVICE_PROXY_CIRCUIT_RESET_MS || '60000', 10); // half-open after
+const _proxyState = {
+    hosts: new Map(), // host -> { active:number, fails:number, openedAt:number|null, last:number }
+    totals: { requests:0, errors:0, timeouts:0, streamed:0 }
+};
+function _getHostState(h) {
+    let st = _proxyState.hosts.get(h);
+    if (!st) { st = { active:0, fails:0, openedAt:null, last:0 }; _proxyState.hosts.set(h, st); }
+    return st;
+}
+app.get('/api/proxy/metrics', (req,res)=> {
     try {
-        const host = req.query.host || req.body?.host;
+        const hosts = {};
+        for (const [h, s] of _proxyState.hosts.entries()) {
+            hosts[h] = { active:s.active, fails:s.fails, circuitOpen: !!s.openedAt, openedAt: s.openedAt };
+        }
+        res.json({ success:true, totals:_proxyState.totals, hosts, config:{ DEVICE_PROXY_DEFAULT_TIMEOUT, DEVICE_PROXY_MAX_CONCURRENT, DEVICE_PROXY_CIRCUIT_FAILS, DEVICE_PROXY_CIRCUIT_RESET_MS } });
+    } catch(e) { res.status(500).json({ success:false, error:e.message }); }
+});
+app.all('/device/*', async (req, res) => {
+    const tStart = Date.now();
+    let host = null;
+    try {
+        host = req.query.host || req.body?.host;
         if (!host) return res.status(400).json({ success: false, error: 'no host specified' });
-
+        const st = _getHostState(host);
+        // Circuit breaker: if open and not yet reset
+        if (st.openedAt) {
+            if (Date.now() - st.openedAt < DEVICE_PROXY_CIRCUIT_RESET_MS) {
+                appendLog('api', `proxy deny host=${host} reason=circuit-open`);
+                return res.status(503).json({ success:false, error:'circuit open' });
+            } else {
+                // half-open trial: allow one request by resetting fails but keeping openedAt until success
+                st.openedAt = null;
+                st.fails = 0;
+            }
+        }
+        if (st.active >= DEVICE_PROXY_MAX_CONCURRENT) {
+            appendLog('api', `proxy deny host=${host} reason=concurrency active=${st.active}`);
+            return res.status(429).json({ success:false, error:'too many concurrent proxy requests' });
+        }
         // Extract path after /device and forward remaining query params except 'host'
         const devicePath = req.path.replace(/^\/device/, '') || '/';
         const query = { ...req.query };
         delete query.host;
+        // optional override: timeout=<ms>
+        let perReqTimeout = DEVICE_PROXY_DEFAULT_TIMEOUT;
+        if (query.timeout) {
+            const ov = parseInt(query.timeout,10); if (!isNaN(ov) && ov>0 && ov < 120000) perReqTimeout = ov;
+            delete query.timeout;
+        }
         const qs = new URLSearchParams(query).toString();
         const url = `http://${host}${devicePath}${qs ? `?${qs}` : ''}`;
+        _proxyState.totals.requests++;
+        st.active++;
 
-        // Build axios options
         const opts = {
             method: req.method,
             url,
             headers: { ...req.headers },
-            // Use stream by default to support binary and text
             responseType: 'stream',
             validateStatus: () => true,
-            timeout: 15000
+            timeout: perReqTimeout
         };
-
-        // Remove hop-by-hop headers that might confuse the device
         delete opts.headers.host;
         delete opts.headers.connection;
         delete opts.headers['content-length'];
-
         if (req.method !== 'GET' && req.method !== 'HEAD') {
-            // If body is JSON/object, send as-is; otherwise pipe the request stream
             if (req.is('application/json') && req.body && Object.keys(req.body).length) {
                 opts.data = req.body;
             } else {
                 opts.data = req;
             }
         }
-
-        const resp = await axios(opts);
-
-        // pipe headers
-        Object.entries(resp.headers).forEach(([k, v]) => {
-            try { res.setHeader(k, v); } catch (e) {}
-        });
-
+        appendLog('api', `proxy req host=${host} path=${devicePath} timeoutMs=${perReqTimeout}`);
+        let resp;
+        try {
+            resp = await axios(opts);
+        } catch (err) {
+            st.fails++;
+            _proxyState.totals.errors++;
+            if (err.code === 'ECONNABORTED') _proxyState.totals.timeouts++;
+            if (st.fails >= DEVICE_PROXY_CIRCUIT_FAILS) {
+                st.openedAt = Date.now();
+                appendLog('api', `proxy circuit-open host=${host} fails=${st.fails}`);
+            }
+            const dur = Date.now() - tStart;
+            appendLog('api', `proxy err host=${host} durMs=${dur} msg=${err.message}`);
+            return res.status(504).json({ success:false, error:err.message || 'proxy error' });
+        } finally {
+            st.active = Math.max(0, st.active - 1);
+        }
+        // success or at least response
+        if (resp.status >= 500) st.fails++; else st.fails = 0; // reset fails on non-5xx
+        if (st.fails >= DEVICE_PROXY_CIRCUIT_FAILS) { st.openedAt = Date.now(); appendLog('api', `proxy circuit-open host=${host} fails=${st.fails}`); }
+        const dur = Date.now() - tStart;
+        appendLog('api', `proxy res host=${host} status=${resp.status} durMs=${dur}`);
+        Object.entries(resp.headers).forEach(([k,v])=> { try { res.setHeader(k,v); } catch(_){} });
         res.status(resp.status);
         if (resp.data && resp.data.pipe) {
+            resp.data.on('data', ()=>{ _proxyState.totals.streamed++; });
             resp.data.pipe(res);
         } else {
-            // In case responseType changed upstream
             res.send(resp.data);
         }
     } catch (err) {
+        if (host) {
+            const st = _getHostState(host); st.fails++; if (st.fails >= DEVICE_PROXY_CIRCUIT_FAILS) st.openedAt = Date.now();
+        }
         console.error('Device proxy error:', err.message || err);
         res.status(500).json({ success: false, error: err.message || String(err) });
     }
@@ -453,9 +572,9 @@ const defaultConfig = {
     filesystemOnly: false,
     skipUpload: false,
     monitor: false,
-    // When true, the web UI and APIs will only work with a single, manually-selected COM port.
-    // This disables auto-open behavior and hides other system ports from the UI list.
-    manualComOnly: true,
+    // manualComOnly disabled by default so all available ports are displayed everywhere.
+    // Set to true via /api/config if you want to lock to a single port again.
+    manualComOnly: false,
     allowedComPort: 'COM10'
 };
 
@@ -2423,12 +2542,106 @@ app.post('/api/ai/config', (req, res) => {
 });
 
 app.post('/api/ai/chat', async (req, res) => {
+    if (!aiAgent) return res.status(503).json({ success:false, error:'AI agent unavailable on server' });
     try {
-        const { message, context } = req.body;
-        const response = await aiAgent.chat(message, context);
-        res.json({ success: true, response });
+    let { message, context, messages, provider, verbosity, maxTokens, temperature, reasoningEffort } = req.body || {};
+
+        // Allow client to send an array of messages (chat history); extract last user message
+        if (!message && Array.isArray(messages)) {
+            // Find last user role content; also build a condensed context from prior assistant turns
+            const userMsgs = messages.filter(m=>m && m.role==='user');
+            const lastUser = userMsgs[userMsgs.length-1];
+            if (lastUser) message = lastUser.content;
+            if (!context) {
+                // Derive lightweight context of last few exchanges (excluding final user message)
+                const recent = messages.slice(-6, -1).map(m=>({ role:m.role, content: (m.content||'').slice(0,400) }));
+                context = { prior: recent };
+            }
+        }
+
+        // Alternate top-level keys (prompt, input, text, content)
+        if (!message) {
+            const b = req.body || {};
+            message = b.prompt || b.input || b.text || b.content || message;
+        }
+
+        // If still no message and messages array present, attempt broader extraction
+        if (!message && Array.isArray(messages)) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const m = messages[i];
+                if (!m) continue;
+                const cand = m.content || m.message || m.text || m.prompt;
+                if (typeof cand === 'string' && cand.trim()) { message = cand.trim(); break; }
+            }
+        }
+
+        if (provider && typeof provider === 'string') {
+            // Temporary provider override (does not persist) – if allowed by config
+            const prev = aiAgent.config.defaultProvider;
+            if (aiAgent.config.agent?.allowDynamicProviderSwitch) {
+                aiAgent.config.defaultProvider = provider;
+                // Re-initialize clients only if switching to provider requiring key and not yet initialized
+                if (provider==='openai' || provider==='anthropic') aiAgent.initializeClients();
+                // We'll restore after response
+                var restoreProvider = prev; // var for function scope
+            }
+        }
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({ success:false, error:'Missing message string (expected body.message or body.messages[...].content or prompt/input/text/content)' });
+        }
+
+        const started = Date.now();
+        let response;
+        try {
+            response = await aiAgent.chat(message, context || {}, { verbosity, maxTokens, temperature, reasoningEffort });
+        } finally {
+            if (typeof restoreProvider !== 'undefined') aiAgent.config.defaultProvider = restoreProvider;
+        }
+        const elapsed = Date.now() - started;
+        const modelUsed = aiAgent.lastModelUsed || aiAgent.config.openai.model || aiAgent.config.anthropic.model || aiAgent.config.ollama.model;
+        appendLog('api', `ai/chat ok provider=${aiAgent.config.defaultProvider} model=${modelUsed} ms=${elapsed} chars=${(response||'').length}`);
+        res.json({ success: true, response, reply: response, elapsedMs: elapsed, modelUsed });
     } catch (error) {
+        appendLog('api', `ai/chat error: ${error.message}`);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Streaming chat (SSE) - OpenAI only for now
+app.get('/api/ai/chat/stream', async (req, res) => {
+    if (!aiAgent) return res.status(503).json({ success:false, error:'AI agent unavailable on server' });
+    const { message, prompt, input, text, content, verbosity, maxTokens, temperature, reasoningEffort } = req.query;
+    let msg = message || prompt || input || text || content;
+    if (!msg) {
+        res.status(400).json({ success:false, error:'Missing message (query param message|prompt|input|text|content)' });
+        return;
+    }
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const started = Date.now();
+    let full = '';
+    const send = (event, data) => {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    try {
+        let fallbackUsed = false;
+        await aiAgent.streamChat(msg, {}, { verbosity, maxTokens: maxTokens?parseInt(maxTokens,10):undefined, temperature: temperature?parseFloat(temperature):undefined, reasoningEffort }, (delta) => {
+            full += delta;
+            send('token', { delta });
+        });
+        const elapsed = Date.now() - started;
+        send('done', { success:true, message: full, elapsedMs: elapsed, modelUsed: aiAgent.lastModelUsed, provider: aiAgent.config.defaultProvider, fallbackUsed });
+    } catch (e) {
+        const errMsg = e.message || 'stream error';
+        const verification = /verification|not authorized for streaming|pending approval|requires verification/i.test(errMsg);
+        send('error', { success:false, error: errMsg, modelUsed: aiAgent.lastModelUsed, provider: aiAgent?.config?.defaultProvider, verificationRelated: verification });
+    } finally {
+        res.end();
     }
 });
 

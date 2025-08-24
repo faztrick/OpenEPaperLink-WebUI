@@ -16,7 +16,7 @@ class ESP32DevUI {
             fastCompile: false,
             verboseOutput: false,
             cleanBuild: false,
-            manualComOnly: true,
+            manualComOnly: false,
             allowedComPort: 'COM10'
         };
 
@@ -2015,11 +2015,19 @@ class ESP32DevUI {
             this._tailActive = true;
             try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = true; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = false; } catch (_) {}
 
-            targets.forEach(name => {
+            // Maintain retry state per channel
+            this._tailRetry = {};
+            const openChannel = (name) => {
+                if (!this._tailActive) return;
                 const url = `/api/log/stream?name=${encodeURIComponent(name)}`;
                 try {
                     const es = new EventSource(url);
+                    if (!this._multiSources) this._multiSources = [];
                     this._multiSources.push(es);
+                    es.onopen = () => {
+                        this._tailRetry[name] = { attempts:0, timer:null };
+                        this.appendConsole(`[tail:${name}] connected`,'success');
+                    };
                     es.onmessage = (ev) => {
                         try {
                             const data = JSON.parse(ev.data);
@@ -2036,11 +2044,25 @@ class ESP32DevUI {
                     };
                     es.onerror = () => {
                         this.appendConsole(`[tail:${name}] error`, 'error');
+                        try { es.close(); } catch(_){}
+                        // schedule retry with backoff
+                        if (!this._tailRetry[name]) this._tailRetry[name] = { attempts:0, timer:null };
+                        const state = this._tailRetry[name];
+                        state.attempts += 1;
+                        const delay = Math.min(30000, 500 * Math.pow(2, state.attempts - 1)); // 0.5s,1s,2s,... up to 30s
+                        this.appendConsole(`[tail:${name}] retry in ${(delay/1000).toFixed(1)}s (attempt ${state.attempts})`, 'warning');
+                        state.timer = setTimeout(()=> openChannel(name), delay);
                     };
                 } catch (e) {
                     this.appendConsole(`[tail:${name}] failed to open: ${e.message}`, 'error');
+                    if (!this._tailRetry[name]) this._tailRetry[name] = { attempts:0, timer:null };
+                    const state = this._tailRetry[name];
+                    state.attempts += 1;
+                    const delay = Math.min(30000, 500 * Math.pow(2, state.attempts - 1));
+                    state.timer = setTimeout(()=> openChannel(name), delay);
                 }
-            });
+            };
+            targets.forEach(openChannel);
             this.appendConsole(`Tailing ${targets.length === 1 ? `log '${targets[0]}'` : `${targets.length} logs (${targets.join(', ')})`}...`, 'success');
             // optional fetch list (once)
             fetch('/api/log/list').then(r => r.json()).then(j => {}).catch(()=>{});
@@ -2057,6 +2079,10 @@ class ESP32DevUI {
             if (this._multiSources && Array.isArray(this._multiSources)) {
                 this._multiSources.forEach(es => { try { es.close(); } catch(_){} });
                 this._multiSources = [];
+            }
+            if (this._tailRetry) {
+                Object.values(this._tailRetry).forEach(r => { try { if (r.timer) clearTimeout(r.timer); } catch(_){} });
+                this._tailRetry = null;
             }
             this._tailActive = false;
             try { const sBtn = document.getElementById('start-tail'); if (sBtn) sBtn.disabled = false; const pBtn = document.getElementById('stop-tail'); if (pBtn) pBtn.disabled = true; } catch (_) {}
@@ -3330,6 +3356,102 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = new ESP32DevUI();
     try { window.App = app; } catch (e) {}
     try { app.initConsoleEnhancements(); } catch (e) { console.error('Failed to init console enhancements', e); }
+
+    /* ================= Global Progress Bar Init (Added) ================= */
+    (function initGlobalProgress(){
+        if (window.__globalProgressInit) return; window.__globalProgressInit = true;
+        const existing = document.getElementById('global-progress-container');
+        if (!existing) {
+            const c = document.createElement('div');
+            c.id = 'global-progress-container';
+            const bar = document.createElement('div');
+            bar.id = 'global-progress-bar';
+            c.appendChild(bar);
+            document.body.appendChild(c);
+        }
+        const bar = document.getElementById('global-progress-bar');
+        const body = document.body;
+        let activeRequests = 0;
+        let startedAt = 0;
+        let trickleTimer = null;
+        let currentProgress = 0; // 0..1
+        let hideTimeout = null;
+
+        function setProgress(p, force){
+            currentProgress = p = Math.min(1, Math.max(0, p));
+            if (bar) bar.style.width = (p*100).toFixed(2)+'%';
+            if (p>=1) finish();
+        }
+        function start(){
+            if (activeRequests===0){
+                startedAt = performance.now();
+                body.classList.remove('progress-hiding');
+                body.classList.add('progress-active');
+                setProgress(0.02);
+                trickle();
+            }
+            activeRequests++;
+        }
+        function done(){
+            if (activeRequests>0) activeRequests--;
+            if (activeRequests===0) {
+                const elapsed = performance.now()-startedAt;
+                // ensure minimum show time ~400ms for visibility
+                const remaining = elapsed < 400 ? 400 - elapsed : 0;
+                setTimeout(()=> setProgress(1), remaining);
+            }
+        }
+        function finish(){
+            clearInterval(trickleTimer); trickleTimer=null;
+            if (hideTimeout) clearTimeout(hideTimeout);
+            hideTimeout = setTimeout(()=>{
+                body.classList.add('progress-hiding');
+                body.classList.remove('progress-active');
+                if (bar){ bar.style.width='0%'; }
+                // reset state
+                currentProgress = 0;
+            }, 450); // allow fade
+        }
+        function trickle(){
+            if (trickleTimer) return;
+            trickleTimer = setInterval(()=>{
+                if (activeRequests===0) { clearInterval(trickleTimer); trickleTimer=null; return; }
+                // dynamic increment slows as it approaches 80%
+                const target = currentProgress < 0.8 ? currentProgress + (0.03 + Math.random()*0.04) : currentProgress + 0.01;
+                if (target < 0.98) setProgress(target);
+            }, 250);
+        }
+
+        // Wrap fetch
+        const origFetch = window.fetch;
+        window.fetch = function(resource, options){
+            const opts = options || {};
+            if (!(opts && opts.noProgress)) start();
+            let p;
+            try { p = origFetch.apply(this, arguments); } catch (e){ done(); throw e; }
+            return p.then(r=>{ if (!(opts && opts.noProgress)) done(); return r; })
+                    .catch(err=>{ if (!(opts && opts.noProgress)) done(); throw err; });
+        };
+
+        // Navigation click handling (anchor tags) for internal links
+        document.addEventListener('click', (e)=>{
+            const a = e.target.closest ? e.target.closest('a') : null;
+            if (!a) return;
+            // only same-origin navigations without target _blank and with href
+            const href = a.getAttribute('href');
+            if (!href || href.startsWith('#') || a.target==='_blank') return;
+            if (href.startsWith('http') && !href.startsWith(location.origin)) return;
+            start();
+        }, true);
+
+        // When page is shown (bfcache) reset progress state
+        window.addEventListener('pageshow', ()=>{
+            activeRequests=0; finish();
+        });
+
+        // Expose API
+        window.GlobalProgress = { start, done, set:setProgress, _state:()=>({activeRequests,currentProgress}) };
+    })();
 });
 
 // Add some utility functions

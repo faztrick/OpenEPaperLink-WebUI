@@ -49,6 +49,55 @@ Manual:
 node ESP32_AP-Flasher/web-ui/server.js
 ```
 
+### 3.0 Running with PM2 (Process Manager)
+
+For long‑running or unattended development sessions you can manage the Web UI (and optional Python debug monitor) with PM2. An `ecosystem.config.js` now lives in `ESP32_AP-Flasher/web-ui/`.
+
+Install PM2 globally if not present:
+
+```pwsh
+npm install -g pm2
+```
+
+Start only the web UI in production mode (PORT and token optional):
+
+```pwsh
+cd ESP32_AP-Flasher/web-ui
+set OPEL_AGENT_TOKEN=devlocaltoken
+set PORT=3000
+pm2 start ecosystem.config.js --only web-ui --env production
+```
+
+Include the optional `debug-monitor` process:
+
+```pwsh
+pm2 start ecosystem.config.js --env development
+```
+
+Common PM2 commands:
+
+```pwsh
+pm2 ls
+pm2 logs web-ui
+pm2 restart web-ui
+pm2 stop web-ui
+pm2 delete web-ui
+pm2 save            # save current process list for resurrect
+pm2 resurrect       # restore after reboot
+```
+
+Environment variables inside PM2:
+
+| Variable | Purpose |
+|----------|---------|
+| PORT | HTTP port (default 3000) |
+| OPEL_AGENT_TOKEN | Enables protected /api/agent/* endpoints |
+| API_LOGGING | "1" to enable API request logging (default dev on, prod off) |
+
+Logs written by PM2 live (by default) under the `logs/` folder specified in the ecosystem file. You can still consume structured channel logs via the in‑browser multi‑tail.
+
+If you change `server.js`, simply run `pm2 restart web-ui`.
+
 Default behaviors:
 
 - Serves APIs and static assets (filesystem upload, build orchestration, WiFi scan/connect via serial/Improv).
@@ -90,6 +139,31 @@ Use the new shutdown endpoint to stop the Node server before flashing:
 ```http
 POST http://localhost:3000/api/shutdown
 ```
+
+### 3.3 Multi‑Channel Log Tail & Console Enhancements (New)
+
+The development pages now include an advanced console supporting:
+
+- Channel colorization (`[node]`, `[api]`, `[serial]`, `[python]`, `[ws]`, `[client]`).
+- "All" log source option: opens parallel SSE streams (one per channel) with automatic exponential backoff reconnect (0.5s → 1s → 2s … max 30s).
+- Filter chips to dynamically show/hide channels (persisted in `localStorage`).
+- Live search & highlight (Ctrl+Shift+L to focus) – highlights matches without hiding non‑matches.
+- Export button – downloads visible lines to a timestamped text file.
+- Explain Errors – gathers recent `[error]` / failure lines and queries the configured AI provider to summarize probable causes & fixes.
+- Collapse toggle with persisted state.
+- Keyboard shortcuts: F2 toggles tail on/off.
+
+Log retention strategy:
+
+- In‑memory buffer (`logBuffer`) keeps last ~5000 entries (bulk slice trimming to avoid shift thrash).
+- DOM capped to 1000 lines; when exceeded the oldest 100 lines are removed in a batch for performance.
+
+Retry semantics:
+
+- Each channel maintains its own attempt counter; upon `EventSource.onerror` it closes and schedules a reopen using exponential backoff.
+- Stopping the tail clears any pending retry timers.
+
+AI integration for error explanation requires `OPEL_AGENT_TOKEN` plus provider keys (OpenAI / Anthropic) configured server‑side; the client sends lines as a single prompt.
 
 The fast build script automatically attempts this at startup. If the server is not running, it proceeds without error.
 
@@ -174,6 +248,13 @@ Troubleshooting:
 - OTA requires the device’s HTTP OTA endpoint to be reachable and powered; confirm network path and that firmware server path exists.
 
 Future Enhancements (tracked separately): artifact selection for OTA directly, progress % parsing, integrated diff for filesystem-only uploads.
+
+PM2 Note: If you use PM2 and run frequent fast firmware rebuilds, the PowerShell `fast_compile.ps1` script attempts to call the shutdown endpoint. When running under PM2 you can choose either approach:
+
+1. Allow script to hit `/api/shutdown` (PM2 will detect exit and can restart if `--watch` is enabled – currently off by default), or
+2. Manually pause the web UI with `pm2 stop web-ui` before flashing to avoid serial contention.
+
+If you experience serial port lock issues with PM2 running, confirm the server process is not holding the port (check `serial-opened` events in the console) and temporarily stop it.
 
 ### 4.2 Shared Device Header (dev-common.js)
 
@@ -293,6 +374,94 @@ Common errors:
 | Garbled chars | Baud mismatch | Select matching baud & Reopen |
 
 Future improvements (planned): High-speed auto-detect, firmware status command integration, log verbosity toggles.
+
+---
+
+## 6. AI Tool Assistant (Function Calling)
+
+An AI assistant with strict tool/function calling is available via the web server to automate common dev actions (build, flash, status, optimization). It uses OpenAI Responses API when an `OPENAI_API_KEY` is configured; otherwise it operates in a local mock mode (echo only, no side effects).
+
+### Endpoint
+
+POST `/api/ai/chat-tool`
+
+Body:
+
+```json
+{ "message": "Build and then flash to COM10", "sessionId": "my-session" }
+```
+
+Response fields:
+
+| Field | Meaning |
+|-------|---------|
+| success | Boolean request success |
+| responseText | Assistant final natural language answer |
+| toolCalls | List of tool calls model attempted (before execution) |
+| toolResults | Execution results per tool call |
+| model | Model name used |
+| mock | Present & true if running without OpenAI key |
+
+Sessions accumulate context (prompt + prior tool calls) keyed by `sessionId`. Omit to use the `default` session.
+
+### Tools Exposed
+
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| build_firmware | environment, fast, clean | Compile firmware (fast path optional) |
+| flash_firmware | environment, port, baud, monitor | Upload firmware, optionally reopen monitor |
+| upload_filesystem | environment, port, baud, skipBuild | Upload only LittleFS image |
+| list_serial_ports | refresh | Enumerate ports (call first if user did not specify) |
+| optimize_www_assets | minify, gzip | Run production optimize & gzip scripts |
+| query_device_status | identifier, detail | Get device/AP+WiFi status (id or host/IP) |
+| run_emulation | environment, headless | Launch QEMU emulation (PowerShell script) |
+
+All schemas are strict: no extra fields allowed. Optional semantics are represented via explicit booleans.
+
+### Environment Variables
+
+Add (e.g. via PM2 ecosystem or shell):
+
+```pwsh
+$env:OPENAI_API_KEY = 'sk-xxx'
+$env:OPEL_AI_TOOL_MODEL = 'gpt-4.1-mini'   # optional override
+```
+
+If `OPENAI_API_KEY` is absent the endpoint returns:
+
+```json
+{ "success": true, "mock": true, "responseText": "[mock] You said: ..." }
+```
+
+### Local Test Harness
+
+Run server, then:
+
+```pwsh
+node ESP32_AP-Flasher/web-ui/test_ai_tool_chat.js "list serial ports"
+```
+
+### Adding / Modifying a Tool
+
+1. Edit `web-ui/ai_tools.js` (increment `TOOL_VERSION` if you want prompt cache busting).
+2. Add execution logic in `web-ui/ai_tool_dispatcher.js` (validate args & guard concurrency).
+3. Restart server.
+
+### Safety & Concurrency
+
+| Concern | Mitigation |
+|---------|------------|
+| Multiple overlapping builds | Guard (single active build/flash/emulation) |
+| Arbitrary command injection | Ports/environment enumerations + regex validation + fixed script names |
+| Token bloat | Tail/truncate stdout/stderr before re-sending to model |
+| Accidental clean builds | `clean` must be explicitly set true by model (rare unless user asks) |
+
+### Future Ideas
+
+- Streaming SSE endpoint for partial tool argument deltas.
+- Add `list_devices` tool to enumerate saved devices.
+- Fine-tuning for higher tool selection accuracy if tool list grows.
+- Frontend chat panel integration.
 
 ---
 
@@ -566,6 +735,145 @@ Current working branch: `losdt` (default: `ss`). Ensure you rebase or merge freq
 ---
 
 End of Developer Workflow Guide
+
+### Appendix A: AI Assistant (GPT‑5 Experimental Streaming Fallback + Responses API)
+
+Endpoints:
+
+- `POST /api/ai/chat` – standard JSON reply
+- `GET  /api/ai/chat/stream?message=...` – SSE (token events)
+
+Enable a provider by editing `ESP32_AP-Flasher/web-ui/ai_config.json` or calling `POST /api/ai/config` with:
+
+```jsonc
+{
+  "openai": { "apiKey": "sk-...", "model": "gpt-4o", "enabled": true }
+}
+```
+
+Experimental GPT‑5 Handling:
+
+Some early GPT‑5 family models may reject `stream:true` until additional account verification is complete. The agent now:
+
+1. Attempts streaming first.
+2. On a verification-related error (keywords: "verification", "not authorized for streaming", "pending approval", "requires verification") it retries once without streaming if `experimental.gpt5StreamVerificationFallback` is true.
+3. Emits a synthetic single `token` containing the full response so existing streaming UI logic still works.
+
+SSE Event Shapes:
+
+| Event  | Payload Fields |
+|--------|----------------|
+| token  | `{ delta }` (incremental or full text if fallback) |
+| done   | `{ success, message, elapsedMs, modelUsed, provider }` |
+| error  | `{ success:false, error, modelUsed, provider, verificationRelated }` |
+
+Config flag (default true):
+
+```json
+"experimental": { "gpt5StreamVerificationFallback": true }
+```
+
+If disabled, the raw streaming error is surfaced and no non-stream retry is attempted.
+
+Dynamic provider override: include `{ "provider": "anthropic" }` in `POST /api/ai/chat` body (if enabled and `agent.allowDynamicProviderSwitch` is true) for a one-off request.
+
+Troubleshooting Quick Table:
+
+| Symptom | Cause | Action |
+|---------|-------|--------|
+| 503 AI agent unavailable | Module disabled / not loaded | Check server startup logs for optional module warnings |
+| 500 No AI provider configured | All providers disabled or missing keys | Enable provider & set API key |
+| SSE error verificationRelated=true | GPT‑5 streaming verification needed | Accept fallback; notify user |
+| Timeout | Long generation / network | Shorten prompt or adjust timeout constant in `ai_agent.js` |
+
+#### Responses API (GPT‑5 & Reasoning)
+
+For GPT‑5 family models (or when you request reasoning) the agent now prefers the OpenAI Responses API instead of legacy Chat Completions. This enables structured reasoning traces and the `reasoning.effort` control.
+
+Request parameter (both endpoints):
+
+- `reasoningEffort` = `low | medium | high` (optional). If supplied, or if the selected model name matches `/gpt-5/i`, the agent attempts `openai.responses.create`.
+
+Example JSON (non-stream):
+
+```json
+POST /api/ai/chat
+{
+  "message": "Explain the boot process of ESP32 in concise steps.",
+  "reasoningEffort": "medium"
+}
+```
+
+Example streaming (SSE):
+
+```text
+GET /api/ai/chat/stream?message=Optimize%20LittleFS%20usage&reasoningEffort=high
+```
+
+Fallback Behavior:
+
+1. Try Responses API (streaming if SSE endpoint) with reasoning.
+2. If unsupported / errors, fall back to Chat Completions streaming.
+3. If GPT‑5 streaming verification error occurs, apply non-stream fallback (configured by `experimental.gpt5StreamVerificationFallback`).
+
+Notes:
+
+- Responses API output is normalized to plain text (`response.output_text`) so existing UI rendering still works.
+- If streaming via Responses API yields discrete event objects, they are tokenized heuristically; some SDK versions may emit only a final aggregate chunk.
+- If both Responses streaming and Chat streaming fail for verification reasons, the non-stream fallback returns a synthetic single `token` event.
+
+Limitations / TODO:
+
+- Reasoning traces are not yet exposed separately; could add future endpoint to retrieve raw reasoning tree (`response.output` items of type `reasoning`).
+- Editing endpoint still uses Chat Completions; migrate later if reasoning adds value to code transforms.
+
+Version Compatibility:
+
+Ensure the `openai` npm package version supports `client.responses.create` (v4+). If upgrading, run a clean install inside `web-ui` folder.
+
+#### Tool: code_exec (Experimental)
+
+You can enable a constrained Python execution tool for quick calculations (no network / filesystem / dangerous imports).
+
+Enable in `ai_config.json` (or via config endpoint):
+
+```jsonc
+{
+  "features": {
+    "tools": { "codeExec": { "enabled": true } }
+  }
+}
+```
+
+Behavior:
+
+1. Chat request includes OpenAI tool schema (function name `code_exec`).
+2. If the model chooses the tool, the agent executes the Python snippet with a short timeout (default 3000 ms) and max 2 KB output.
+3. Dangerous constructs (`import os`, `subprocess`, file I/O, eval/exec, networking) are rejected.
+4. A follow-up Chat Completion call sends the tool result so the model can craft the final answer.
+5. Streaming endpoint currently ignores tool calls (no execution in SSE mode yet).
+
+Security Notes:
+
+| Safeguard | Detail |
+|-----------|--------|
+| Timeout | Kill after 3s (+200ms buffer) |
+| Output cap | 2048 chars (extra truncated) |
+| Filter regex | Rejects obvious dangerous imports & APIs |
+| Single cycle | Only first tool call executed (prevents loops) |
+
+Example curl (similar to your original) using internal API (non-stream):
+
+```bash
+curl -X POST http://localhost:3000/api/ai/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "message": "Use the code_exec tool to calculate the area of a circle with radius equal to the number of r letters in blueberry",
+        "reasoningEffort": "medium"
+      }'
+```
+
+The agent decides whether to invoke the tool; you do not need to supply a separate tool schema externally.
 
 ---
 

@@ -45,4 +45,7 @@ extern fs::FS *contentFS;
 extern void copyFile(fs::File in, fs::File out);
 #endif
 
+// Filesystem health probe utility (returns true if write/read/delete test succeeds)
+bool fsHealthTest();
+
 #endif

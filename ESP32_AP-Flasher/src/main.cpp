@@ -51,6 +51,9 @@ util::Timer intervalContentRunner(seconds(1));
 util::Timer intervalSysinfo(seconds(5));
 util::Timer intervalVars(seconds(10));
 util::Timer intervalSaveDB(minutes(5));
+// Periodic filesystem health probe (every 2 minutes)
+util::Timer intervalFSHealth(minutes(2));
+static uint8_t fsConsecutiveFailures = 0;
 
 SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
@@ -434,6 +437,41 @@ void loop()
     if (intervalSaveDB.doRun() && config.runStatus != RUNSTATUS_STOP)
     {
         saveDB("/current/tagDB.json");
+    }
+    if (intervalFSHealth.doRun())
+    {
+        bool ok = fsHealthTest();
+        if (!ok)
+        {
+            fsConsecutiveFailures++;
+            Serial.printf("[FS][HEALTH] probe failed (consecutive=%u)\n", (unsigned)fsConsecutiveFailures);
+            if (fsConsecutiveFailures == 2)
+            {
+                Serial.println("[FS][HEALTH] Attempting automatic remount after 2 failures");
+                Storage.begin();
+            }
+            else if (fsConsecutiveFailures >= 4)
+            {
+                Serial.println("[FS][HEALTH] Multiple failures – formatting LittleFS (if active) and remounting");
+#ifndef SD_CARD_ONLY
+                if (contentFS == &LittleFS)
+                {
+                    LittleFS.format();
+                    LittleFS.begin();
+                }
+#endif
+                Storage.begin();
+                fsConsecutiveFailures = 0; // reset after hard recovery attempt
+            }
+        }
+        else
+        {
+            if (fsConsecutiveFailures > 0)
+            {
+                Serial.println("[FS][HEALTH] probe OK (resetting failure counter)");
+            }
+            fsConsecutiveFailures = 0;
+        }
     }
     if (gStart_ContentRunner && intervalContentRunner.doRun() && (apInfo.state == AP_STATE_ONLINE || apInfo.state == AP_STATE_NORADIO))
     {

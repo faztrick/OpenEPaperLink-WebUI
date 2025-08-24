@@ -34,3 +34,6 @@ $PROJECT_DIR/
 
 # Jetbrains IDE
 .idea/
+
+# AI config (contains API keys when enabled)
+ESP32_AP-Flasher/web-ui/ai_config.json

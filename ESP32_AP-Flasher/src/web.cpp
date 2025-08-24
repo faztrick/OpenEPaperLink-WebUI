@@ -95,6 +95,65 @@ void init_web()
         serializeJson(doc, *response);
         request->send(response); });
 
+    // --- Filesystem diagnostics ---
+    // GET /api/fs/info -> returns active FS type, sizes, existence of key paths and last saveDB attempt timestamp (if tracked)
+    server.on("/api/fs/info", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc;
+        const char *type = "none";
+        if (contentFS) {
+#ifdef HAS_SDCARD
+            if (contentFS == &SDCARD) type = "sd";
+#endif
+#ifndef SD_CARD_ONLY
+            if (contentFS == &LittleFS) type = "littlefs";
+#endif
+        }
+        doc["type"] = type;
+        doc["mounted"] = (bool)contentFS;
+#ifndef SD_CARD_ONLY
+        if (contentFS == &LittleFS) {
+            doc["totalBytes"] = (uint64_t)LittleFS.totalBytes();
+            doc["usedBytes"] = (uint64_t)LittleFS.usedBytes();
+        }
+#endif
+#ifdef HAS_SDCARD
+        if (contentFS == &SDCARD) {
+            // Some SD implementations lack usedBytes(); guard with ifdefs if needed
+            // Provide placeholders; refined logic can be added if APIs available.
+            doc["sdCard"] = true;
+        }
+#endif
+        JsonObject paths = doc["paths"].to<JsonObject>();
+        if (contentFS) {
+            const char *check[] = {"/current", "/current/tagDB.json", "/current/apconfig.json", "/current/staconfig.json"};
+            for (auto p : check) {
+                paths[p] = contentFS->exists(p);
+            }
+        }
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    // POST /api/fs/remount -> attempts Storage.begin() again and reports status
+    server.on("/api/fs/remount", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc;
+        doc["before"] = (bool)contentFS;
+        Storage.begin();
+        doc["after"] = (bool)contentFS;
+        const char *type = "none";
+        if (contentFS) {
+#ifdef HAS_SDCARD
+            if (contentFS == &SDCARD) type = "sd";
+#endif
+#ifndef SD_CARD_ONLY
+            if (contentFS == &LittleFS) type = "littlefs";
+#endif
+        }
+        doc["type"] = type;
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
     // Canonical WiFi config retrieval endpoint (unified handler)
     server.on("/get_wifi_config", HTTP_GET, handleGetWifiConfig);
 

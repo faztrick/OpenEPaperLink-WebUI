@@ -1,61 +1,42 @@
-/**
- * PM2 ecosystem config for the web-ui
- * - watch: false prevents PM2 from auto-restarting when files change
- * - ignore_watch lists folders/files PM2 should ignore if watch is enabled
- * Use: pm2 start ecosystem.config.js --env production
- */
-module.exports = {
-  apps: [
-    {
-      name: 'esp32-dev-ui',
-      script: 'server.js',
-      cwd: __dirname,
-      instances: 1,
-      autorestart: true,
-      watch: false, // <= disable watch by default
-      max_memory_restart: '300M',
-      env: {
-        NODE_ENV: 'development',
-        PORT: 3000
-      },
-      env_production: {
-        NODE_ENV: 'production',
-        PORT: 3000
-      },
-      // if you ever enable watch, ignore these patterns to avoid noisy restarts
-      ignore_watch: ['node_modules', 'logs', 'data', '.git', 'wwwroot'],
-      error_file: './logs/pm2-error.log',
-      out_file: './logs/pm2-out.log'
-    }
-  ]
-};
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'web-ui',
       script: 'server.js',
       cwd: __dirname,
-      watch: [
-        'server.js',
-        'public/',
-        '../src/',
-      ],
-      ignore_watch: ['node_modules', '.git', '.venv'],
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '300M',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
-      }
+        PORT: process.env.PORT || 3000,
+        API_LOGGING: process.env.API_LOGGING || '1',
+        OPEL_AGENT_TOKEN: process.env.OPEL_AGENT_TOKEN || ''
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        PORT: process.env.PORT || 3000,
+        API_LOGGING: process.env.API_LOGGING || '0',
+        OPEL_AGENT_TOKEN: process.env.OPEL_AGENT_TOKEN || ''
+      },
+      ignore_watch: ['node_modules', 'logs', 'data', '.git', 'wwwroot'],
+      error_file: './logs/pm2-error.log',
+      out_file: './logs/pm2-out.log',
+      merge_logs: true,
+      time: true
     },
+    // Optional Python debug monitor process. Start with: pm2 start ecosystem.config.js --only debug-monitor
     {
       name: 'debug-monitor',
       script: 'python',
       args: ['debug_monitor.py'],
-      cwd: __dirname + '/..',
+      cwd: path.join(__dirname, '..'),
       interpreter: 'python',
-      watch: [
-        '../debug_monitor.py'
-      ],
-      ignore_watch: ['.git', 'node_modules'],
+      watch: false,
+      autorestart: true,
       env: {
         PYTHONUNBUFFERED: '1'
       }

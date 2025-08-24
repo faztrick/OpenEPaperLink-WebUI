@@ -17,6 +17,9 @@
 #include "LittleFS.h"
 #endif
 
+// Track whether LittleFS mounted successfully so higher layers can skip bootstrap actions
+static bool littlefs_mounted = false;
+
 DynStorage::DynStorage() : isInited(0) {}
 
 SemaphoreHandle_t fsMutex = NULL;
@@ -24,15 +27,48 @@ SemaphoreHandle_t fsMutex = NULL;
 #ifndef SD_CARD_ONLY
 static void initLittleFS()
 {
-    // Attempt to mount LittleFS and fall back gracefully
-    if (!LittleFS.begin())
+    // Attempt to mount LittleFS; on failure try a one-time format+remount.
+    static bool formatAttempted = false; // ensure we don't loop formatting repeatedly
+    if (LittleFS.begin())
     {
-        Serial.println("Warning: LittleFS.begin() failed — filesystem may be unavailable");
-        // Still set contentFS to LittleFS to allow API calls; callers should check exists/open results
+        littlefs_mounted = true;
         contentFS = &LittleFS;
         return;
     }
-    contentFS = &LittleFS;
+
+    Serial.println("[FS][WARN] LittleFS.begin() failed – filesystem not mounted (will attempt recovery)");
+
+    if (!formatAttempted)
+    {
+        formatAttempted = true;
+        Serial.println("[FS][RECOVERY] Formatting LittleFS due to initial mount failure (possible corruption)");
+        if (LittleFS.format())
+        {
+            Serial.println("[FS][RECOVERY] Format completed, retrying mount...");
+            if (LittleFS.begin())
+            {
+                Serial.println("[FS][RECOVERY] LittleFS mount after format succeeded");
+                littlefs_mounted = true;
+                contentFS = &LittleFS;
+                return;
+            }
+            else
+            {
+                Serial.println("[FS][ERROR] LittleFS mount still failing after format – filesystem unavailable");
+            }
+        }
+        else
+        {
+            Serial.println("[FS][ERROR] LittleFS.format() failed – cannot recover filesystem");
+        }
+    }
+    else
+    {
+        Serial.println("[FS][WARN] Skipping additional format attempt (already tried)");
+    }
+
+    // Still set pointer so higher layers can attempt lazy recovery / respond with proper status
+    contentFS = &LittleFS; // pointer for callers; littlefs_mounted remains false
 }
 #endif
 
@@ -228,6 +264,19 @@ void DynStorage::begin()
 
 #ifndef SD_CARD_ONLY
     initLittleFS();
+    if (contentFS == &LittleFS)
+    {
+        uint64_t total = LittleFS.totalBytes();
+        uint64_t used = LittleFS.usedBytes();
+        Serial.printf("[FS] LittleFS mount OK (used %llu / %llu bytes, free %llu)\n",
+                      (unsigned long long)used,
+                      (unsigned long long)total,
+                      (unsigned long long)(total - used));
+    }
+    else
+    {
+        Serial.println("[FS][WARN] LittleFS init did not set contentFS (using fallback) – subsequent open() may fail");
+    }
 #endif
 
 #ifdef HAS_SDCARD
@@ -250,74 +299,126 @@ void DynStorage::begin()
 #endif
 #endif
 
-    if (!contentFS->exists("/current"))
+    // If LittleFS failed to mount earlier, contentFS points to LittleFS but operations will fail; guard directory creation.
+    if (contentFS && littlefs_mounted)
     {
-        contentFS->mkdir("/current");
+        if (!contentFS->exists("/current"))
+        {
+            contentFS->mkdir("/current");
+            Serial.println("[FS] Created /current directory");
+        }
+        if (!contentFS->exists("/temp"))
+        {
+            contentFS->mkdir("/temp");
+            Serial.println("[FS] Created /temp directory");
+        }
     }
-    if (!contentFS->exists("/temp"))
+    else
     {
-        contentFS->mkdir("/temp");
+        Serial.println("[FS][WARN] Skipping directory bootstrap (/current,/temp) – filesystem not mounted");
     }
 
     // Ensure a minimal staconfig.json exists to avoid open() errors elsewhere (STA credentials)
     const char *staconfigPath = "/current/staconfig.json";
-    if (!contentFS->exists(staconfigPath))
+    if (contentFS && littlefs_mounted)
     {
-        xSemaphoreTake(fsMutex, portMAX_DELAY);
-        File cfg = contentFS->open(staconfigPath, "w");
-        if (cfg)
+        if (!contentFS->exists(staconfigPath))
         {
-            // Write a minimal JSON configuration for STA
-            const char *defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
-            cfg.print(defaultCfg);
-            cfg.close();
-            Serial.println("Created default /current/staconfig.json");
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            File cfg = contentFS->open(staconfigPath, "w");
+            if (cfg)
+            {
+                // Write a minimal JSON configuration for STA
+                const char *defaultCfg = "{\"ssid\":\"\",\"password\":\"\"}";
+                cfg.print(defaultCfg);
+                cfg.close();
+                Serial.println("Created default /current/staconfig.json");
+            }
+            else
+            {
+                Serial.println("Warning: Failed to create /current/staconfig.json — storage may be read-only");
+            }
+            xSemaphoreGive(fsMutex);
         }
-        else
-        {
-            Serial.println("Warning: Failed to create /current/staconfig.json — storage may be read-only");
-        }
-        xSemaphoreGive(fsMutex);
+    }
+    else
+    {
+        Serial.println("[FS][WARN] Skipping staconfig bootstrap – filesystem not mounted");
     }
 
     // Maintain legacy/default AP/system config file for AP mode and other settings
     const char *apconfigPath = "/current/apconfig.json";
-    if (!contentFS->exists(apconfigPath))
+    if (contentFS && littlefs_mounted)
     {
-        xSemaphoreTake(fsMutex, portMAX_DELAY);
-        File cfg = contentFS->open(apconfigPath, "w");
-        if (cfg)
+        if (!contentFS->exists(apconfigPath))
         {
-            // Minimal AP/system config
-            const char *defaultCfg = "{\"alias\":\"\",\"channel\":0}";
-            cfg.print(defaultCfg);
-            cfg.close();
-            Serial.println("Created default /current/apconfig.json");
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            File cfg = contentFS->open(apconfigPath, "w");
+            if (cfg)
+            {
+                // Minimal AP/system config
+                const char *defaultCfg = "{\"alias\":\"\",\"channel\":0}";
+                cfg.print(defaultCfg);
+                cfg.close();
+                Serial.println("Created default /current/apconfig.json");
+            }
+            else
+            {
+                Serial.println("Warning: Failed to create /current/apconfig.json — storage may be read-only");
+            }
+            xSemaphoreGive(fsMutex);
         }
-        else
+    }
+    else
+    {
+        Serial.println("[FS][WARN] Skipping apconfig bootstrap – filesystem not mounted");
+    }
+
+    // Final summary after begin()
+    if (contentFS)
+    {
+#ifdef HAS_SDCARD
+        if (contentFS == &SDCARD)
         {
-            Serial.println("Warning: Failed to create /current/apconfig.json — storage may be read-only");
+            Serial.println("[FS] Active contentFS: SD Card");
         }
-        xSemaphoreGive(fsMutex);
+#endif
+#ifndef SD_CARD_ONLY
+        if (contentFS == &LittleFS)
+        {
+            Serial.println("[FS] Active contentFS: LittleFS");
+        }
+#endif
+    }
+    else
+    {
+        Serial.println("[FS][ERROR] contentFS is null after DynStorage::begin – filesystem unavailable");
     }
 
     // Ensure a default empty tag database exists
     const char *tagdbPath = "/current/tagDB.json";
-    if (!contentFS->exists(tagdbPath))
+    if (contentFS && littlefs_mounted)
     {
-        xSemaphoreTake(fsMutex, portMAX_DELAY);
-        File db = contentFS->open(tagdbPath, "w");
-        if (db)
+        if (!contentFS->exists(tagdbPath))
         {
-            db.print("[]");
-            db.close();
-            Serial.println("Created default /current/tagDB.json (empty array)");
+            xSemaphoreTake(fsMutex, portMAX_DELAY);
+            File db = contentFS->open(tagdbPath, "w");
+            if (db)
+            {
+                db.print("[]");
+                db.close();
+                Serial.println("Created default /current/tagDB.json (empty array)");
+            }
+            else
+            {
+                Serial.println("Warning: Failed to create /current/tagDB.json — storage may be read-only");
+            }
+            xSemaphoreGive(fsMutex);
         }
-        else
-        {
-            Serial.println("Warning: Failed to create /current/tagDB.json — storage may be read-only");
-        }
-        xSemaphoreGive(fsMutex);
+    }
+    else
+    {
+        Serial.println("[FS][WARN] Skipping tagDB bootstrap – filesystem not mounted");
     }
 }
 
@@ -359,3 +460,26 @@ void DynStorage::end()
 
 fs::FS *contentFS;
 DynStorage Storage;
+
+// Simple write/delete test to validate filesystem health. Returns true on success.
+bool fsHealthTest()
+{
+    if (!contentFS)
+        return false;
+    const char *path = "/current/.fs_health_probe";
+    File f = contentFS->open(path, "w");
+    if (!f)
+        return false;
+    f.print("probe");
+    f.close();
+    File r = contentFS->open(path, "r");
+    if (!r)
+    {
+        contentFS->remove(path);
+        return false;
+    }
+    String s = r.readString();
+    r.close();
+    contentFS->remove(path);
+    return s == "probe";
+}

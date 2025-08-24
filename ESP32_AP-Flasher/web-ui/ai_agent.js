@@ -38,8 +38,10 @@ class ESP32AIAgent {
             openai: {
                 // Accept multiple env var aliases for convenience / rotation
                 apiKey: process.env.OPENAI_API_KEY || process.env.OPEL_OPENAI_KEY || '',
-                model: 'gpt-4o', // Allow user to change to experimental like 'gpt-5' when available
-                enabled: false
+                model: 'gpt-4o', // User can switch to experimental (e.g. gpt-5, gpt-5-mini) via config
+                enabled: false,
+                // Ordered fallback list tried if primary model fails (rate limit / model error / timeout)
+                fallbackModels: ['gpt-5-mini','gpt-4o-mini','gpt-4o']
             },
             anthropic: {
                 apiKey: process.env.ANTHROPIC_API_KEY || process.env.OPEL_ANTHROPIC_KEY || '',
@@ -59,7 +61,13 @@ class ESP32AIAgent {
                 maxHistory: 25,
                 allowExperimentalModels: true,
                 // These models are not validated here – UI can surface placeholders
-                experimentalModels: ['gpt-5', 'gpt-4.1-experimental', 'claude-3-opus-latest']
+                experimentalModels: ['gpt-5', 'gpt-4.1-experimental', 'claude-3-opus-latest'],
+                defaultVerbosity: 'medium' // low | medium | high
+            },
+            experimental: {
+                // GPT-5 family early-access sometimes enforces extra verification when stream=true.
+                // If enabled, we will auto-retry without streaming on verification related errors.
+                gpt5StreamVerificationFallback: true
             },
             features: {
                 codeAnalysis: true,
@@ -67,7 +75,16 @@ class ESP32AIAgent {
                 buildOptimization: true,
                 autoSuggestions: true,
                 documentation: true,
-                codeEditing: false
+                codeEditing: false,
+                tools: {
+                    codeExec: {
+                        enabled: false,
+                        // Hard cap on python execution time & output length
+                        timeoutMs: 3000,
+                        maxOutput: 2048,
+                        python: process.env.OPEL_PYTHON_BIN || 'python'
+                    }
+                }
             },
             editing: {
                 enableFileEdits: false,
@@ -136,7 +153,7 @@ class ESP32AIAgent {
         return null;
     }
 
-    async chat(message, context = {}) {
+    async chat(message, context = {}, opts = {}) {
         if (!this.isAvailable()) {
             throw new Error('No AI provider configured. Please set up OpenAI or Anthropic API key.');
         }
@@ -148,7 +165,7 @@ class ESP32AIAgent {
 
         try {
             const systemPrompt = this.buildSystemPrompt(context);
-            const response = await this.sendMessage(activeClient, systemPrompt, message);
+            const response = await this.sendMessage(activeClient, systemPrompt, message, opts);
 
             // Store conversation
             this.conversationHistory.push({
@@ -192,41 +209,220 @@ Include code examples when helpful, and consider power consumption, memory usage
 Be concise but thorough in your explanations.`;
     }
 
-    async sendMessage(activeClient, systemPrompt, message) {
+    async sendMessage(activeClient, systemPrompt, message, opts = {}) {
         const maxHist = Math.max(0, Math.min(this.config.agent?.maxHistory || 10, 50));
         const history = this.conversationHistory.slice(-maxHist).map(h => [
             { role: 'user', content: h.message },
             { role: 'assistant', content: h.response }
         ]).flat();
-        const timeoutMs = 45000;
+        const timeoutMs = opts.timeoutMs || 45000;
+        const verbosity = opts.verbosity || this.config.agent?.defaultVerbosity || 'medium';
+        // Map verbosity to token + temperature adjustments
+        let baseMaxTokens = 2048, temperature = 0.7;
+        if (verbosity === 'low') { baseMaxTokens = 512; temperature = 0.4; }
+        else if (verbosity === 'high') { baseMaxTokens = 4096; temperature = 0.85; }
+        const userMaxTokens = opts.maxTokens && Number.isFinite(opts.maxTokens) ? Math.min(opts.maxTokens, 8192) : null;
+        const finalMaxTokens = userMaxTokens || baseMaxTokens;
+        if (opts.temperature !== undefined) temperature = opts.temperature;
+        this.lastModelUsed = null;
         const withTimeout = (p) => Promise.race([
             p,
             new Promise((_,rej)=>setTimeout(()=>rej(new Error('AI request timeout')), timeoutMs))
         ]);
         try {
             if (activeClient.type === 'openai') {
-                const model = this.config.openai.model || 'gpt-4o-mini';
-                const response = await withTimeout(activeClient.client.chat.completions.create({
-                    model,
-                    messages: [ { role: 'system', content: systemPrompt }, ...history, { role: 'user', content: message } ],
-                    max_tokens: 2048,
-                    temperature: 0.7
-                }));
-                return response.choices?.[0]?.message?.content || '(no response)';
+                const primaryModel = this.config.openai.model || 'gpt-4o-mini';
+                const fallbacks = Array.isArray(this.config.openai.fallbackModels) ? this.config.openai.fallbackModels : [];
+                const tryModels = [primaryModel, ...fallbacks.filter(m => m !== primaryModel)];
+                let lastErr;
+                for (const model of tryModels) {
+                    try {
+                        const useResponsesAPI = /gpt-5/i.test(model) || !!opts.reasoningEffort; // Prefer Responses API for GPT-5 or when reasoning requested
+                        if (useResponsesAPI && activeClient.client.responses?.create) {
+                            try {
+                                const input = [
+                                    { role: 'system', content: systemPrompt },
+                                    ...history,
+                                    { role: 'user', content: message }
+                                ];
+                                const payload = {
+                                    model,
+                                    input,
+                                    max_output_tokens: finalMaxTokens,
+                                };
+                                if (opts.reasoningEffort && ['low','medium','high'].includes(opts.reasoningEffort)) {
+                                    payload.reasoning = { effort: opts.reasoningEffort };
+                                }
+                                const response = await withTimeout(activeClient.client.responses.create(payload));
+                                this.lastModelUsed = model;
+                                let text = response.output_text || '';
+                                if (!text && Array.isArray(response.output)) {
+                                    text = response.output.map(p => {
+                                        if (typeof p === 'string') return p;
+                                        if (p?.content && Array.isArray(p.content)) {
+                                            return p.content.map(c => c.text || c.value || '').join('');
+                                        }
+                                        return p?.text || '';
+                                    }).join('');
+                                }
+                                return text || '(no response)';
+                            } catch (respErr) {
+                                // Fall back to chat.completions if Responses API fails (e.g., unsupported model or SDK version)
+                                lastErr = respErr;
+                                // Intentionally continue to chat.completions path below
+                            }
+                        }
+                        const baseMessages = [ { role: 'system', content: systemPrompt }, ...history, { role: 'user', content: message } ];
+                        const response = await withTimeout(activeClient.client.chat.completions.create({
+                            model,
+                            messages: baseMessages,
+                            max_tokens: finalMaxTokens,
+                            temperature,
+                            tools: this._openAIToolSchema(),
+                            tool_choice: 'auto'
+                        }));
+                        this.lastModelUsed = model;
+                        const choice = response.choices?.[0];
+                        const msgObj = choice?.message;
+                        if (msgObj?.tool_calls && Array.isArray(msgObj.tool_calls) && msgObj.tool_calls.length && this.config.features?.tools?.codeExec?.enabled) {
+                            // Process first (or sequential) tool call(s) - restrict to a single execution cycle to avoid loops
+                            const toolCall = msgObj.tool_calls[0];
+                            if (toolCall.type === 'function' && toolCall.function?.name === 'code_exec') {
+                                let codeArg = '';
+                                try { codeArg = JSON.parse(toolCall.function.arguments || '{}').code || ''; } catch { /* ignore */ }
+                                const toolResult = await this._executeCode(codeArg || '');
+                                // Follow-up message to model with tool result to get final answer
+                                const followUp = await withTimeout(activeClient.client.chat.completions.create({
+                                    model,
+                                    messages: [
+                                        ...baseMessages,
+                                        msgObj, // original tool call message
+                                        { role: 'tool', tool_call_id: toolCall.id, content: toolResult }
+                                    ],
+                                    max_tokens: finalMaxTokens,
+                                    temperature
+                                }));
+                                return followUp.choices?.[0]?.message?.content || '(no response)';
+                            }
+                        }
+                        return msgObj?.content || '(no response)';
+                    } catch (e) {
+                        lastErr = e;
+                        // Only attempt fallback on certain error signatures
+                        const msg = (e && e.message || '').toLowerCase();
+                        if (!/rate limit|timeout|model|overloaded|capacity/.test(msg)) throw e;
+                    }
+                }
+                throw lastErr || new Error('All OpenAI models failed');
             } else if (activeClient.type === 'anthropic') {
                 const model = this.config.anthropic.model || 'claude-3-5-haiku-20241022';
                 const response = await withTimeout(activeClient.client.messages.create({
                     model,
-                    max_tokens: 2048,
+                    max_tokens: finalMaxTokens,
                     system: systemPrompt,
                     messages: [ ...history, { role: 'user', content: message } ]
                 }));
+                this.lastModelUsed = model;
                 return response.content?.[0]?.text || '(no response)';
             } else if (activeClient.type === 'ollama') {
-                return await this._callOllamaChat(systemPrompt, history, message, timeoutMs);
+                const answer = await this._callOllamaChat(systemPrompt, history, message, timeoutMs);
+                this.lastModelUsed = this.config.ollama.model;
+                return answer;
             }
         } catch (e) {
             this._lastProviderError = { provider: activeClient.type, error: e.message };
+            throw e;
+        }
+    }
+
+    async streamChat(message, context = {}, opts = {}, onToken) {
+        // Only OpenAI streaming implemented for now
+        const active = this.getActiveClient();
+        if (!active || active.type !== 'openai') throw new Error('Streaming currently supported only for OpenAI');
+        // NOTE: Tool (code_exec) execution cycle is NOT performed in streaming mode yet; model may emit tool_calls
+        // but we ignore them to keep SSE simple. Future enhancement could intercept partial tool_call and pause stream.
+        const systemPrompt = this.buildSystemPrompt(context);
+        const maxHist = Math.max(0, Math.min(this.config.agent?.maxHistory || 10, 50));
+        const history = this.conversationHistory.slice(-maxHist).map(h => [
+            { role: 'user', content: h.message },
+            { role: 'assistant', content: h.response }
+        ]).flat();
+        const model = this.config.openai.model || 'gpt-4o-mini';
+        const temperature = opts.temperature !== undefined ? opts.temperature : 0.7;
+        const max_tokens = opts.maxTokens || 2048;
+        const messages = [ { role: 'system', content: systemPrompt }, ...history, { role: 'user', content: message } ];
+        const isGpt5Family = /gpt-5/i.test(model);
+        const useResponsesAPI = (isGpt5Family || !!opts.reasoningEffort) && active.client.responses?.create;
+        const tryStream = async () => {
+            if (useResponsesAPI) {
+                // Attempt streaming via Responses API (may not yet be enabled for all GPT-5 models)
+                try {
+                    const input = messages; // Responses API accepts same shape for multi-turn (role/content)
+                    const payload = { model, input, max_output_tokens: max_tokens, stream: true };
+                    if (opts.reasoningEffort && ['low','medium','high'].includes(opts.reasoningEffort)) {
+                        payload.reasoning = { effort: opts.reasoningEffort };
+                    }
+                    const stream = await active.client.responses.create(payload);
+                    this.lastModelUsed = model;
+                    let full = '';
+                    for await (const evt of stream) {
+                        // Heuristic extraction of delta text fragments
+                        let delta = '';
+                        if (evt?.type && /output_text/.test(evt.type)) {
+                            delta = evt.delta || evt.text || '';
+                        } else if (evt?.type === 'response.completed' && !full) {
+                            // Some SDKs aggregate at end
+                            delta = evt.response?.output_text || '';
+                        }
+                        if (delta) {
+                            full += delta;
+                            if (onToken) onToken(delta);
+                        }
+                    }
+                    return full;
+                } catch (e) {
+                    // Fall back to legacy chat streaming below
+                    console.warn('Responses API streaming failed, falling back to chat.completions streaming:', e.message);
+                }
+            }
+            const stream = await active.client.chat.completions.create({ model, messages, temperature, max_tokens, stream: true });
+            this.lastModelUsed = model;
+            let full = '';
+            for await (const chunk of stream) {
+                const delta = chunk.choices?.[0]?.delta?.content;
+                if (delta) {
+                    full += delta;
+                    if (onToken) onToken(delta);
+                }
+            }
+            return full;
+        };
+        try {
+            const full = await tryStream();
+            this.conversationHistory.push({ timestamp: new Date().toISOString(), message, response: full, context });
+            return full;
+        } catch (e) {
+            const msg = (e && e.message || '').toLowerCase();
+            const verificationTrigger = /verification|not authorized for streaming|pending approval|requires verification/.test(msg);
+            if (isGpt5Family && verificationTrigger && this.config.experimental?.gpt5StreamVerificationFallback) {
+                // Retry NON streaming path as fallback
+                try {
+                    const nonStreamResp = await active.client.chat.completions.create({
+                        model,
+                        messages,
+                        temperature,
+                        max_tokens
+                    });
+                    this.lastModelUsed = model;
+                    const text = nonStreamResp.choices?.[0]?.message?.content || '(no response)';
+                    this.conversationHistory.push({ timestamp: new Date().toISOString(), message, response: text, context, note: 'non-stream fallback after verification error' });
+                    // Provide synthetic token callback once with full text so UI still receives something
+                    if (onToken) onToken(text);
+                    return text;
+                } catch (e2) {
+                    throw new Error(e.message + ' | fallback failed: ' + e2.message);
+                }
+            }
             throw e;
         }
     }
@@ -535,5 +731,47 @@ Format as a JSON array of objects with 'action', 'description', and 'priority' f
         return true;
     }
 }
+
+// ---- Tool / Code Execution Helpers ----
+ESP32AIAgent.prototype._openAIToolSchema = function() {
+    if (!this.config.features?.tools?.codeExec?.enabled) return undefined;
+    return [
+        {
+            type: 'function',
+            function: {
+                name: 'code_exec',
+                description: 'Executes short, side-effect-free Python code and returns its stdout. Use for quick calculations only.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        code: { type: 'string', description: 'Python code snippet to run' }
+                    },
+                    required: ['code']
+                }
+            }
+        }
+    ];
+};
+
+ESP32AIAgent.prototype._executeCode = async function(code) {
+    const cfg = this.config.features?.tools?.codeExec;
+    if (!cfg?.enabled) return 'code execution disabled';
+    // Basic safety filters (non exhaustive)
+    const dangerous = /(import\s+os|import\s+sys|subprocess|open\(|exec\(|eval\(|socket|requests|\/|\\|input\()/i;
+    if (dangerous.test(code)) return 'Rejected: disallowed constructs in code';
+    return await new Promise(resolve => {
+        const { spawn } = require('child_process');
+        const proc = spawn(cfg.python || 'python', ['-c', code], { stdio: ['ignore','pipe','pipe'], timeout: cfg.timeoutMs || 3000 });
+        let out = '', err='';
+        proc.stdout.on('data', d => { out += d.toString(); if (out.length > cfg.maxOutput) { out = out.slice(0,cfg.maxOutput) + '...[truncated]'; proc.kill('SIGKILL'); } });
+        proc.stderr.on('data', d => { err += d.toString(); if (err.length > 400) err = err.slice(-400); });
+        proc.on('error', e => resolve('Execution error: '+e.message));
+        proc.on('close', codeStatus => {
+            if (err && !out) out = 'stderr:\n' + err;
+            resolve(out.trim() || `(exit ${codeStatus})`);
+        });
+        setTimeout(()=>{ try { proc.kill('SIGKILL'); resolve('Timed out'); } catch {} }, cfg.timeoutMs || 3000 + 200);
+    });
+};
 
 module.exports = ESP32AIAgent;
