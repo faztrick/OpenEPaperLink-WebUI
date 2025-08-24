@@ -8,55 +8,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="styles.css" rel="stylesheet">
   <script src="layout-fix.js"></script>
+  <script src="components/components.js" defer></script>
   <script src="shared-devices.js" defer></script>
 </head>
 <body>
-  <header class="header">
-    <div class="header-content">
-      <div class="logo"><i class="fas fa-network-wired"></i><h1>AP List</h1></div>
-      <div class="status-indicators" style="display:flex;gap:10px;align-items:center">
-        <div class="status-item" style="display:flex;flex-direction:column;gap:4px" title="Active Device & Communication">
-          <label style="font-size:10px;color:#6b7280">Device</label>
-          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-            <select id="header-device-select" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:140px"></select>
-            <select id="header-comm-mode" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px">
-              <option value="serial">Serial</option>
-              <option value="wifi">WiFi</option>
-            </select>
-            <select id="header-comm-port" style="padding:4px 6px;border:1px solid #e5e7eb;border-radius:4px;min-width:120px"></select>
-          </div>
-        </div>
-        <div class="status-item" title="API">
-          <span id="api-status-dot" class="status-dot disconnected"></span>
-          <small id="api-status-text" style="margin-left:6px;color:#9ca3af">API(ip:port)</small>
-        </div>
-        <div class="status-item" title="WebSocket">
-          <span id="ws-status-dot" class="status-dot disconnected"></span>
-          <small id="ws-status-text" style="margin-left:6px;color:#9ca3af">WS(ip:port)</small>
-        </div>
-        <div class="status-item" title="Serial Port" style="display:flex;align-items:center;gap:8px">
-          <span id="serial-status-dot" class="status-dot disconnected"></span>
-          <small id="serial-status-text" style="color:#9ca3af">Serial (COM)</small>
-          <select id="com-port-select" aria-label="COM port" style="margin-left:6px;padding:4px;border-radius:4px;border:1px solid #e5e7eb;background:white;color:#111;display:none"></select>
-          <button id="com-refresh" title="Refresh COM list" style="padding:4px 6px;border-radius:4px;border:1px solid #e5e7eb;background:#f3f4f6;display:none">⟳</button>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <nav class="top-nav">
-    <div class="container">
-      <a href="index.html" class="nav-link">Dashboard</a>
-      <a href="wifi.html" class="nav-link">WiFi</a>
-      <a href="tags.html" class="nav-link">Tags</a>
-      <a href="ap-list.html" class="nav-link active">AP List</a>
-      <a href="peers.html" class="nav-link">Peers</a>
-      <a href="flash.html" class="nav-link">Simple Flasher</a>
-      <a href="device.html" class="nav-link">Device</a>
-      <a href="settings.html" class="nav-link">Settings</a>
-      <a href="ai.html" class="nav-link">AI</a>
-    </div>
-  </nav>
+  <div data-include="header"></div>
+  <div data-include="nav"></div>
 
   <main class="container" style="max-width:1300px;padding:16px">
     <h1 style="margin-top:0"><i class="fas fa-network-wired"></i> Access Point / Station Overview</h1>

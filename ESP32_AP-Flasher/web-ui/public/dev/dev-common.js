@@ -178,6 +178,8 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+  // If components are injected after DOMContentLoaded, run init post components injection too
+  document.addEventListener('components:loaded', ()=> { if(!init._ran) init(); else setTimeout(()=>probeApi(), 50); });
   window.addEventListener('spa:navigated', ()=> setTimeout(()=>{ if(!init._ran) init(); },0));
 
   global.__OEPL_DEV_COMMON__ = {
