@@ -32,6 +32,8 @@ class SerialManager extends EventEmitter {
         this._manualComOnly = !!options.manualComOnly;
         this._allowedComPort = options.allowedComPort || null;
         this._autoCloseOnError = options.autoCloseOnError !== false; // default true
+        // Maximum time (ms) to wait for underlying serialport 'open' event before rejecting
+        this._openTimeoutMs = typeof options.openTimeout === 'number' ? options.openTimeout : 4000;
         this._serialAvailable = serialAvailable;
         this._lastError = null;
         this._dataBytes = 0;
@@ -100,7 +102,23 @@ class SerialManager extends EventEmitter {
                 this._dataBytes = 0;
                 this._lastError = null;
 
+                let opened = false;
+                let settled = false; // track whether promise resolved/rejected
+                const timeoutMs = this._openTimeoutMs > 0 ? this._openTimeoutMs : 4000;
+                const timer = setTimeout(() => {
+                    if (settled || opened) return;
+                    settled = true;
+                    // Proactively destroy port to free fd
+                    try { port.close(() => {}); } catch (_) {}
+                    this._port = null; this._path = null; this._baud = null;
+                    reject(new Error(`serial open timeout after ${timeoutMs}ms for ${path}`));
+                }, timeoutMs);
+
                 port.on('open', () => {
+                    opened = true;
+                    if (settled) return; // already rejected (race)
+                    settled = true;
+                    clearTimeout(timer);
                     this.emit('open', { path: this._path, baudRate: this._baud });
                     this._emitStatus();
                     resolve({ success: true, path: this._path, baudRate: this._baud });
@@ -115,6 +133,15 @@ class SerialManager extends EventEmitter {
 
                 port.on('error', (err) => {
                     this._lastError = err;
+                    // If error occurs before 'open', reject so API caller gets immediate feedback
+                    if (!opened && !settled) {
+                        settled = true;
+                        clearTimeout(timer);
+                        // ensure internal state cleaned
+                        try { port.close(() => {}); } catch (_) {}
+                        this._port = null; this._path = null; this._baud = null;
+                        return reject(err);
+                    }
                     this.emit('error', { path: this._path, error: err.message || String(err) });
                     if (this._autoCloseOnError) {
                         try { this.close(); } catch (_) { /* ignore */ }

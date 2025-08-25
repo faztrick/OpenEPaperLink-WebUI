@@ -2053,12 +2053,19 @@ class ESP32DevUI {
         const portPath = select && select.value ? select.value : (document.getElementById('com-port-select')?.value || this.config.comPort || 'COM10');
         if (!portPath) { this.log('No COM port selected', 'warning'); return; }
         try {
+            const t0 = performance.now();
             const res = await fetch('/api/serial/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: portPath, baudRate: 115200 }) });
             const j = await res.json();
+            const elapsed = j.elapsedMs != null ? j.elapsedMs : (performance.now() - t0);
             if (j.success) {
-                this.log(`Opened serial ${portPath}`, 'success');
+                this.log(`Opened serial ${portPath} (${Math.round(elapsed)} ms)`, 'success');
             } else {
-                this.log(`Failed to open serial: ${j.error || 'unknown'}`, 'error');
+                const msg = j.error || 'unknown';
+                if (/timeout/i.test(msg)) {
+                    this.log(`Serial open timeout after ${Math.round(elapsed)} ms for ${portPath}. Check: 1) Cable/Power 2) Driver 3) In-use by other program.`, 'error');
+                } else {
+                    this.log(`Failed to open serial: ${msg}`, 'error');
+                }
             }
         } catch (err) {
             this.log(`Error opening serial port: ${err.message}`, 'error');

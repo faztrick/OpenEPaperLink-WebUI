@@ -1,0 +1,8 @@
+// Logging related endpoints
+module.exports = function registerLoggingRoutes(app, deps){
+  const { fs, logsDir, tailLines, appendLog, logEmitter } = deps;
+  app.get('/api/log/list', (req,res)=>{ try { const files = fs.readdirSync(logsDir).filter(f=>f.endsWith('.log')); const names = files.map(f=>f.replace(/\.log$/,'')); res.json({ success:true, logs:names }); } catch(err){ res.status(500).json({ success:false, error:err.message }); } });
+  app.get('/api/log/read', (req,res)=>{ try { const name = req.query.name; if(!name) return res.status(400).json({ success:false, error:'name query required' }); const text = tailLines(name, parseInt(req.query.lines)||500); res.json({ success:true, name, text }); } catch(err){ res.status(500).json({ success:false, error:err.message }); } });
+  app.get('/api/log/stream', (req,res)=>{ const name = req.query.name; if(!name) return res.status(400).send('name required'); res.writeHead(200, {'Content-Type':'text/event-stream','Cache-Control':'no-cache', Connection:'keep-alive'}); const initial = tailLines(name, 200); if(initial) res.write(`data: ${JSON.stringify({ initial })}\n\n`); const onLine = (line)=>{ try { res.write(`data: ${JSON.stringify({ line })}\n\n`); } catch(_){} }; logEmitter.on(name, onLine); req.on('close', ()=> logEmitter.removeListener(name, onLine)); });
+  app.post('/api/log', (req,res)=>{ try { const { name, message } = req.body || {}; if(!name || !message) return res.status(400).json({ success:false, error:'name and message required' }); appendLog(name, message); res.json({ success:true }); } catch(err){ res.status(500).json({ success:false, error:err.message }); } });
+};

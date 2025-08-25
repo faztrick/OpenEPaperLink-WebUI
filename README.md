@@ -177,3 +177,38 @@ Notes:
 - Mode changes propagate through `setDeviceMode` ensuring backend persistence and UI re-render.
 
 If you later introduce a global layout refactor (e.g., a universal left nav), the sidebar wrapper can be relocated without modifying the component logic—only placement code would change.
+
+## Development Web-UI Node Server Port Configuration
+
+The standalone development Node.js server (`ESP32_AP-Flasher/web-ui/server.js`) supports flexible port selection.
+
+Precedence (highest first):
+
+1. CLI: `--port <n>` / `--port=<n>` / `-p <n>`
+2. Environment: `WEBUI_PORT=<n>`
+3. Environment: `PORT=<n>` (legacy)
+4. Default: `3000`
+
+If the chosen port is busy it auto-increments (port+1 … up to +10). To fail immediately instead of incrementing, pass `--strict-port`.
+
+Print only the resolved port (useful for tooling):
+
+```bash
+node ESP32_AP-Flasher/web-ui/server.js --port 9050 --print-port
+```
+
+PowerShell examples with timestamp:
+
+```powershell
+Get-Date -Format o; $env:WEBUI_PORT=4500; node ESP32_AP-Flasher/web-ui/server.js
+Get-Date -Format o; node ESP32_AP-Flasher/web-ui/server.js --port 4600
+Get-Date -Format o; node ESP32_AP-Flasher/web-ui/server.js -p 4700 --strict-port
+```
+
+If a port is occupied you will see logs like:
+
+```text
+Port 4600 in use, trying 4601...
+```
+
+Then open: `http://localhost:<finalPort>/dev/`

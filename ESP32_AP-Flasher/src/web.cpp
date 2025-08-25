@@ -633,6 +633,34 @@ void init_web()
         }
         request->send(400, "application/json", "{\"error\":\"Missing or invalid mac parameter\"}"); });
 
+    // Lightweight alias update endpoint (POST /tag_alias mac=<hex12>&alias=<string>)
+    server.on("/tag_alias", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("mac", true) || !request->hasParam("alias", true)) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"mac and alias required\"}");
+            return;
+        }
+        String macStr = request->getParam("mac", true)->value();
+        String aliasStr = request->getParam("alias", true)->value();
+        macStr.trim(); aliasStr.trim();
+        if (aliasStr.length() > 63) aliasStr.remove(63); // enforce sane upper bound
+        uint8_t mac[8];
+        if (!hex2mac(macStr, mac)) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"invalid mac format\"}");
+            return;
+        }
+        tagRecord *taginfo = tagRecord::findByMAC(mac);
+        if (!taginfo) {
+            request->send(404, "application/json", "{\"success\":false,\"error\":\"tag not found\"}");
+            return;
+        }
+        taginfo->alias = aliasStr;
+        wsSendTaginfo(mac, SYNC_USERCFG);
+        // Persist database (best-effort)
+        saveDB("/current/tagDB.json");
+        String resp = String("{\"success\":true,\"mac\":\"") + macStr + "\",\"alias\":\"" + aliasStr + "\"}";
+        request->send(200, "application/json", resp); });
+
     // Legacy alias for tag commands (JS sometimes calls /cmd)
     // Canonical handler is /tag_cmd; keep /cmd as alias for compatibility
     server.on("/cmd", HTTP_POST, [](AsyncWebServerRequest *request)
