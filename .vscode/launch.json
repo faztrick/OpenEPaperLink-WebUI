@@ -99,6 +99,20 @@
       "cwd": "${workspaceFolder}/ESP32_AP-Flasher",
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "Attach to Next.js (web-ui-next)",
+      "type": "node",
+      "request": "attach",
+      "port": 9230,
+      "restart": true,
+      "address": "localhost",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true
     }
   ]
 }

@@ -1,0 +1,5 @@
+/* Global styles migrated from legacy dev styles placeholder */
+html, body { padding:0; margin:0; font-family: system-ui, Arial, sans-serif; background:#0d1117; color:#e6edf3; }
+*, *::before, *::after { box-sizing: border-box; }
+a { color:#58a6ff; text-decoration:none; }
+:root { --accent:#ff9e3d; }

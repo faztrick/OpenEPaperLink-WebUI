@@ -89,7 +89,7 @@ static void processLine(char *line)
     }
     if (strcmp(line, "help") == 0)
     {
-        cliPrint("Commands: help, sysinfo, tasks, reboot, fsinfo, fsmount, fstest, fsformat");
+        cliPrint("Commands: help, sysinfo, tasks, reboot, fsinfo, fsmount, fstest, fsformat, wifiscan");
     }
     else if (strcmp(line, "sysinfo") == 0)
     {
@@ -202,6 +202,37 @@ static void processLine(char *line)
 #else
         cliPrint("[fsformat] Not available (SD_CARD_ONLY build)");
 #endif
+    }
+    else if (strcmp(line, "wifiscan") == 0)
+    {
+        // Perform a synchronous WiFi scan and output results in a parse-friendly format.
+        // First line: JSON summary with count. Following lines: JSON per network.
+        cliPrint("[wifiscan] starting scan...");
+        int16_t n = WiFi.scanNetworks(false, true);
+        if (n < 0)
+        {
+            Serial.printf("[wifiscan] scan failed (%d)\n", (int)n);
+        }
+        else
+        {
+            Serial.printf("{\"event\":\"wifiscan_summary\",\"count\":%d}\n", (int)n);
+            for (int i = 0; i < n; ++i)
+            {
+                String ssid = WiFi.SSID(i);
+                int32_t rssi = WiFi.RSSI(i);
+                int32_t channel = WiFi.channel(i);
+                wifi_auth_mode_t auth = WiFi.encryptionType(i);
+                uint8_t *bssid = WiFi.BSSID(i);
+                char bssidStr[20];
+                if (bssid)
+                    sprintf(bssidStr, "%02X:%02X:%02X:%02X:%02X:%02X", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+                else
+                    strcpy(bssidStr, "00:00:00:00:00:00");
+                Serial.printf("{\"event\":\"wifinet\",\"ssid\":\"%s\",\"rssi\":%ld,\"channel\":%ld,\"enc\":%d,\"bssid\":\"%s\"}\n",
+                              ssid.c_str(), (long)rssi, (long)channel, (int)auth, bssidStr);
+            }
+            cliPrint("[wifiscan] done");
+        }
     }
     else
     {

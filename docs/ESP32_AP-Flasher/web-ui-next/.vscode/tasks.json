@@ -1,0 +1,43 @@
+{
+  // VS Code tasks for multi-terminal workflow: Next.js dev, serial monitor (PlatformIO), optional log tail
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Next: Dev",
+      "type": "shell",
+      "command": "pwsh",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next" },
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-Command",
+        // Enable serial API while running dev server
+        "$env:ENABLE_SERIAL_API=1; next dev"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PIO: Monitor (COM10)",
+      "type": "shell",
+      "command": "pio",
+      "args": ["device","monitor","--baud","115200","--port","COM10"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Serial Log Tail",
+      "type": "shell",
+      "command": "pwsh",
+      "options": { "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next" },
+      "args": [
+        "-NoProfile","-ExecutionPolicy","Bypass","-Command",
+        "node scripts/tail-serial-log.js"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev Multi-Terminals", 
+      "dependsOn": ["Next: Dev", "PIO: Monitor (COM10)", "Serial Log Tail"],
+      "dependsOrder": "parallel"
+    }
+  ]
+}
