@@ -1,5 +1,6 @@
 // Consolidated WiFiModule implementation
 #include "wifi_module.h"
+#include "wifi_util.h" // shared ranking & reason helpers
 
 #include <ArduinoJson.h>
 #include "storage.h"
@@ -87,7 +88,8 @@ bool WiFiModule::start()
     // If we only have singles and not using WiFiMulti yet, rank them
     if (!useWiFiMulti && candidateSingles.size() > 1)
     {
-        rankCandidateNetworks(candidateSingles);
+        // Use shared utility for ranking based on scan results (global free function from wifi_util.cpp)
+        ::rankCandidateNetworks(candidateSingles);
     }
 
     // Apply static IP settings if any
@@ -1102,68 +1104,7 @@ void WiFiModule::applyStaticIpIfConfigured()
     }
 }
 
-void WiFiModule::rankCandidateNetworks(std::vector<std::pair<String, String>> &candidates)
-{
-    if (candidates.size() <= 1)
-        return;
-    // Ensure STA or AP_STA for scanning
-    wifi_mode_t mode;
-    if (esp_wifi_get_mode(&mode) == ESP_OK)
-    {
-        if (mode == WIFI_MODE_AP)
-            WiFi.mode(WIFI_AP_STA);
-    }
-    Serial.println("[WIFI_MODULE] Scanning networks to rank candidates...");
-    int16_t found = WiFi.scanNetworks(false, true);
-    if (found < 0)
-    {
-        Serial.println("[WIFI_MODULE] Scan failed; keeping original order");
-        WiFi.scanDelete();
-        return;
-    }
-    struct Ranked
-    {
-        String ssid;
-        String pass;
-        int rssi;
-        bool present;
-    };
-    std::vector<Ranked> ranked;
-    ranked.reserve(candidates.size());
-    for (auto &p : candidates)
-    {
-        int best = -300;
-        bool present = false;
-        for (int i = 0; i < found; ++i)
-        {
-            if (WiFi.SSID(i) == p.first)
-            {
-                int r = WiFi.RSSI(i);
-                if (r > best)
-                {
-                    best = r;
-                    present = true;
-                }
-            }
-        }
-        ranked.push_back({p.first, p.second, best, present});
-    }
-    std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked &a, const Ranked &b)
-                     {
-        if (a.present != b.present) return a.present && !b.present;
-        if (a.present && b.present) return a.rssi > b.rssi;
-        return false; });
-    candidates.clear();
-    for (auto &r : ranked)
-    {
-        candidates.emplace_back(r.ssid, r.pass);
-        if (r.present)
-            Serial.printf("[WIFI_MODULE] Candidate '%s' RSSI %d dBm\n", r.ssid.c_str(), r.rssi);
-        else
-            Serial.printf("[WIFI_MODULE] Candidate '%s' not visible\n", r.ssid.c_str());
-    }
-    WiFi.scanDelete();
-}
+// Moved ranking logic to wifi_util.cpp free function
 
 void WiFiModule::loadApConfig(JsonDocument &outApCfg)
 {
@@ -1312,33 +1253,10 @@ void WiFiModule::registerWiFiEvents()
             default: break; } });
 }
 
+// Simplified: use shared mapping in wifi_util.cpp
 void WiFiModule::logDisconnectReason(uint8_t reason)
 {
-    static struct
-    {
-        uint8_t code;
-        const char *msg;
-    } reasons[] = {
-        {WIFI_REASON_UNSPECIFIED, "Unspecified"},
-        {WIFI_REASON_AUTH_EXPIRE, "Auth expire"},
-        {WIFI_REASON_AUTH_LEAVE, "Auth leave"},
-        {WIFI_REASON_ASSOC_EXPIRE, "Assoc expire"},
-        {WIFI_REASON_ASSOC_TOOMANY, "Assoc too many"},
-        {WIFI_REASON_NOT_AUTHED, "Not authed"},
-        {WIFI_REASON_NOT_ASSOCED, "Not assoc"},
-        {WIFI_REASON_ASSOC_LEAVE, "Assoc leave"},
-        {WIFI_REASON_BEACON_TIMEOUT, "Beacon timeout"},
-        {WIFI_REASON_NO_AP_FOUND, "No AP found"},
-        {WIFI_REASON_AUTH_FAIL, "Auth fail"},
-        {WIFI_REASON_ASSOC_FAIL, "Assoc fail"},
-        {WIFI_REASON_HANDSHAKE_TIMEOUT, "Handshake timeout"}};
-    const char *msg = "Unknown";
-    for (auto &r : reasons)
-        if (r.code == reason)
-        {
-            msg = r.msg;
-            break;
-        }
+    const char *msg = wifiDisconnectReasonToString(reason);
     Serial.printf("[WIFI_MODULE][EVENT] DISCONNECTED reason=%u (%s)\n", reason, msg);
     lastError = String("Disconnect: ") + msg;
 }

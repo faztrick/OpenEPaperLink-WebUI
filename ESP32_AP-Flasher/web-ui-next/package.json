@@ -13,7 +13,10 @@
     "pm2:prod": "pm2 start ecosystem.config.cjs --only webui-prod",
     "test": "vitest run --reporter=default",
     "test:watch": "vitest",
-    "smoke": "node scripts/smoke-serial.mjs"
+    "smoke": "node scripts/smoke-serial.mjs",
+    "export:static": "next build && next export",
+    "export:copy": "node scripts/export-static-and-copy.mjs",
+    "export:all": "node scripts/export-static-and-copy.mjs --clean"
   },
   "dependencies": {
     "next": "15.5.0",

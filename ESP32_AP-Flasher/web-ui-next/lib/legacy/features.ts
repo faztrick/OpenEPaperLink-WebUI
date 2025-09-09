@@ -10,20 +10,12 @@ export interface FeaturesResult {
   fetchedAt: number;
 }
 
-async function request(url: string, timeoutMs = 4000): Promise<any> {
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const resp = await fetch(url, { signal: ctrl.signal });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    return await resp.json();
-  } finally { clearTimeout(to); }
-}
+import { requestJson } from '../request';
 
 export async function fetchDeviceFeatures(deviceId: string): Promise<FeaturesResult> {
   try {
     // Expect API: /api/device/[id]/features returning object or {features:object} or list
-    const raw = await request(`/api/device/${encodeURIComponent(deviceId)}/features`);
+    const raw = await requestJson(`/api/device/${encodeURIComponent(deviceId)}/features`);
     let obj: DeviceFeaturesMap;
     if (Array.isArray(raw)) {
       obj = raw.reduce((acc: DeviceFeaturesMap, k: string) => { acc[k] = 1; return acc; }, {});

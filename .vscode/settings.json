@@ -36,7 +36,9 @@
     "complex": "cpp",
     "forward_list": "cpp",
     "limits": "cpp",
-    "*.inc": "cpp"
+    "*.inc": "cpp",
+    "algorithm": "cpp",
+    "__bit_reference": "cpp"
   },
   "chat.mcp.serverSampling": {
     "OpenEPaperLink-WebUI/.vscode/mcp.json: github": {

@@ -71,6 +71,26 @@ Then extend `next.config.js` accordingly.
 
 Currently `/api/devices` is assumed; if backend differs, create API proxy routes under `pages/api/` or configure `next.config.js` `rewrites()` to target the firmware host.
 
+### Selecting the Firmware AP Base URL
+
+Set `NEXT_PUBLIC_AP_BASE_URL` (see `.env.example`) to point directly at your ESP32 AP (e.g. `http://192.168.4.1`). If unset, the UI will:
+
+1. Use `window.location.origin` when running in a browser (handy if you reverse proxy the AP).
+2. If on `localhost` and no origin override, it heuristically falls back to `http://192.168.4.1`.
+3. During server-side rendering it only trusts the environment variable (no guessing).
+
+Utility helper: `lib/apiBase.ts` exports `getApiBase()`, `buildApiUrl()`, `apiGet()`, `apiPost()` used by future data hooks.
+
+Example:
+
+```bash
+cp .env.example .env.local
+echo "NEXT_PUBLIC_AP_BASE_URL=http://192.168.4.1" >> .env.local
+npm run dev
+```
+
+Now requests built via `buildApiUrl('/taglist')` resolve to `http://192.168.4.1/taglist`.
+
 ## Adding Real Device Data
 
 1. Implement an API route: `pages/api/devices.ts` that proxies existing backend.

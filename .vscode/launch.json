@@ -113,6 +113,27 @@
       "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next",
       "autoAttachChildProcesses": true,
       "sourceMaps": true
+    },
+    {
+      "name": "Next: Launch Dev (web-ui-next)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:inspect"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--trace-warnings"
+      },
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "sourceMaps": true
     }
   ]
 }

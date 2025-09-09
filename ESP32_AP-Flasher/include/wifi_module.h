@@ -108,7 +108,6 @@ private:
     void startFallbackAP();
     void stopFallbackAPIfIdle();
     void applyStaticIpIfConfigured();
-    void rankCandidateNetworks(std::vector<std::pair<String, String>> &candidates);
     void loadApConfig(JsonDocument &outApCfg);                // loads /current/apconfig.json for AP customization
     bool loadStaConfig(JsonDocument &doc, StaConfig &outCfg); // unified loader for station JSON
     void applyStaticIpFrom(const StaConfig &cfg);

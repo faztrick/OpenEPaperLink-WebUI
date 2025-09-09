@@ -194,9 +194,7 @@
 				"-e",
 				"OutdoorAP"
 			],
-			"problemMatcher": [
-				"$gcc"
-			],
+			"problemMatcher": [],
 			"group": "build"
 		},
 		{
@@ -229,7 +227,7 @@
 			"group": "build"
 		},
 		{
-			"label": "Start web-ui server",
+			"label": "Start legacy web-ui server (Express)",
 			"type": "shell",
 			"command": "pwsh",
 			"args": [
@@ -239,6 +237,55 @@
 				"-Command",
 				"Get-Date -Format o; node ESP32_AP-Flasher/web-ui/server.js"
 			]
+		},
+		{
+			"label": "Next: Dev (web-ui-next)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; if (-not (Test-Path node_modules)) { npm install }; npm run dev"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Next: Build (web-ui-next)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; npm run build"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Next: Start (prod serve)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher/web-ui-next"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; npm run start"
+			],
+			"problemMatcher": []
 		}
 	],
 	"inputs": [
