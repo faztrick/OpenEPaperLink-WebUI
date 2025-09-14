@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
-import { transport, TransportStatus } from '../lib/transport';
+import { useCallback, useEffect, useState } from 'react';
 import { showToast } from '../hooks/useToast';
+import { transport, TransportStatus } from '../lib/transport';
 import ConnectionStatusBadge from './ConnectionStatusBadge';
 
 interface TransportControlPanelProps {
@@ -90,12 +90,12 @@ export function TransportControlPanel({ onNext }: TransportControlPanelProps) {
         )}
         <div className="row-line">
           <label className="lbl">Next</label>
-            <button className="btn-slim" disabled={!canNext} title={nextDisabledReason} onClick={() => {
-              if (onNext) onNext(); else {
-                const el = document.getElementById('wifi-panel');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }
-            }}>Next</button>
+          <button className="btn-slim" disabled={!canNext} title={nextDisabledReason} onClick={() => {
+            if (onNext) onNext(); else {
+              const el = document.getElementById('wifi-panel');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}>Next</button>
         </div>
       </div>
       <style jsx>{`
