@@ -5,6 +5,7 @@ import { DeviceEditPanel } from '../components/DeviceEditPanel';
 import { Layout } from '../components/Layout';
 import { ReachabilityBadge } from '../components/ReachabilityBadge';
 import { Seo } from '../components/Seo';
+import { SysinfoPreviewModal } from '../components/SysinfoPreviewModal';
 import { computeReachabilitySummary, triggerReachabilityRefresh } from '../hooks/useDeviceReachability';
 import { showToast } from '../hooks/useToast';
 import type { DeviceSummary as SharedDeviceSummary } from '../lib/api-types';
@@ -25,6 +26,8 @@ export default function DevicesPage() {
     if (current) setSelectedId(current.id);
   }, []);
 
+  const [customDevices, setCustomDevices] = useState<CustomDevice[]>([]); // client-loaded
+  const [mounted, setMounted] = useState(false); // true after first client mount
   useEffect(() => {
     const unsub = subscribeDeviceOverrides(() => setOvVersion(v => v + 1));
     return () => { try { unsub(); } catch { /* ignore */ } };
@@ -49,6 +52,10 @@ export default function DevicesPage() {
   const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
   const [customVersion, setCustomVersion] = useState(0);
   const [autoAdding, setAutoAdding] = useState(false); // loading state for auto-add from serial
+  // Holds a discovered device (identity + raw sysinfo) awaiting user confirmation in preview modal
+  // before actually persisting to customDevices. This prevents accidental additions if parsing
+  // heuristics produce an unexpected ID or name; user can adjust both.
+  const [pendingSysinfo, setPendingSysinfo] = useState<{ identity: { id: string; name: string; baseUrl: string }; raw: any; source: string } | null>(null);
   // Serial backend/port selection moved into device detail page.
 
   function openEdit(d: SharedDeviceSummary) {
@@ -63,10 +70,19 @@ export default function DevicesPage() {
     return () => { try { unsub(); } catch { /* ignore */ } };
   }, []);
 
-  const customDevices: CustomDevice[] = (() => {
-    const all = getAllCustomDevices();
-    return Object.values(all).sort((a, b) => a.id.localeCompare(b.id));
-  })();
+  // Mark mounted and load custom devices (localStorage reads) only on client to avoid SSR mismatch.
+  useEffect(() => {
+    setMounted(true);
+    function load() {
+      try {
+        const all = getAllCustomDevices();
+        setCustomDevices(Object.values(all).sort((a, b) => a.id.localeCompare(b.id)));
+      } catch { /* ignore */ }
+    }
+    load();
+    const unsub = subscribeCustomDevices(() => { setCustomVersion(v => v + 1); load(); });
+    return () => { try { unsub(); } catch { /* ignore */ } };
+  }, []);
 
   function openAddCustom() {
     setCustomPanelMode('add');
@@ -144,7 +160,16 @@ export default function DevicesPage() {
                 showToast('Probing serial for sysinfo...', 'info');
                 let res = await fetchSerialSysinfo();
                 if (!res.success) {
-                  showToast('Serial sysinfo failed: ' + (res.error || 'unknown') + ' (trying HTTP via selected device HTTP)', 'info');
+                  // Provide more specific guidance based on errorCode if available.
+                  let extra = '';
+                  switch (res.errorCode) {
+                    case 'no-port': extra = 'No open serial port. Open it in the device detail page.'; break;
+                    case 'timeout': extra = 'Command timed out. Ensure device is responsive.'; break;
+                    case 'parse': extra = 'Output unrecognized. Firmware may be outdated.'; break;
+                    case 'cli-failed': extra = 'CLI endpoint error.'; break;
+                    default: extra = 'Falling back to HTTP.'; break;
+                  }
+                  showToast(`Serial sysinfo failed: ${(res.error || 'unknown')} (${extra})`, 'info');
                   // Attempt HTTP sysinfo using currently selected device baseUrl if any
                   const sel = getSelectedDevice();
                   if (sel?.baseUrl) {
@@ -152,7 +177,9 @@ export default function DevicesPage() {
                   }
                 }
                 if (!res.success) {
-                  showToast('Auto-add failed: ' + (res.error || 'no sysinfo'), 'error');
+                  // Map HTTP/unreachable vs parse vs generic
+                  const reason = res.errorCode === 'unreachable' ? 'HTTP sysinfo unreachable' : (res.error || 'no sysinfo');
+                  showToast('Auto-add failed: ' + reason, 'error');
                   return;
                 }
                 const sel = getSelectedDevice();
@@ -161,12 +188,9 @@ export default function DevicesPage() {
                   showToast('Could not derive device identity from sysinfo', 'error');
                   return;
                 }
-                const exists = customDevices.some(cd => cd.id === identity.id);
-                upsertCustomDevice(identity);
-                showToast(`${exists ? 'Updated' : 'Added'} device ${identity.id} from ${res.source}`, 'success');
-                setCustomVersion(v => v + 1);
-                // Immediately trigger reachability refresh so new/updated device status populates quickly.
-                triggerReachabilityRefresh();
+                // Defer persistence until user confirms in preview modal.
+                setPendingSysinfo({ identity, raw: res.sysinfo, source: res.source }); // show preview modal
+                showToast('Review discovered device details before adding.', 'info');
               } catch (e: any) {
                 showToast('Auto-add error: ' + (e.message || e), 'error');
               } finally {
@@ -275,6 +299,30 @@ export default function DevicesPage() {
           ])}
           onClose={() => { setCustomPanelMode(null); setEditingCustomId(null); }}
           onSaved={handleCustomSaved}
+        />
+      )}
+      {pendingSysinfo && (
+        <SysinfoPreviewModal
+          initialId={pendingSysinfo.identity.id}
+          initialName={pendingSysinfo.identity.name}
+          baseUrl={pendingSysinfo.identity.baseUrl}
+          source={pendingSysinfo.source as any}
+          rawSysinfo={pendingSysinfo.raw}
+          onCancel={() => setPendingSysinfo(null)}
+          onConfirm={({ id, name }) => {
+            // Determine if existing to preserve update vs add messaging.
+            const exists = customDevices.some(cd => cd.id === pendingSysinfo.identity.id);
+            const finalIdentity = { ...pendingSysinfo.identity, id, name };
+            upsertCustomDevice(finalIdentity);
+            showToast(`${exists ? 'Updated' : 'Added'} device ${finalIdentity.id} from ${pendingSysinfo.source}`, 'success');
+            setCustomVersion(v => v + 1);
+            triggerReachabilityRefresh();
+            if (!exists) {
+              setSelectedDevice({ id: finalIdentity.id, name: finalIdentity.name, baseUrl: finalIdentity.baseUrl });
+              setSelectedId(finalIdentity.id);
+            }
+            setPendingSysinfo(null);
+          }}
         />
       )}
     </Layout>

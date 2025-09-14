@@ -20,11 +20,23 @@ interface RawSysinfo {
   wifiIp?: string;
 }
 
+// Classified error codes for auto-add flow so UI can present actionable guidance.
+// Keep order stable; append new codes rather than renaming to maintain backward compatibility with cached results.
+export type AutoAddErrorCode =
+  | 'no-port'        // serial backend reports no open port
+  | 'timeout'        // command timeout
+  | 'parse'          // unable to parse sysinfo output
+  | 'unreachable'    // HTTP sysinfo endpoints unreachable
+  | 'network'        // generic network/fetch issue
+  | 'cli-failed'     // non-200 from CLI exec endpoint
+  | 'unknown';       // fallback when classification not possible
+
 export interface AutoAddResult {
   success: boolean;
   sysinfo?: RawSysinfo;
   source: 'serial' | 'http' | 'none';
   error?: string;
+  errorCode?: AutoAddErrorCode; // classified machine-friendly error (present only when success=false)
 }
 
 // Heuristic parse for key=value lines or JSON blob in CLI output.
@@ -39,7 +51,7 @@ function parseCliLines(lines: string[]): RawSysinfo | undefined {
       return obj;
     } catch { /* ignore */ }
   }
-  const acc: Record<string,string> = {};
+  const acc: Record<string, string> = {};
   for (const l of lines) {
     const m = l.match(/^(\w[\w_-]*)\s*[:=]\s*(.+)$/);
     if (m) acc[m[1]] = m[2];
@@ -51,14 +63,28 @@ function parseCliLines(lines: string[]): RawSysinfo | undefined {
 export async function fetchSerialSysinfo(timeoutMs = 1800): Promise<AutoAddResult> {
   try {
     const r = await fetch('/api/serial/cli/exec', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: 'sysinfo', timeoutMs }) });
-    if (!r.ok) return { success: false, source: 'serial', error: 'CLI exec failed ' + r.status };
+    if (!r.ok) return { success: false, source: 'serial', error: 'CLI exec failed ' + r.status, errorCode: 'cli-failed' };
     const json = await r.json();
+    if (json && json.error) {
+      const lowered = String(json.error).toLowerCase();
+      if (lowered.includes('no open port')) {
+        return { success: false, source: 'serial', error: json.error, errorCode: 'no-port' };
+      }
+      if (lowered.includes('timeout')) {
+        return { success: false, source: 'serial', error: json.error, errorCode: 'timeout' };
+      }
+    }
     const lines: string[] = (json.lines || []).map((l: any) => l.raw || '').filter(Boolean);
     const parsed = parseCliLines(lines);
-    if (!parsed) return { success: false, source: 'serial', error: 'Unable to parse sysinfo output' };
+    if (!parsed) return { success: false, source: 'serial', error: 'Unable to parse sysinfo output', errorCode: 'parse' };
     return { success: true, source: 'serial', sysinfo: parsed };
-  } catch (e:any) {
-    return { success: false, source: 'serial', error: e.message || String(e) };
+  } catch (e: any) {
+    const msg = e.message || String(e);
+    const lowered = msg.toLowerCase();
+    let errorCode: AutoAddErrorCode = 'unknown';
+    if (lowered.includes('timeout')) errorCode = 'timeout';
+    else if (lowered.includes('network') || lowered.includes('fetch')) errorCode = 'network';
+    return { success: false, source: 'serial', error: msg, errorCode };
   }
 }
 
@@ -72,7 +98,7 @@ export async function fetchHttpSysinfo(baseUrl: string): Promise<AutoAddResult> 
       return { success: true, source: 'http', sysinfo: j };
     } catch { /* try next */ }
   }
-  return { success: false, source: 'http', error: 'HTTP sysinfo not reachable' };
+  return { success: false, source: 'http', error: 'HTTP sysinfo not reachable', errorCode: 'unreachable' };
 }
 
 export function deriveDeviceIdentity(info?: RawSysinfo, fallbackBaseUrl?: string) {
