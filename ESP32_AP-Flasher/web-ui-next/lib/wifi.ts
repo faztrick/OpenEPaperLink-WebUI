@@ -22,7 +22,7 @@ async function tryV1ThenLegacy<T = any>(v1Path: string, legacyPath: string, opts
       const rel = path.startsWith('/') ? path : ('/' + path);
       let json: any;
       if (method === 'GET') json = await t.get(rel);
-      else json = await t.post(rel, opts.body ?? {} , { headers: opts.headers });
+      else json = await t.post(rel, opts.body ?? {}, { headers: opts.headers });
       return { ok: true, status: 200, json } as any;
     } catch (e: any) {
       // Expose minimal shape similar to fetch Response for fallback logic
