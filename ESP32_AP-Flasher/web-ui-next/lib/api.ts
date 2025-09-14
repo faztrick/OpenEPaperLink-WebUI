@@ -1,7 +1,7 @@
 // API helpers for firmware endpoints (Next.js client side)
 // Uses centralized base URL resolution so the app can run on localhost
 // while targeting the ESP32 AP (or same-origin when hosted on device).
-import { tGet, tPost } from './transportApi';
+import { transport } from './transport';
 export interface DeviceSummary { id: string; name: string; status?: string }
 
 export async function fetchDevices(): Promise<DeviceSummary[]> {
@@ -50,7 +50,7 @@ interface TagDBResponse {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  return tGet<T>(path, { cache: 'no-store' });
+  return transport().get<T>(path, { cache: 'no-store' });
 }
 
 function normalizeTag(raw: RawTagRecord): TagRecord {
@@ -96,6 +96,5 @@ export function formatMac(mac: string): string {
 }
 
 export async function updateTagAlias(mac: string, alias: string): Promise<{ success: boolean; mac: string; alias: string }> {
-  // Serial path expects JSON; HTTP firmware endpoint accepts form but also handle JSON alias helper
-  return tPost('/tag_alias', { mac, alias });
+  return transport().post('/tag_alias', { mac, alias });
 }

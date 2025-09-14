@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getDeviceOverride, setDeviceOverride } from '../lib/deviceOverrides';
 import { getSelectedDevice, setSelectedDevice } from '../lib/deviceSelection';
+import { testDeviceConnection } from '../lib/testConnection';
 
 interface DeviceEditPanelProps {
   id: string;
@@ -72,34 +73,10 @@ export function DeviceEditPanel({ id, name, derivedBaseUrl, onClose, onSaved }: 
   const baseError = validateBase(cleanedBase);
 
   async function runTest() {
+    if (!effectiveBase) return;
     setTest({ status: 'testing' });
-    const testUrl = '/api/device/api/info'; // proxied endpoint expected on device
-    const started = performance.now();
-    async function attempt(url: string) {
-      const resp = await fetch(testUrl, { headers: { 'x-device-base-url': url } });
-      if (!resp.ok) throw new Error(resp.status + ' ' + resp.statusText);
-      await resp.text();
-    }
-    try {
-      await attempt(effectiveBase);
-      const ms = Math.round(performance.now() - started);
-      setTest({ status: 'ok', message: `Reachable (${ms} ms)` });
-    } catch (firstErr: any) {
-      // HTTPS fallback: if base starts with http:// try https://
-      if (/^http:\/\//i.test(effectiveBase)) {
-        try {
-          const alt = effectiveBase.replace(/^http:\/\//i, 'https://');
-          await attempt(alt);
-          const ms = Math.round(performance.now() - started);
-          setTest({ status: 'ok', message: `Reachable via HTTPS fallback (${ms} ms)` });
-          return;
-        } catch (secondErr: any) {
-          setTest({ status: 'fail', message: secondErr.message || firstErr.message || 'Failed' });
-          return;
-        }
-      }
-      setTest({ status: 'fail', message: firstErr.message || 'Failed' });
-    }
+    const res = await testDeviceConnection(effectiveBase);
+    setTest({ status: res.ok ? 'ok' : 'fail', message: res.message });
   }
 
   // Autofocus first interactive field & focus trap inside panel

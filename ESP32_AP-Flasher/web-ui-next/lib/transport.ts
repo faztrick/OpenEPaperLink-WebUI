@@ -1,6 +1,25 @@
 // Unified transport layer with simplified channel preference.
-// Backward compatibility removed: a single API with automatic fallback.
-// HTTP is primary; if preferredChannel = 'serial' we force serial; if 'auto' we try HTTP then serial when open.
+// - Preferred channels: 'auto' | 'http' | 'serial'
+// - HTTP primary; in 'auto' we attempt HTTP, fall back to serial only if already open.
+// - In 'serial' preference we require an opened serial port (caller triggers openSerial()).
+//
+// SSR Strategy:
+//   During server-side rendering (window === undefined) we return a lightweight HTTP-only stub
+//   that implements the same API surface but marks itself with `_serverStub = true`.
+//   On the first client-side invocation of `transport()` after hydration, we detect this marker
+//   and transparently replace the stub with the full browser implementation (with Web Serial).
+//   This keeps imports isomorphic and avoids conditional logic scattered across components.
+//
+//   If an environment variable sets NEXT_PUBLIC_DEFAULT_TRANSPORT=serial on the server, we coerce
+//   it to 'http' for the stub (serial is never meaningful server-side) while preserving the
+//   preferred value for client hydration which will upgrade automatically.
+//
+// Error / Telemetry Fields:
+//   lastError, lastErrorAt, lastHttpTimeout reflect recent request failures for UI badges.
+//   openingSerial is true while an openSerial() invocation is in flight to block duplicate opens.
+//
+// NOTE: If future requirements need real server-to-device calls (e.g. SSR data prefetch),
+//       consider extending the stub to respect a device base URL header and proxy accordingly.
 
 export type PreferredChannel = 'auto' | 'http' | 'serial';
 
@@ -71,6 +90,45 @@ function parseResponse(raw: string): any {
 }
 
 export function createTransport(): TransportAPI {
+  // Server-side (SSR / build time) stub: provide minimal HTTP-only implementation
+  if (typeof window === 'undefined') {
+    let preferred: PreferredChannel = 'http';
+    if (process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT) {
+      const envPref = process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT as PreferredChannel;
+      if (envPref === 'auto' || envPref === 'http' || envPref === 'serial') preferred = envPref === 'serial' ? 'http' : envPref; // force http on server
+    }
+    const status: TransportStatus = {
+      preferred,
+      effective: 'http',
+      serialSupported: false,
+      serialOpen: false,
+      openingSerial: false,
+    } as TransportStatus;
+    const listeners = new Set<(s: TransportStatus) => void>();
+    function emit() { const st = { ...status }; listeners.forEach(l => l(st)); }
+    function setPreferred(p: PreferredChannel) { if (preferred !== p) { preferred = p; status.preferred = p === 'serial' ? 'http' : p; emit(); } }
+    const stub: any = {
+      async get<T = any>(path: string, init?: RequestInit) {
+        const res = await fetch(path, init);
+        if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+        return res.json();
+      },
+      async post<T = any>(path: string, body: any, init?: RequestInit) {
+        const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) }, body: JSON.stringify(body), ...init });
+        if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
+        return res.json();
+      },
+      async openSerial() { throw new Error('Serial not available server-side'); },
+      async closeSerial() { /* noop */ },
+      getStatus() { return { ...status }; },
+      setPreferred,
+      subscribe(cb: (s: TransportStatus) => void) { listeners.add(cb); cb({ ...status }); return () => { listeners.delete(cb); }; },
+      get preferred() { return preferred; },
+      // internal marker so hydration can upgrade to full client transport
+      _serverStub: true,
+    } as TransportAPI;
+    return stub;
+  }
   let preferred: PreferredChannel = 'auto';
   // Restore persisted preference (client side only) or env default
   if (typeof window !== 'undefined') {
@@ -324,5 +382,9 @@ export function createTransport(): TransportAPI {
 let singleton: TransportAPI | null = null;
 export function transport(): TransportAPI {
   if (!singleton) singleton = createTransport();
+  // On client after hydration: if we still have a server stub, replace with real transport
+  if (typeof window !== 'undefined' && (singleton as any)._serverStub) {
+    singleton = createTransport();
+  }
   return singleton;
 }

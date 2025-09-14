@@ -558,9 +558,11 @@ POST /api/foo\n{"key":"value"}\nEND\n
 
 Responses are read until an `END` marker heuristic or stream close; the first JSON object encountered is parsed.
 
-### Helper Wrappers
+### Helper Wrappers (Deprecated Removed)
 
-`lib/transportApi.ts` retains `tGet()` / `tPost()` for existing code. They examine `preferred/effective` to decide whether to delegate directly to transport (serial) or perform a plain HTTP fetch using `buildApiUrl()`. New code can skip these wrappers and call `transport().get()`/`post()` directly.
+The previous transitional file `lib/transportApi.ts` (with `tGet()` / `tPost()`) has been removed. All code should now call `transport().get()` / `transport().post()` directly with a leading-slash relative path.
+
+SSR Note: On the server a lightweight HTTP-only stub of the transport is returned; on first client-side invocation it is transparently upgraded to the full Web Serial capable implementation.
 
 ### UI Component
 
