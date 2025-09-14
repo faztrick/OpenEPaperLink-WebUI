@@ -331,6 +331,18 @@ ENABLE_SERIAL_API=1 pm2 start ecosystem.config.cjs --only webui-prod
 - Add accessibility lint rules & full a11y pass
 - Add automated tests (Jest + Playwright)
 
+### Update (Wi‑Fi Page Enhancements)
+
+The `/wifi` page now:
+
+- Uses the shared `Layout` for consistent navigation and connection switcher context.
+- Displays both numeric `wifiMode` and a human‑readable label (AUTO / AP / STA / AP+STA).
+- Shows current transport preference and effective channel badges (`Transport Pref` / `Transport Eff`).
+- Provides a legend clarifying Wi‑Fi policy numeric values.
+- Adopts shared utility classes (`sec`, `badge`, `small`, etc.) for reduced bespoke styling.
+
+These changes are purely presentational; existing hooks (`useDeviceWifiStatus`, `useDeviceWifiScan`) are untouched.
+
 ## Serial API Bridge
 
 The development server exposes (optional) serial control endpoints that proxy a local USB/serial connection to an AP or device. These are disabled by default unless you set `ENABLE_SERIAL_API` (any value other than `false`).
