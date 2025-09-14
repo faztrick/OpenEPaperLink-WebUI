@@ -343,6 +343,37 @@ The `/wifi` page now:
 
 These changes are purely presentational; existing hooks (`useDeviceWifiStatus`, `useDeviceWifiScan`) are untouched.
 
+### Device Selection & Transport Targeting
+
+The UI now supports choosing a specific device as the active target for all API calls.
+
+Key pieces:
+
+- `lib/deviceSelection.ts` – Lightweight pub/sub store with `setSelectedDevice`, `getSelectedDevice`, `subscribeSelectedDevice`.
+- `lib/apiBase.ts` – `getApiBase()` now prioritizes the selected device `baseUrl` over env / origin heuristics.
+- `pages/devices.tsx` – Each row has a Select button; the chosen device persists in `localStorage` (`selectedDevice`).
+- `components/SelectedDeviceBar.tsx` – Displays the active device (id/name + baseUrl) beneath the connection switcher, with a Clear button.
+
+Resolution precedence (highest first):
+
+1. Selected device baseUrl
+2. `NEXT_PUBLIC_AP_BASE_URL`
+3. `window.location.origin`
+4. Dev fallback `http://192.168.4.1` (localhost heuristic)
+5. Relative (empty base)
+
+Implications:
+
+- All helpers using `buildApiUrl()` automatically target the selected device once chosen.
+- To pin a different device for a single action without changing global selection, bypass by calling `fetch('http://other-ip/...')` directly.
+- Serial transport remains unaffected; selection only affects HTTP base resolution.
+
+Future ideas:
+
+- Multi-device dashboard with per-device transport status.
+- Conflict warning if selected device becomes unreachable.
+- Background health pings to auto-clear stale selections.
+
 ## Serial API Bridge
 
 The development server exposes (optional) serial control endpoints that proxy a local USB/serial connection to an AP or device. These are disabled by default unless you set `ENABLE_SERIAL_API` (any value other than `false`).

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getSelectedDevice } from '../lib/deviceSelection';
 
 interface WifiStatus {
   connected: boolean;
@@ -36,7 +37,8 @@ export function useDeviceWifiStatus(intervalMs = 5000) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch('/api/device/api/wifi/status');
+      const sel = getSelectedDevice();
+      const r = await fetch('/api/device/api/wifi/status', { headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       setStatus(j as WifiStatus);
@@ -71,7 +73,8 @@ export function useDeviceWifiScan(pollMs = 2000) {
   const startScan = useCallback(async () => {
     setInitiating(true); setError(null); lastStart.current = Date.now();
     try {
-      const r = await fetch('/api/device/api/wifi/scan');
+      const sel = getSelectedDevice();
+      const r = await fetch('/api/device/api/wifi/scan', { headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       setRunning(!j.completed);
@@ -86,7 +89,8 @@ export function useDeviceWifiScan(pollMs = 2000) {
 
   const fetchResults = useCallback(async () => {
     try {
-      const r = await fetch('/api/device/api/wifi/scan/results');
+      const sel = getSelectedDevice();
+      const r = await fetch('/api/device/api/wifi/scan/results', { headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       setResults(j.networks || []);
@@ -110,14 +114,16 @@ export async function connectWifi(ssid: string, password: string) {
   const body = new URLSearchParams();
   body.set('ssid', ssid);
   if (password) body.set('password', password);
-  const r = await fetch('/api/device/api/wifi/connect', { method: 'POST', body });
+  const sel = getSelectedDevice();
+  const r = await fetch('/api/device/api/wifi/connect', { method: 'POST', body, headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
   const j = await r.json();
   if (!r.ok || j.success === false) throw new Error(j.error || j.message || `HTTP ${r.status}`);
   return j;
 }
 
 export async function disconnectWifi() {
-  const r = await fetch('/api/device/api/wifi/disconnect', { method: 'POST' });
+  const sel = getSelectedDevice();
+  const r = await fetch('/api/device/api/wifi/disconnect', { method: 'POST', headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
   return j;
@@ -126,7 +132,8 @@ export async function disconnectWifi() {
 export async function setWifiMode(mode: number) {
   const body = new URLSearchParams();
   body.set('mode', String(mode));
-  const r = await fetch('/api/device/api/wifi/setmode', { method: 'POST', body });
+  const sel = getSelectedDevice();
+  const r = await fetch('/api/device/api/wifi/setmode', { method: 'POST', body, headers: sel ? { 'x-device-base-url': sel.baseUrl } : undefined });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
   return j;

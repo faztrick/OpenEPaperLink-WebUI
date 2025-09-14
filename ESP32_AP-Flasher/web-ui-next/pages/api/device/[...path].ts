@@ -1,13 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-// Proxy arbitrary device (firmware) API calls to a configured base URL.
-// Environment variable: DEVICE_BASE_URL (e.g. http://192.168.4.1 or http://bridge.local)
-// Usage from frontend: fetch('/api/device/api/wifi/status') -> forwards to `${DEVICE_BASE_URL}/api/wifi/status`.
+// Device proxy route.
+// Resolution order for base URL:
+// 1. DEVICE_BASE_URL env var
+// 2. x-device-base-url header (trusted from same-origin frontend)
+// If neither present -> 400 error (client must select / configure device).
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const base = process.env.DEVICE_BASE_URL;
+  const envBase = process.env.DEVICE_BASE_URL;
+  const headerBase = (req.headers['x-device-base-url'] as string | undefined)?.trim();
+  const base = (envBase && envBase.trim()) || headerBase;
   if (!base) {
-    return res.status(500).json({ error: 'device_base_url_not_set', message: 'Set DEVICE_BASE_URL env var to use device proxy.' });
+    return res.status(400).json({ error: 'device_base_url_not_set', message: 'Provide DEVICE_BASE_URL env or x-device-base-url header.' });
   }
   const segments = (req.query.path || []) as string[];
   const targetPath = segments.join('/');
