@@ -41,7 +41,7 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
   if (!mounted) return null; // avoid SSR hydration issues
 
   return (
-    <div className="sec mt-10">
+    <div className="sec mt-10" id="wifi-panel">
       <h3 className="heading-mid">Wi-Fi</h3>
       {!sel && <div className="xsmall muted mt-1">Select a device above to manage Wi-Fi.</div>}
       {sel && (
