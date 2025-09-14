@@ -1,0 +1,269 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/wifi/status",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/wifi/scan",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/wifi/scan/results",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/wifi/summary",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/wifi/connect",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/wifi/disconnect",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/wifi/setmode",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/wifi/ap",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/wifi/ap",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/wifi/clear",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/wifi/events",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/events",
+    "category": "system",
+    "source": "firmware",
+    "module": "wifi_module",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/network_info",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "web.cpp",
+    "deprecated": true,
+    "replacement": "/api/wifi/status"
+  },
+  {
+    "method": "GET",
+    "path": "/wifi_scan",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "web.cpp",
+    "deprecated": true,
+    "replacement": "/api/wifi/scan"
+  },
+  {
+    "method": "POST",
+    "path": "/wifi_manage",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "web.cpp",
+    "deprecated": true,
+    "replacement": "/api/wifi/connect,/api/wifi/disconnect,/api/wifi/ap"
+  },
+  {
+    "method": "GET",
+    "path": "/serial_ap_status",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "web.cpp",
+    "deprecated": true,
+    "replacement": "/api/wifi/ap"
+  },
+  {
+    "method": "POST",
+    "path": "/serial_ap_control",
+    "category": "wifi",
+    "source": "firmware",
+    "module": "web.cpp",
+    "deprecated": true,
+    "replacement": "/api/wifi/ap"
+  },
+  {
+    "method": "GET",
+    "path": "/api/status",
+    "category": "system",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/sysinfo",
+    "category": "system",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/sysinfo.json",
+    "category": "system",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/telemetry",
+    "category": "system",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/ota_check",
+    "category": "ota",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/ota_update",
+    "category": "ota",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/ble_status",
+    "category": "ble",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/ble_control",
+    "category": "ble",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/zbs_control",
+    "category": "hardware",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/swd_control",
+    "category": "hardware",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/spiffs_manage",
+    "category": "filesystem",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/log/config",
+    "category": "logging",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/log/config",
+    "category": "logging",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/log/test",
+    "category": "logging",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/config/staconfig",
+    "category": "config",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/config/staconfig",
+    "category": "config",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/littlefs_put",
+    "category": "filesystem",
+    "source": "firmware",
+    "deprecated": false
+  },
+  {
+    "method": "POST",
+    "path": "/api/openai/chat",
+    "category": "ai",
+    "source": "firmware",
+    "deprecated": false
+  }
+]

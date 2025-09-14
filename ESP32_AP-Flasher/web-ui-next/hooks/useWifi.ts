@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { wifiScan, wifiStatus, wifiConnect, wifiDisconnect, WifiNetwork, WifiStatus } from '../lib/legacy/wifi';
+// Migrate to new versioned API client with fallback (legacy kept for safety)
+import { wifiConnect, wifiDisconnect, WifiNetwork, wifiScan, wifiStatus, WifiStatus } from '../lib/wifi';
 
-export function useWifi(deviceId?: string | null) {
+export function useWifi(_deviceId?: string | null) {
   const [networks, setNetworks] = useState<WifiNetwork[]>([]);
   const [status, setStatus] = useState<WifiStatus | null>(null);
   const [loadingScan, setLoadingScan] = useState(false);
@@ -10,23 +11,23 @@ export function useWifi(deviceId?: string | null) {
 
   const scan = useCallback(async () => {
     setLoadingScan(true); setError(null);
-    try { setNetworks(await wifiScan(deviceId || undefined)); } catch (e: any) { setError(e.message); setNetworks([]); }
+    try { setNetworks(await wifiScan()); } catch (e: any) { setError(e.message); setNetworks([]); }
     setLoadingScan(false);
-  }, [deviceId]);
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true); setError(null);
-    try { setStatus(await wifiStatus(deviceId || undefined)); } catch (e: any) { setError(e.message); setStatus(null); }
+    try { setStatus(await wifiStatus()); } catch (e: any) { setError(e.message); setStatus(null); }
     setLoadingStatus(false);
-  }, [deviceId]);
+  }, []);
 
   useEffect(() => { refreshStatus(); }, [refreshStatus]);
 
   const connect = useCallback(async (ssid: string, password: string) => {
-    await wifiConnect(deviceId || '', ssid, password); await refreshStatus();
-  }, [deviceId, refreshStatus]);
+    await wifiConnect(ssid, password); await refreshStatus();
+  }, [refreshStatus]);
 
-  const disconnect = useCallback(async () => { await wifiDisconnect(deviceId || undefined); await refreshStatus(); }, [deviceId, refreshStatus]);
+  const disconnect = useCallback(async () => { await wifiDisconnect(); await refreshStatus(); }, [refreshStatus]);
 
   return { networks, status, loadingScan, loadingStatus, error, scan, refreshStatus, connect, disconnect };
 }

@@ -36,7 +36,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!ssid) return res.status(400).json({ error: 'missing_ssid' });
 
   const state = serialManager.getState();
-  const desiredPort = process.env.DEFAULT_SERIAL_PORT || process.env.SERIAL_PORT || 'COM5';
+  const requestedPort = (req.body?.port || req.query.port) as string | undefined;
+  const desiredPort = requestedPort || process.env.DEFAULT_SERIAL_PORT || process.env.SERIAL_PORT || 'COM5';
   const baud = Number(process.env.DEFAULT_SERIAL_BAUD || process.env.SERIAL_BAUD || state.baudRate || 115200);
   let openedTemporarily = false;
   if (!state.isOpen) {
@@ -73,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!obj) {
       return res.status(timedOut ? 504 : 422).json({ error: 'connect_parse_failed', backendUsed: 'serial', timedOut, elapsedMs: result.elapsedMs, rawCount: rawLines.length, openedTemporarily, port: desiredPort });
     }
-    return res.status(200).json({ ...obj, backendUsed: 'serial', proxied: false, openedTemporarily, port: desiredPort, elapsedMs: result.elapsedMs, timedOut, rawCount: rawLines.length });
+    return res.status(200).json({ ...obj, backendUsed: 'serial', proxied: false, openedTemporarily, port: desiredPort, elapsedMs: result.elapsedMs, timedOut, rawCount: rawLines.length, backendDecision: { requestedPort: requestedPort || null, effectivePort: desiredPort } });
   } catch (e: any) {
     const recent = serialManager.getLog({ tail: 25 }).map(l => l.raw);
     return res.status(500).json({ error: 'unexpected', message: e.message, backendUsed: 'serial', recentLines: recent });

@@ -3,13 +3,12 @@ import { Layout } from '../components/Layout';
 import { Seo } from '../components/Seo';
 import { useSavedDevices } from '../hooks/useSavedDevices';
 import { showToast } from '../hooks/useToast';
-import { buildApiUrl } from '../lib/apiBase';
+import { transport } from '../lib/transport';
 
 async function testPeer(host: string) {
-  const url = buildApiUrl(`/api/peer/test?host=${encodeURIComponent(host)}`);
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
+  // transport().get handles preferred channel & fallback
+  const t = transport();
+  return t.get(`/api/peer/test?host=${encodeURIComponent(host)}`);
 }
 
 export default function PeersPage() {
@@ -24,9 +23,14 @@ export default function PeersPage() {
   const loadLocalWifiInfo = useCallback(async () => {
     setLoadingExtra(true);
     try {
-      const s = await fetch(buildApiUrl('/api/wifi/summary')); if (s.ok) setSummary(await s.json());
-      const ev = await fetch(buildApiUrl('/api/wifi/events')); if (ev.ok) { const j = await ev.json(); if (Array.isArray(j.events)) setEvents(j.events); }
-    } catch (e) { /* ignore */ } finally { setLoadingExtra(false); }
+      const t = transport();
+      try {
+        const s = await t.get<any>('/api/wifi/summary'); setSummary(s);
+      } catch { /* summary optional */ }
+      try {
+        const ev = await t.get<any>('/api/wifi/events'); if (Array.isArray(ev?.events)) setEvents(ev.events);
+      } catch { /* events optional */ }
+    } finally { setLoadingExtra(false); }
   }, []);
 
   useEffect(() => { loadLocalWifiInfo(); const id = setInterval(loadLocalWifiInfo, 10000); return () => clearInterval(id); }, [loadLocalWifiInfo]);

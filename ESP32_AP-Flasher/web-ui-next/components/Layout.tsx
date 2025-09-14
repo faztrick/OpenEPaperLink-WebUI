@@ -1,7 +1,6 @@
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import { ReactNode } from 'react';
-import { ConnectionSwitcher } from './ConnectionSwitcher';
 import { Header } from './Header';
 import { SelectedDeviceBar } from './SelectedDeviceBar';
 import { Toaster } from './Toaster';
@@ -40,7 +39,7 @@ export function Layout({
         className="app-shell flex-col full-min-h"
       >
         <Header />
-        <div className="pad-conn"><ConnectionSwitcher /><SelectedDeviceBar /></div>
+        <div className="pad-conn"><SelectedDeviceBar /></div>
         <TopNav />
         <div className="layout-main-row">
           {sidebar && <Sidebar />}

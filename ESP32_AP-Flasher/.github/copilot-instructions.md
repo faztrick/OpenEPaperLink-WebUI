@@ -1,104 +1,88 @@
-# OpenEPaperLink ESP32 Access Point Firmware
+<!-- Concise AI guidance for OpenEPaperLink ESP32 AP + Next.js Web UI -->
 
-## Project Overview
+# OpenEPaperLink – Firmware + Modern Web UI (AI Guide)
 
-This project is an ESP32-based access point for OpenEPaperLink electronic paper displays. It manages communication with the E-Paper tags, handles content updates, and provides a web interface for configuration and management. The firmware is built using PlatformIO and the Arduino framework.
+## 1. Architecture Overview
+Firmware (PlatformIO / Arduino ESP32) exposes HTTP + WebSocket APIs (see `src/web.cpp`, `src/wifimanager.cpp`, `src/tag_db.cpp`). Web UI has two generations:
+- Legacy static SPA in `wwwroot/` served by device.
+- Next.js migration in `web-ui-next/` (React components, hooks, API proxy). Consolidated dashboard pattern; device selection influences request routing.
 
-### Key Features
+Key cross‑cutting concept: a selected device base URL (localStorage) + transport abstraction (serial / sidecar / http) drives where API calls go. Wi‑Fi + tag features rely on resilient polling with stale fallback.
 
-- **E-Paper Tag Management**: Wireless communication with electronic paper displays
-- **WiFi Access Point**: Provides both STA and AP modes for connectivity
-- **Web Interface**: Comprehensive web UI for configuration and monitoring
-- **OTA Updates**: Over-the-air firmware updates for ESP32-C6 modules
-- **Module System**: Extensible module architecture for hardware features
-- **Security**: Enhanced security with buffer overflow protection and safe string handling
+## 2. Firmware Core Files
+- `src/main.cpp`: boot + module init.
+- `src/web.cpp`: REST endpoints (`/api/wifi/*`, `/get_db`, `/ws`), WebSockets (logs/events).
+- `src/wifimanager.cpp`: STA/AP connect logic, scan orchestration.
+- `src/tag_db.cpp`: tag state persistence (`tagDB.json`).
+- `src/module_manager.cpp`: feature flag driven module registration (`platformio.ini` defines like `-D HAS_TFT=1`).
 
-## Key Technologies
+Storage: LittleFS (config + tag DB), NVS (Wi‑Fi creds). Follow safe C string patterns (`snprintf`, bounds checks, zero init).
 
-- **Framework:** Arduino on ESP32
-- **Build System:** PlatformIO
-- **Web Server:** ESPAsyncWebServer for handling web requests and WebSockets.
-- **Configuration:** Stored in LittleFS and NVS (Non-Volatile Storage).
-- **Communication:** WiFi (STA and AP mode), WebSockets, UDP for device discovery.
+## 3. Next.js Web UI (migration)
+Location: `web-ui-next/`
+- `pages/index.tsx`: Unified Dashboard (device list + tabbed Wi‑Fi/Tags/AP placeholders).
+- `components/`: Layout, Sidebar (dynamic import), SelectedDeviceBar, Modals.
+- `hooks/useDeviceWifi.ts`: Status + scan hooks (legacy + v1 path fallback, stale handling, cooldown logic, partial/legacy flags).
+- `lib/deviceSelection.ts`: Pub/sub store; sets `selectedDevice` (id, baseUrl) in localStorage.
+- `lib/transport.*`: Determines preferred/effective channel; status subscribed by UI.
+- `pages/api/device/...`: Proxy (header `x-device-base-url` overrides) to firmware endpoints.
+- `pages/api/serial/...`: Optional dev serial bridge (ENABLE_SERIAL_API) for local CLI & Wi‑Fi scan.
 
-## Core Architecture
+Resilience patterns: retry legacy vs v1 path, detect upstream timeout, serve stale snapshot (`json.stale.data`), mark `stale` in UI, provide explicit reload.
 
-The application is structured around several key components:
+## 4. Build & Run
+Firmware (primary env `OutdoorAP`):
+```bash
+pio run -e OutdoorAP                # build
+pio run -e OutdoorAP -t upload      # flash (set upload port)
+pio device monitor                  # serial log
+```
+Next.js UI dev (if separate): `npm install && npm run dev` inside `web-ui-next/` (or integrated root task). Set `NEXT_PUBLIC_AP_BASE_URL` or rely on selection.
 
-- **`src/main.cpp`**: The main entry point of the application. It initializes all subsystems.
-- **`src/web.cpp`**: Manages the web server, WebSocket communication, and all HTTP API endpoints. This is the primary interface for user interaction.
-- **`src/wifimanager.cpp`**: Handles WiFi connectivity, including connecting to an existing network and providing an access point for initial setup.
-- **`src/tag_db.cpp`**: Manages the database of E-Paper tags, storing their state, configuration, and pending updates.
-- **`src/c6_module.cpp`**: Handles ESP32-C6 module communication and OTA updates.
-- **`src/module_manager.cpp`**: Extensible module system for hardware features and extensions.
-- **`platformio.ini`**: The central configuration file for PlatformIO. It defines build environments, library dependencies, and compiler flags. Feature flags in this file are critical for enabling/disabling hardware support and software features.
+## 5. Key Conventions
+- Feature flags: add in `platformio.ini` (both `build_flags` + conditional `#ifdef`).
+- Never block async handlers in firmware: prefer state machines / non‑blocking loops.
+- Wi‑Fi scan workflow: trigger → poll `/scan/results` until `running=false` or timeout; stale fallback supported.
+- All device HTTP fetches should include `x-device-base-url` if a selection exists; do not hardcode global IPs.
+- Serial vs HTTP backend auto‑selection for scanning: determined from serial config (backend `serial|sidecar|auto`).
 
-### Module System Architecture
+## 6. Adding / Modifying Web Endpoints
+1. Implement firmware handler in `src/web.cpp` (maintain tight JSON: avoid large dynamic `String` concatenations; prefer streamed writes).
+2. Expose via existing async server (ESPAsyncWebServer). Keep allocations minimal; reuse static buffers.
+3. Mirror on Web UI via proxy route or direct fetch using `x-device-base-url`.
+4. Update hook (e.g., extend `useDeviceWifiStatus`) with fallback + stale semantics.
 
-The project uses a modular architecture with these module types:
+## 7. Tag / Database Ops
+- Tag DB lives in LittleFS (`tagDB.json`). Reads must guard against partial/empty file. Writes atomic: write temp + rename if implementing changes.
+- UI endpoints (legacy) `/get_db` consumed by legacy pages; new React layer will wrap with typed interfaces (see `lib/api-types.ts`).
 
-- **CORE**: Essential system modules (WiFi, web server, tag management)
-- **HARDWARE**: Hardware interface modules (TFT, LED, sensors)
-- **COMMUNICATION**: Network and radio modules (WiFi, BLE, SubGHz)
-- **UI**: User interface modules (web UI, TFT display)
-- **UTILITY**: Helper modules (logging, file management)
-- **EXTENSION**: Third-party plugins and extensions
+## 8. Reliability Patterns to Preserve
+- Timeout classification: upstream timeout == show stale data & badge (do not clear previous state abruptly).
+- Cooldown enforcement before next Wi‑Fi scan (`cooldownMs` in hook) to avoid firmware busy loops.
+- Transparent legacy path fallback (`/api/wifi/status` → `/api/v1/wifi/status`).
+- Transport status subscription for badges (preferred vs effective).
 
-## Developer Workflows
+## 9. Security / Safety
+- Always use `snprintf` / length‑bounded copying in firmware.
+- Validate all indices / counts from client JSON before buffer usage.
+- Avoid large dynamic `StaticJsonDocument` sizes; tailor capacity (fail early if overflow risk).
+- Never trust `x-device-base-url` server side unless sanitized (current proxy trusts local usage).
 
-### Building the Firmware
+## 10. When Extending
+- Add new firmware feature: define flag in `platformio.ini`, guard code with `#ifdef`. Update docs comment at top of modified source.
+- Add UI panel: create hook (SWR if polling), surface stale & error states as chips, avoid inline blocking logic.
+- Provide minimal test (script or curl snippet) in PR description to reproduce.
 
-The project is built using PlatformIO. The primary build environment is `OutdoorAP`.
+## 11. Fast Reference
+| Area | Firmware | Web UI |
+|------|----------|--------|
+| Wi‑Fi Status | `/api/wifi/status` | `hooks/useDeviceWifiStatus` |
+| Wi‑Fi Scan | `/api/wifi/scan` + `/scan/results` | `useDeviceWifiScan.startScan()` / poll |
+| Tags DB | `/get_db` | (future typed wrapper) |
+| Transport | — (client concern) | `lib/transport` + sidebar badges |
+| Serial Scan | CLI `wifiscan` | `/api/serial/wifi/scan` + `useSerialWifiScan` |
 
-- **Build:** `pio run -e OutdoorAP`
-- **Build and Upload:** `pio run -e OutdoorAP --target upload`
-- **Clean:** `pio run --target clean`
+Keep new code aligned with these patterns; avoid inventing parallel selection or transport stores.
 
-### Testing and Simulation
-
-Available tasks for testing:
-
-- **Build for Emulation:** `PlatformIO: Build for Emulation`
-- **Start Wokwi Simulator:** Simulates ESP32 hardware for testing
-- **QEMU ESP32 Emulation:** Hardware-level emulation for debugging
-
-### Debugging
-
-- **Serial Monitor:** `pio device monitor`
-- **Logging:** The firmware uses `Serial.println` for logging. WebSocket-based logging is also available via the web interface (`wsLog`, `wsErr`).
-- **GDB Debugging:** Use the ESP32 GDB Debug Server task for hardware debugging
-
-### Web UI
-
-The web interface source code is located in the `wwwroot` directory. It's a single-page application that communicates with the ESP32 via RESTful APIs and WebSockets.
-
-- **Key files:** `wwwroot/index.html`, `wwwroot/setup.html`, `wwwroot/setup.js`
-- **API Endpoints:** Defined in `src/web.cpp`. Key endpoints include:
-  - `/wifi_scan`: Scans for available WiFi networks.
-  - `/save_wifi_config`: Saves WiFi credentials.
-  - `/get_db`: Retrieves the tag database.
-  - `/ws`: WebSocket endpoint for real-time updates.
-
-## Project-Specific Conventions
-
-- **Feature Flags:** The `platformio.ini` file uses a large number of C++ preprocessor defines (e.g., `-D HAS_TFT=1`) to control which features are compiled into the firmware. When adding or modifying features, check this file to see if a flag is needed.
-- **Configuration Management:**
-  - **AP Configuration:** `apconfig.json` in LittleFS, managed by `config` struct.
-  - **WiFi Credentials:** Stored in NVS using the `Preferences` library.
-  - **Tag Database:** `tagDB.json` in LittleFS.
-- **Asynchronous Operations:** The web server is fully asynchronous. Avoid using `delay()` in web request handlers; use `vTaskDelay` or non-blocking code instead.
-- **Memory Management:** Pay attention to memory usage, especially when dealing with JSON and file operations. Use `JsonDocument` with appropriate sizing. For large files, use streaming responses.
-- **Security Best Practices:**
-  - Use `snprintf()` instead of `sprintf()` to prevent buffer overflows
-  - Use `strncpy()` instead of `strcpy()` for string operations
-  - Always null-terminate strings and check buffer bounds
-  - Initialize arrays with `memset()` to prevent undefined behavior
-
-## External Dependencies
-
-- **ESPAsyncWebServer:** For the web server. Note that this project uses specific forks, as defined in `platformio.ini`.
-- **ArduinoJson:** For all JSON parsing and serialization.
-- **TFT_eSPI:** For devices with a TFT display.
-- **LittleFS:** The primary file system for storing web assets and configuration.
-
-When making changes, be mindful of the interactions between these components. For example, a change to a web API in `src/web.cpp` will likely require a corresponding change in the JavaScript files in `wwwroot`.
+---
+Feedback welcome: clarify anything missing (e.g., OTA details, module init flow) before large feature work.

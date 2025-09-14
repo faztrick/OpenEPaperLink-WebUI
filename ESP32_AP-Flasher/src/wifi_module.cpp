@@ -328,10 +328,22 @@ bool WiFiModule::isHealthy() const
     return lastError.length() == 0;
 }
 
+// Global pointer to SSE source (initialized when handlers registered)
+static AsyncEventSource *gWifiSse = nullptr;
+
 void WiFiModule::registerWebHandlers(AsyncWebServer &server)
 {
     Serial.println("[WIFI_MODULE] Registering enhanced WiFi web handlers...");
     // --- Shared handlers for legacy (/api/wifi/*) and versioned (/api/v1/wifi/*) endpoints ---
+    // SSE unified events stream (declared static so only one instance is created)
+    static AsyncEventSource sseEvents("/api/v1/events");
+    static bool sseAttached = false;
+    if (!sseAttached)
+    {
+        server.addHandler(&sseEvents);
+        sseAttached = true;
+        gWifiSse = &sseEvents;
+    }
 
     // Status
     auto wifiStatusHandler = [this](AsyncWebServerRequest *request)
@@ -379,7 +391,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/status", HTTP_GET, wifiStatusHandler);
+#endif
     server.on("/api/v1/wifi/status", HTTP_GET, wifiStatusHandler);
 
     // Scan start
@@ -429,7 +443,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/scan", HTTP_GET, wifiScanHandler);
+#endif
     server.on("/api/v1/wifi/scan", HTTP_GET, wifiScanHandler);
 
     // Scan results
@@ -463,7 +479,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/scan/results", HTTP_GET, wifiScanResultsHandler);
+#endif
     server.on("/api/v1/wifi/scan/results", HTTP_GET, wifiScanResultsHandler);
 
     // Summary
@@ -518,7 +536,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/summary", HTTP_GET, wifiSummaryHandler);
+#endif
     server.on("/api/v1/wifi/summary", HTTP_GET, wifiSummaryHandler);
 
     // Connect
@@ -580,7 +600,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/connect", HTTP_POST, wifiConnectHandler);
+#endif
     server.on("/api/v1/wifi/connect", HTTP_POST, wifiConnectHandler);
 
     // Disconnect
@@ -596,14 +618,18 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/disconnect", HTTP_POST, wifiDisconnectHandler);
+#endif
     server.on("/api/v1/wifi/disconnect", HTTP_POST, wifiDisconnectHandler);
 
     // Clear credentials
     auto wifiClearHandler = [this](AsyncWebServerRequest *request)
     {
         bool ok = wipeStaCredentials(); JsonDocument doc; doc["success"] = ok; doc["message"] = ok ? "Credentials cleared" : "Clear failed"; AsyncResponseStream *response = request->beginResponseStream("application/json"); if (request->url().startsWith("/api/wifi/")) response->addHeader("X-Deprecated", "Use /api/v1/wifi/clear"); serializeJson(doc, *response); request->send(response); if (ok) { Serial.println("[WIFI_MODULE] Credentials cleared via API; restarting in 500ms"); delay(500); ESP.restart(); } };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/clear", HTTP_POST, wifiClearHandler);
+#endif
     server.on("/api/v1/wifi/clear", HTTP_POST, wifiClearHandler);
 
     // Events
@@ -626,7 +652,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/events", HTTP_GET, wifiEventsHandler);
+#endif
     server.on("/api/v1/wifi/events", HTTP_GET, wifiEventsHandler);
 
     // AP state
@@ -654,7 +682,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/ap", HTTP_GET, wifiApGetHandler);
+#endif
     server.on("/api/v1/wifi/ap", HTTP_GET, wifiApGetHandler);
 
     auto wifiApPostHandler = [this](AsyncWebServerRequest *request)
@@ -735,7 +765,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/ap", HTTP_POST, wifiApPostHandler);
+#endif
     server.on("/api/v1/wifi/ap", HTTP_POST, wifiApPostHandler);
 
     // Set mode
@@ -766,7 +798,9 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         serializeJson(doc, *response);
         request->send(response);
     };
+#ifndef OEPL_DISABLE_WIFI_LEGACY_PATHS
     server.on("/api/wifi/setmode", HTTP_POST, wifiSetModeHandler);
+#endif
     server.on("/api/v1/wifi/setmode", HTTP_POST, wifiSetModeHandler);
 }
 
@@ -1501,7 +1535,15 @@ void WiFiModule::appendEvent(const String &name, const String &data)
     eventHistory.push_back(std::move(rec));
     if (eventHistory.size() > kMaxEventHistory)
     {
-        // Trim oldest entries
         eventHistory.erase(eventHistory.begin(), eventHistory.begin() + (eventHistory.size() - kMaxEventHistory));
+    }
+    if (gWifiSse)
+    {
+        char buf[192];
+        if (data.length())
+            snprintf(buf, sizeof(buf), "{\"ts\":%lu,\"event\":\"%s\",\"data\":\"%s\"}", (unsigned long)rec.ts, name.c_str(), data.c_str());
+        else
+            snprintf(buf, sizeof(buf), "{\"ts\":%lu,\"event\":\"%s\"}", (unsigned long)rec.ts, name.c_str());
+        gWifiSse->send(buf, "wifi", millis());
     }
 }

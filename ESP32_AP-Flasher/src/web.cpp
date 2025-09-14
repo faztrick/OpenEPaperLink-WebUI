@@ -2093,13 +2093,44 @@ void init_web()
         serializeJson(doc, *response);
         request->send(response); });
 
+    // --------------------------------------------------------------------
+    // Unified Wi-Fi API (new namespaced endpoints expected by Next.js UI)
+    // --------------------------------------------------------------------
+    // Design notes:
+    // - These are thin shims over existing WiFi.* calls (and will later integrate
+    //   with any internal state/config persistence you already maintain).
+    // - Synchronous scan provided; optional async start via ?async=1 parameter.
+    // - Mode mapping: AUTO tries STA if credentials exist else AP.
+    // - Safe: does not overwrite stored credentials (POST /api/wifi/connect relies on WiFi.begin).
+    // - AP config POST currently stubbed (acknowledges request). Extend to persist as needed.
+
+    // NOTE: Core /api/wifi/* endpoints removed here in favor of enhanced implementations
+    // in wifi_module.cpp (which also serves versioned /api/v1/wifi/*). This file now only
+    // retains deprecated legacy compatibility endpoints below. Avoid duplicating logic; any
+    // Wi-Fi behavior changes should be implemented once in WiFiModule::registerWebHandlers.
+
     // Deprecated network endpoints replaced by /api/wifi/* unified API
     server.on("/network_info", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/status\"}"); });
+              {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(410);
+        response->addHeader("X-Deprecated", "Use /api/wifi/status");
+        response->print("{\"deprecated\":true,\"use\":\"/api/wifi/status\"}");
+        request->send(response); });
     server.on("/wifi_scan", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/scan\"}"); });
+              {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(410);
+        response->addHeader("X-Deprecated", "Use /api/wifi/scan");
+        response->print("{\"deprecated\":true,\"use\":\"/api/wifi/scan\"}");
+        request->send(response); });
     server.on("/wifi_manage", HTTP_POST, [](AsyncWebServerRequest *request)
-              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/connect|/api/wifi/disconnect|/api/wifi/ap\"}"); });
+              {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(410);
+        response->addHeader("X-Deprecated", "Use /api/wifi/connect,/api/wifi/disconnect,/api/wifi/ap");
+        response->print("{\"deprecated\":true,\"use\":\"/api/wifi/connect|/api/wifi/disconnect|/api/wifi/ap\"}");
+        request->send(response); });
 
     // OTA Endpoints
     server.on("/ota_check", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -2165,9 +2196,19 @@ void init_web()
         request->send(response); });
 
     server.on("/serial_ap_status", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}"); });
+              {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(410);
+        response->addHeader("X-Deprecated", "Use /api/wifi/ap");
+        response->print("{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}");
+        request->send(response); });
     server.on("/serial_ap_control", HTTP_POST, [](AsyncWebServerRequest *request)
-              { request->send(410, "application/json", "{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}"); });
+              {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(410);
+        response->addHeader("X-Deprecated", "Use /api/wifi/ap");
+        response->print("{\"deprecated\":true,\"use\":\"/api/wifi/ap\"}");
+        request->send(response); });
 
     // Log streaming configuration (UDP mirror for wireless receivers)
     server.on("/api/log/config", HTTP_GET, [](AsyncWebServerRequest *request)

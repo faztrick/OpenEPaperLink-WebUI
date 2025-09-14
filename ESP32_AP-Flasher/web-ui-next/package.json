@@ -9,6 +9,7 @@
     "serial:service": "node serial-sidecar/serial-service.js",
     "dev:with-sidecar": "cross-env ENABLE_SERIAL_API=0 SERIAL_SIDECAR_URL=http://localhost:4001 next dev",
     "dev:inspect": "node --inspect=0.0.0.0:9230 node_modules/next/dist/bin/next dev",
+    "prebuild": "node scripts/auto_stop_next.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

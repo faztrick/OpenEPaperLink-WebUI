@@ -3,6 +3,7 @@ export interface DeviceRecord {
   id: string;
   name: string;
   host?: string; // ip/host base
+  port?: string; // network port (for http/ws)
   com?: string; // serial COM path
   method?: 'http' | 'serial' | 'ws';
 }

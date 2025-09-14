@@ -678,3 +678,112 @@ kill $DEV_PID
 ```
 
 On Windows PowerShell you can adapt with `Start-Process` / `Stop-Process` or use PM2 to orchestrate.
+
+## Feature Flags & Environment Variables (New Logging / Agent / AI APIs)
+
+To keep the default development surface minimal, new APIs are gated behind explicit environment variables. Add these to `.env.local` (or PM2 ecosystem env) as needed.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_LOG_API` | (unset → enabled) | Set to `false` to disable `/api/log/*` endpoints (list/read/stream/post). |
+| `ENABLE_AGENT_API` | disabled (requires token) | When set (any value except `false`), enables `/api/agent/*` & `/api/logging/console`. Requires `AGENT_TOKEN`. |
+| `AGENT_TOKEN` | (unset) | Shared secret for agent & console mirror endpoints; supplied via `x-agent-token` header or `?token=` query. |
+| `ENABLE_AI_TOOL_API` | disabled | When set (any value except `false`), enables `/api/ai/tool-model` and `/api/ai/chat-tool`. |
+| `OPENAI_API_KEY` | (unset) | If present and AI API enabled, real OpenAI Responses (or Chat) API calls are made; otherwise a mock echo response is returned. |
+| `OPEL_AI_TOOL_MODEL` | (unset) | Preferred single model id (e.g. `gpt-4o-mini`). Overrides list. |
+| `OPEL_AI_TOOL_MODELS` | (unset) | Comma‑separated fallback model list if `OPEL_AI_TOOL_MODEL` not set. First entry is used. |
+
+Examples:
+
+```bash
+# Minimal logging only (default if you want logs)
+ENABLE_LOG_API=1
+
+# Enable agent & logging console mirror
+ENABLE_AGENT_API=1
+AGENT_TOKEN=dev-secret-token
+
+# Enable AI tool API with mock (no key)
+ENABLE_AI_TOOL_API=1
+
+# Real OpenAI integration
+ENABLE_AI_TOOL_API=1
+OPENAI_API_KEY=sk-xxxx
+OPEL_AI_TOOL_MODEL=gpt-4o-mini
+```
+
+### Endpoints Added
+
+| Group | Method | Path | Notes |
+|-------|--------|------|-------|
+| Logging | GET | `/api/log/list` | List available in-memory log buffers |
+| Logging | GET | `/api/log/read?name=NAME&lines=200` | Tail last N lines |
+| Logging | GET (SSE) | `/api/log/stream?name=NAME` | Server-Sent Events stream of appended lines |
+| Logging | POST | `/api/log` `{ name, message }` | Append a line |
+| Agent | GET | `/api/agent/actions` | List registered actions (built-in: ping, echo) |
+| Agent | POST | `/api/agent/run` `{ action, config }` | Execute an action |
+| Agent | POST | `/api/agent/kill` `{ processId }` | Placeholder kill (no-op) |
+| Agent | POST | `/api/agent/provider` `{ provider }` | Set provider label (logged) |
+| Agent | GET | `/api/agent/health` | Agent health & action count |
+| Agent Logging | GET/POST | `/api/logging/console` | Get / toggle Node console mirror into log buffers |
+| AI Tool | GET | `/api/ai/tool-model` | Selected model + metadata; 503 if disabled |
+| AI Tool | POST | `/api/ai/chat-tool` `{ message }` | Chat/tool placeholder (mock if no key) |
+
+All agent and console mirror routes require header `x-agent-token: <AGENT_TOKEN>` (or `?token=`) and return 401 on mismatch.
+
+### SSE Log Streaming Sample (Browser Console)
+
+```js
+const es = new EventSource('/api/log/stream?name=node');
+es.onmessage = (e) => console.log('log:', JSON.parse(e.data));
+```
+
+### Curl Examples
+
+```bash
+# Append a log line
+curl -X POST http://localhost:3000/api/log -H 'Content-Type: application/json' \
+  -d '{"name":"node","message":"hello from curl"}'
+
+# List log buffers
+curl http://localhost:3000/api/log/list
+
+# Run agent ping
+curl http://localhost:3000/api/agent/actions -H 'x-agent-token: dev-secret-token'
+curl -X POST http://localhost:3000/api/agent/run -H 'x-agent-token: dev-secret-token' -H 'Content-Type: application/json' \
+  -d '{"action":"ping"}'
+
+# AI mock chat
+curl -X POST http://localhost:3000/api/ai/chat-tool -H 'Content-Type: application/json' \
+  -d '{"message":"test"}'
+```
+
+### Implementation Notes
+
+- Logs are memory-resident only (per server process) with a ring buffer cap of 5000 lines per named stream.
+- Console mirror allows piping server console output into a chosen log channel subset for unified UI viewing.
+- AI chat uses OpenAI Responses API when available; falls back to legacy Chat Completions if `responses` client missing.
+- Without an API key a deterministic mock echo response is returned (flagged with `mock:true`).
+- Agent actions are synchronous placeholder functions; extend by calling `agentActionRunner.register(name, fn)` in a custom server bootstrap file.
+
+### Optional OpenAI Dependency Strategy
+
+The `openai` package is intentionally **not** a hard dependency. When `ENABLE_AI_TOOL_API=1` and `OPENAI_API_KEY` is set, the server attempts a **late dynamic import** inside `lib/server/aiTools.ts` using an opaque `new Function('m', 'return import(m)')` construct. This prevents Next.js from resolving `openai` at build time, avoiding build failures in environments where the library is absent.
+
+Resolution path:
+
+1. AI API disabled → returns `{ success:false, responseText:"AI tool API disabled" }`.
+2. Enabled but no key → mock echo (`[mock] You said: ...`).
+3. Import failure (module missing) → mock with `[mock-no-openai]` tag.
+4. Successful import + key → real API call (Responses API preferred, falls back to Chat Completions if `responses` client missing).
+
+To enable real responses:
+
+```bash
+npm install openai
+ENABLE_AI_TOOL_API=1 OPENAI_API_KEY=sk-... npm run dev
+```
+
+If you prefer to make `openai` always available (e.g. production hosting), add it to `dependencies` and the dynamic import path still works (no code change needed). When disabled the runtime cost is a single guard check.
+
+Rationale: Keeps default developer setup lean (no extra transitive deps, faster install) and avoids Windows build flakiness reported previously when an optional module was missing.

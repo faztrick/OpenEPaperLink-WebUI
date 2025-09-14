@@ -57,8 +57,14 @@ async function handleDirect(req: NextApiRequest, res: NextApiResponse, backendUs
   const state = serialManager.getState();
   const desiredPort = process.env.DEFAULT_SERIAL_PORT || process.env.SERIAL_PORT || 'COM5';
   const baud = Number(process.env.DEFAULT_SERIAL_BAUD || process.env.SERIAL_BAUD || state.baudRate || 115200);
+  if (!desiredPort) {
+    return res.status(503).json({ error: 'no_port_configured', message: 'No serial port configured for Wi-Fi mode', backendUsed, proxied: false, guidance: 'Set SERIAL_PORT env or configure sidecar (SERIAL_SIDECAR_URL).' });
+  }
   let openedTemporarily = false;
   if (!state.isOpen) {
+    if (process.env.ENABLE_SERIAL_API === 'false' && !opts.haveSidecarEnv) {
+      return res.status(503).json({ error: 'serial_disabled', message: 'Serial API disabled and no sidecar configured', backendUsed, proxied: false, guidance: 'Enable serial (unset ENABLE_SERIAL_API) or configure SERIAL_SIDECAR_URL.' });
+    }
     const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -68,7 +74,7 @@ async function handleDirect(req: NextApiRequest, res: NextApiResponse, backendUs
         const msg = (e?.message || '').toLowerCase();
         const transient = msg.includes('access denied') || msg.includes('busy') || msg.includes('cannot open');
         if (attempt === maxAttempts || !transient) {
-          return res.status(502).json({ error: 'port_open_failed', message: `Failed to open serial port ${desiredPort}: ${e.message}`, backendUsed, proxied: false });
+          return res.status(503).json({ error: 'port_open_failed', message: `Failed to open serial port ${desiredPort}: ${e.message}`, backendUsed, proxied: false, guidance: 'Check cable/permissions or disable serial API (ENABLE_SERIAL_API=false). If a sidecar service exists set SERIAL_SIDECAR_URL.' });
         }
         await new Promise(r => setTimeout(r, 150));
       }
@@ -106,8 +112,10 @@ async function handleDirect(req: NextApiRequest, res: NextApiResponse, backendUs
       });
     }
     if (parsed.mode === undefined) {
-      const statusCode = result.timedOut ? 504 : 422;
-      return res.status(statusCode).json({ error: 'parse_failed', message: 'Failed to extract mode', backendUsed, proxied: false, openedTemporarily, rawCount: rawLines.length, elapsedMs: result.elapsedMs, timedOut: result.timedOut, parseStatus: 'no_mode', ...(debug ? { rawLines } : {}) });
+      if (result.timedOut) {
+        return res.status(200).json({ degraded: true, error: 'mode_timeout', message: 'Wi-Fi mode query timed out', backendUsed, proxied: false, openedTemporarily, rawCount: rawLines.length, elapsedMs: result.elapsedMs, timedOut: true, parseStatus: 'no_mode', guidance: 'Verify firmware implements wifimode CLI or increase timeout.', ...(debug ? { rawLines } : {}) });
+      }
+      return res.status(422).json({ error: 'parse_failed', message: 'Failed to extract mode', backendUsed, proxied: false, openedTemporarily, rawCount: rawLines.length, elapsedMs: result.elapsedMs, timedOut: result.timedOut, parseStatus: 'no_mode', ...(debug ? { rawLines } : {}) });
     }
     res.status(200).json({ success: true, mode: parsed.mode, modeName: parsed.modeName, changed: parsed.changed, prior: parsed.prior, backendUsed, proxied: false, openedTemporarily, port: desiredPort, elapsedMs: result.elapsedMs, timedOut: result.timedOut, rawCount: rawLines.length, parseStatus: parsed.sawJson ? 'json' : 'fallback', ...(debug ? { rawLines } : {}) });
   } catch (e: any) {

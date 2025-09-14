@@ -5,12 +5,16 @@
 export type PreferredChannel = 'auto' | 'http' | 'serial';
 
 export interface TransportStatus {
-  preferred: PreferredChannel;           // user preference
+  preferred: PreferredChannel;             // user preference
   effective: 'http' | 'serial' | 'pending'; // last attempted or active channel (for UI display)
   serialSupported: boolean;
   serialOpen: boolean;
+  openingSerial: boolean;                  // true while an openSerial request is in-flight
   portInfo?: string;
-  error?: string;
+  error?: string;                          // last serial error
+  lastError?: string;                      // last channel (http/serial) error message
+  lastErrorAt?: number;                    // epoch ms of last error
+  lastHttpTimeout?: boolean;               // true if last http attempt timed out
 }
 
 export interface TransportAPI {
@@ -68,6 +72,20 @@ function parseResponse(raw: string): any {
 
 export function createTransport(): TransportAPI {
   let preferred: PreferredChannel = 'auto';
+  // Restore persisted preference (client side only) or env default
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('connPref') as PreferredChannel | null;
+      if (saved && (saved === 'auto' || saved === 'http' || saved === 'serial')) preferred = saved;
+      else if (process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT) {
+        const envPref = process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT as PreferredChannel;
+        if (envPref === 'auto' || envPref === 'http' || envPref === 'serial') preferred = envPref;
+      }
+    } catch { /* ignore */ }
+  } else if (process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT) {
+    const envPref = process.env.NEXT_PUBLIC_DEFAULT_TRANSPORT as PreferredChannel;
+    if (envPref === 'auto' || envPref === 'http' || envPref === 'serial') preferred = envPref;
+  }
   let lastEffective: 'http' | 'serial' | 'pending' = 'http';
   const listeners = new Set<(s: TransportStatus) => void>();
   const serial: SerialContext = { port: null, reader: null, opened: false };
@@ -83,25 +101,61 @@ export function createTransport(): TransportAPI {
       effective: lastEffective,
       serialSupported: typeof navigator !== 'undefined' && !!(navigator as any).serial,
       serialOpen: serial.opened,
+      openingSerial: !!openSerialPromise,
       portInfo: serial.port ? ((serial.port as any).getInfo ? JSON.stringify((serial.port as any).getInfo()) : undefined) : undefined,
       error: serial.error,
+      lastError: lastErrorMsg,
+      lastErrorAt: lastErrorTime || undefined,
+      lastHttpTimeout: lastHttpTimedOut,
     };
   }
 
-  async function openSerial() {
-    if (serial.opened) return;
-    if (!('serial' in navigator)) throw new Error('Web Serial API not supported in this browser');
+  let openSerialPromise: Promise<void> | null = null;
+  async function adoptGrantedPort() {
+    if (typeof navigator === 'undefined' || !('serial' in navigator)) return false;
     try {
-      serial.port = await (navigator as any).serial.requestPort();
-      await serial.port.open({ baudRate: 115200 });
-      serial.opened = true;
-      serial.error = undefined;
+      const ports: any[] = await (navigator as any).serial.getPorts();
+      if (ports && ports.length) {
+        serial.port = ports[0];
+        await serial.port.open({ baudRate: 115200 });
+        serial.opened = true;
+        serial.error = undefined;
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem('serialAutoOpen', '1'); } catch { /* ignore */ }
+        }
+        return true;
+      }
     } catch (e: any) {
       serial.error = e.message;
-      throw e;
-    } finally {
-      emit();
     }
+    return false;
+  }
+  async function openSerial() {
+    if (serial.opened) return;
+    if (openSerialPromise) return openSerialPromise; // prevent concurrent opens
+    if (typeof navigator === 'undefined' || !('serial' in navigator)) throw new Error('Web Serial API not supported in this browser');
+    openSerialPromise = (async () => {
+      try {
+        // First adopt previously granted port if any (avoids permission prompt)
+        if (!(await adoptGrantedPort())) {
+          serial.port = await (navigator as any).serial.requestPort();
+          await serial.port.open({ baudRate: 115200 });
+          if (typeof window !== 'undefined') {
+            try { localStorage.setItem('serialAutoOpen', '1'); } catch { /* ignore */ }
+          }
+        }
+        serial.opened = true;
+        serial.error = undefined;
+      } catch (e: any) {
+        serial.error = e.message;
+        throw e;
+      } finally {
+        openSerialPromise = null;
+        emit();
+      }
+    })();
+    emit(); // reflect openingSerial state
+    return openSerialPromise;
   }
 
   async function closeSerial() {
@@ -112,6 +166,9 @@ export function createTransport(): TransportAPI {
       serial.port = null;
       serial.reader = null;
       serial.opened = false;
+      if (typeof window !== 'undefined') {
+        try { localStorage.removeItem('serialAutoOpen'); } catch { /* ignore */ }
+      }
       emit();
     }
   }
@@ -133,21 +190,46 @@ export function createTransport(): TransportAPI {
     return parseResponse(raw) as T;
   }
 
+  const HTTP_TIMEOUT_MS = (() => {
+    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TRANSPORT_HTTP_TIMEOUT) {
+      const v = parseInt(process.env.NEXT_PUBLIC_TRANSPORT_HTTP_TIMEOUT, 10);
+      if (!isNaN(v) && v > 0 && v < 60000) return v;
+    }
+    return 8000; // default 8s
+  })();
+  let lastErrorMsg: string | undefined;
+  let lastErrorTime: number | null = null;
+  let lastHttpTimedOut = false;
+
+  async function fetchWithTimeout(path: string, init?: RequestInit) {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    try {
+      const res = await fetch(path, { ...init, signal: controller.signal });
+      return res;
+    } finally {
+      clearTimeout(to);
+    }
+  }
+
   async function get<T = any>(path: string, init?: RequestInit): Promise<T> {
-    // Decide channel
     if (preferred === 'serial') {
       if (!serial.opened) throw new Error('Serial not open');
       lastEffective = 'serial'; emit();
       return serialRequest('GET', path);
     }
-    // auto/http path
     lastEffective = 'pending'; emit();
     try {
-      const res = await fetch(path, init);
+      const res = await fetchWithTimeout(path, init);
       if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
       lastEffective = 'http'; emit();
+      lastHttpTimedOut = false;
       return res.json();
     } catch (e: any) {
+      const aborted = e?.name === 'AbortError';
+      lastHttpTimedOut = aborted;
+      lastErrorMsg = e?.message || String(e);
+      lastErrorTime = Date.now();
       if (preferred === 'auto' && serial.opened) {
         try {
           lastEffective = 'serial'; emit();
@@ -169,11 +251,16 @@ export function createTransport(): TransportAPI {
     }
     lastEffective = 'pending'; emit();
     try {
-      const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) }, body: JSON.stringify(body), ...init });
+      const res = await fetchWithTimeout(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) }, body: JSON.stringify(body), ...init });
       if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
       lastEffective = 'http'; emit();
+      lastHttpTimedOut = false;
       return res.json();
     } catch (e: any) {
+      const aborted = e?.name === 'AbortError';
+      lastHttpTimedOut = aborted;
+      lastErrorMsg = e?.message || String(e);
+      lastErrorTime = Date.now();
       if (preferred === 'auto' && serial.opened) {
         try {
           lastEffective = 'serial'; emit();
@@ -197,6 +284,38 @@ export function createTransport(): TransportAPI {
     listeners.add(cb);
     cb(getStatus());
     return () => { listeners.delete(cb); };
+  }
+  // Auto-open previously granted port if user prefers serial or stored auto-open flag
+  if (typeof navigator !== 'undefined') {
+    try {
+      if (typeof window !== 'undefined') {
+        const autoFlag = (() => { try { return localStorage.getItem('serialAutoOpen'); } catch { return null; } })();
+        if (autoFlag === '1' || preferred === 'serial') {
+          adoptGrantedPort().finally(() => emit());
+        }
+      } else if (preferred === 'serial') {
+        // On server, skip; client hydration will handle.
+      }
+    } catch { /* ignore */ }
+  }
+  // Listen for disconnect events to clear state and optionally attempt re-adopt
+  if (typeof navigator !== 'undefined' && 'serial' in navigator) {
+    try {
+      (navigator as any).serial.addEventListener('disconnect', (event: any) => {
+        if (event?.target === serial.port) {
+          serial.opened = false;
+          serial.port = null;
+          serial.reader = null;
+          if (typeof window !== 'undefined') {
+            try { localStorage.removeItem('serialAutoOpen'); } catch { /* ignore */ }
+          }
+          emit();
+          // attempt re-adopt if preferred is serial or auto-open flag set (port removal may mean unplugged)
+        }
+      });
+    } catch {
+      // ignore listener errors
+    }
   }
   return { get, post, openSerial, closeSerial, getStatus, setPreferred, subscribe, get preferred() { return preferred; } } as unknown as TransportAPI;
 }

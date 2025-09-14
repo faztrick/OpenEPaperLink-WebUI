@@ -1,9 +1,17 @@
 // PM2 ecosystem configuration for OpenEPaperLink Web UI (Next.js)
-// Usage:
-//  pm2 start ecosystem.config.cjs --only webui-dev --watch
-//  pm2 start ecosystem.config.cjs --only webui-prod
-//  pm2 logs webui-dev
-//  pm2 delete webui-dev
+// Single-port model: one dev instance (default Next.js port 3000) and optional prod instance.
+// Device selection & transport handling are done in-app (Devices page + headers) so we no longer
+// run multiple PM2 processes per device.
+//
+// Common usage:
+//   pm2 start ecosystem.config.cjs --only webui-dev --watch      # Hot dev with restarts
+//   pm2 start ecosystem.config.cjs --only webui-prod             # Serve previously built app
+//   pm2 logs webui-dev
+//   pm2 delete webui-dev
+//
+// To target a specific device by default you can still export DEVICE_BASE_URL before start, e.g.:
+//   DEVICE_BASE_URL=http://192.168.4.101 pm2 restart webui-dev
+// but normally you just pick / edit devices inside the UI now.
 
 module.exports = {
   apps: [

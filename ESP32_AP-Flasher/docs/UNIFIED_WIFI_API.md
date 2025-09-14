@@ -36,6 +36,31 @@ All deprecated endpoints now return HTTP 410 JSON: `{ "deprecated": true, "use":
 2. Poll: `GET /api/wifi/scan/results` until `running == false`.
 3. Use `timestamp` and `count` to detect new data vs cached.
 
+### Proxy / Fallback & Resilience (web-ui-next)
+
+The Next.js device proxy introduces adaptive timeouts and resilience logic similar to the WiFi status path:
+
+- Kick (`/api/wifi/scan`) timeout: 3000ms (short – should return quickly). On timeout it automatically attempts a legacy `/wifi_scan` fallback once (6s timeout) before failing.
+- Results polling (`/api/wifi/scan/results`) timeout: 5000ms.
+- On results timeout the proxy responds `504` with JSON `{ error: 'upstream_timeout', stale: { type:'scan', ageMs, networks } }` if a prior successful scan is cached.
+- Successful results responses cache the `networks` array for stale reuse.
+- Legacy fallback success is surfaced to clients with `{ legacyFallback:true, legacyEndpoint:'/wifi_scan' }`.
+- Clients should treat an `upstream_timeout` with `stale.type==='scan'` as a soft failure and may display cached networks with a visual "STALE" marker.
+- Error codes: `upstream_timeout`, `device_proxy_error`, `device_base_url_not_set` (no device selected), plus optional `legacyScanAttempt` diagnostic object.
+
+Client hook (`useDeviceWifiScan`) adds:
+
+- 10s cooldown to prevent scan abuse / accidental rapid resubmission.
+- Partial / early networks display if the kick returns some immediate networks (rare synchronous case).
+- Automatic stale usage and user-friendly error messages.
+
+Recommended UI Indicators:
+
+- Show a spinner while `running`.
+- Badge "STALE" when `stale==true`.
+- Badge "LEGACY" when `legacyFallback==true` (helps validate migration progress).
+- Disable the Scan button and show countdown during cooldown window.
+
 ## Example Responses
 
 ### GET /api/wifi/status

@@ -15,7 +15,7 @@ const encMap: Record<number, string> = {
 };
 
 export const SerialWifiScannerPanel: React.FC<SerialWifiScannerPanelProps> = ({ onSelectSSID }) => {
-  const { networks, scanning, error, scan, lastCount, timedOut, elapsedMs, filters } = useSerialWifiScan();
+  const { networks, scanning, error, start, count: lastCount, timedOut, elapsedMs, appliedFilters: filters } = useSerialWifiScan();
   const [minRssi, setMinRssi] = useState<string>('');
   const [top, setTop] = useState<string>('');
   return (
@@ -39,7 +39,7 @@ export const SerialWifiScannerPanel: React.FC<SerialWifiScannerPanelProps> = ({ 
             const opts: any = {};
             const mr = parseInt(minRssi, 10); if (!Number.isNaN(mr)) opts.minRssi = mr;
             const tp = parseInt(top, 10); if (!Number.isNaN(tp)) opts.top = tp;
-            scan(Object.keys(opts).length ? opts : undefined);
+            start(Object.keys(opts).length ? opts : undefined);
           }} className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50">
             {scanning ? 'Scanning...' : 'Scan'}
           </button>

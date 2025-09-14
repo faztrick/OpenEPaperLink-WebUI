@@ -2,16 +2,21 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { ensureSerialApiEnabled, serialManager } from '../../../../lib/server/serialManager';
 
 async function proxyToSidecar(req: NextApiRequest, res: NextApiResponse) {
-  const base = process.env.SERIAL_SIDECAR_URL!;
+  const baseRaw = process.env.SERIAL_SIDECAR_URL;
+  if (!baseRaw) {
+    // Should not happen after useSidecar guard, but be defensive.
+    return res.status(500).json({ error: 'sidecar_not_configured', message: 'SERIAL_SIDECAR_URL env not set' });
+  }
+  // Normalize base (strip trailing slashes)
+  const base = baseRaw.replace(/\/+$/, '');
   try {
     const body = { minRssi: (req.body?.minRssi ?? req.query.minRssi), top: (req.body?.top ?? req.query.top) };
-    const r = await fetch(base.replace(/\/$/, '') + '/scan', {
+    const r = await fetch(base + '/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const txt = await r.text();
-    // Attempt to parse JSON so we can append proxied flag
     try {
       const json = JSON.parse(txt);
       json.proxied = true;
@@ -49,14 +54,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const wantSidecar = backendParam === 'sidecar';
   const wantSerial = backendParam === 'serial';
   const haveSidecarEnv = !!process.env.SERIAL_SIDECAR_URL;
-
-  // Decide backend
-  const useSidecar = wantSidecar || (!wantSerial && haveSidecarEnv);
+  // Only use sidecar when env is present. Explicit sidecar request without env falls back to serial.
+  const useSidecar = haveSidecarEnv && (wantSidecar || (!wantSerial));
+  const backendDecision = {
+    backendParam,
+    haveSidecarEnv,
+    wantSidecar,
+    wantSerial,
+    chosen: useSidecar ? 'sidecar' : 'serial'
+  };
   if (useSidecar) {
     return proxyToSidecar(req, res);
   }
   const state = serialManager.getState();
-  const desiredPort = process.env.DEFAULT_SERIAL_PORT || process.env.SERIAL_PORT || 'COM5';
+  const requestedPort = (req.body?.port || req.query.port) as string | undefined;
+  const desiredPort = requestedPort || process.env.DEFAULT_SERIAL_PORT || process.env.SERIAL_PORT || 'COM5';
   const baud = Number(process.env.DEFAULT_SERIAL_BAUD || process.env.SERIAL_BAUD || state.baudRate || 115200);
   let openedTemporarily = false;
 
@@ -82,7 +94,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             attempts: attempt,
             transient,
             availablePorts: ports.map(p => ({ path: (p as any).path, manufacturer: (p as any).manufacturer, serialNumber: (p as any).serialNumber })),
-            guidance: 'Close other programs using the port (serial monitor, IDE, flashing tool). On Windows, ensure driver installed. If device recently flashed, wait a few seconds and retry.'
+            guidance: 'Close other programs using the port (serial monitor, IDE, flashing tool). On Windows, ensure driver installed. If device recently flashed, wait a few seconds and retry.',
+            backendDecision
           });
         }
         await new Promise(r => setTimeout(r, 150));
@@ -128,11 +141,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       port: desiredPort,
       proxied: false,
       backendUsed: 'serial',
+      backendDecision: { ...backendDecision, requestedPort: requestedPort || null, effectivePort: desiredPort },
       ...(debug ? { stateBefore: state, networksUnfiltered: networks } : {})
     });
   } catch (e: any) {
     const recent = serialManager.getLog({ tail: 25 }).map(l => l.raw);
-    res.status(500).json({ error: 'unexpected', message: e.message, backendUsed: 'serial', recentLines: recent });
+    res.status(500).json({ error: 'unexpected', message: e.message, backendUsed: 'serial', recentLines: recent, backendDecision });
   } finally {
     if (openedTemporarily) {
       try { await serialManager.close(); } catch {/* ignore */ }

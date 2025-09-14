@@ -566,12 +566,50 @@ static void processLine(char *line)
         cliPrint("[fsformat] Not available (SD_CARD_ONLY build)");
 #endif
     }
-    else if (!strcmp(line, "wifiscan"))
+    else if (!strcmp(line, "wifiscan") || !strcmp(line, "wifi_scan"))
     {
+        // Improve robustness: handle existing async scan, ensure STA capability, and cleanup results
         cliPrint("[wifiscan] starting scan...");
+
+        wifi_mode_t originalMode = WiFi.getMode();
+        bool addedStaTemp = false;
+        if (originalMode == WIFI_AP)
+        {
+            // Temporarily enable STA so we can scan while keeping AP active
+            WiFi.mode(WIFI_AP_STA);
+            addedStaTemp = true;
+        }
+
+        // If a previous async scan is running (from other subsystem), wait briefly for completion
+        uint32_t waitStart = millis();
+        while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && (millis() - waitStart) < 4000)
+        {
+            delay(100);
+        }
+
+        // If previous results linger, discard to force fresh scan
+        int16_t prev = WiFi.scanComplete();
+        if (prev >= 0)
+        {
+            WiFi.scanDelete();
+        }
+
+        // Start synchronous scan (blocking) so serial user gets immediate results
         int16_t n = WiFi.scanNetworks(false, true);
+        if (n == WIFI_SCAN_RUNNING)
+        {
+            // Fallback: rare case API returned running despite sync request – poll until complete or timeout
+            uint32_t start = millis();
+            while ((n = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && (millis() - start) < 8000)
+            {
+                delay(150);
+            }
+        }
+
         if (n < 0)
+        {
             Serial.printf("[wifiscan] scan failed (%d)\n", (int)n);
+        }
         else
         {
             Serial.printf("{\"event\":\"wifiscan_summary\",\"count\":%d}\n", (int)n);
@@ -590,6 +628,15 @@ static void processLine(char *line)
                 Serial.printf("{\"event\":\"wifinet\",\"ssid\":\"%s\",\"rssi\":%ld,\"channel\":%ld,\"enc\":%d,\"bssid\":\"%s\"}\n", ssid.c_str(), (long)rssi, (long)channel, (int)auth, bssidStr);
             }
             cliPrint("[wifiscan] done");
+        }
+
+        // Free scan results buffer
+        WiFi.scanDelete();
+
+        if (addedStaTemp)
+        {
+            // Revert back to AP only if we elevated mode just for scanning
+            WiFi.mode(WIFI_AP);
         }
     }
     else if (!strncmp(line, "wifimode", 8))

@@ -16,7 +16,7 @@ const Bars: React.FC<{ rssi?: number }> = ({ rssi }) => {
 };
 
 export const SerialWifiScannerPanelEnhanced: React.FC<Props> = ({ onSelectSSID, backend }) => {
-  const { networks, scanning, error, scan, lastCount, originalCount, timedOut, elapsedMs, proxied, appliedFilters, port, openedTemporarily, backendUsed } = useSerialWifiScan({ backend });
+  const { networks, scanning, error, start, count: lastCount, originalCount, timedOut, elapsedMs, proxied, appliedFilters, port, openedTemporarily, backendUsed } = useSerialWifiScan(backend || 'auto');
   const [connectSSID, setConnectSSID] = useState('');
   const [password, setPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -36,10 +36,10 @@ export const SerialWifiScannerPanelEnhanced: React.FC<Props> = ({ onSelectSSID, 
     const opts: any = {};
     if (minRssi !== undefined) opts.minRssi = minRssi;
     if (top !== undefined) opts.top = top;
-    await scan(Object.keys(opts).length ? opts : undefined);
+    await start(Object.keys(opts).length ? opts : undefined);
     setLastScanAt(new Date());
     // fetch proxied flag via last fetch result by re-calling lightweight head? We piggyback by reading window.fetch override not present; simplest: after scan, call log tail no; for now ignore until hook extended
-  }, [minRssi, top, scan]);
+  }, [minRssi, top, start]);
 
   // Auto refresh logic
   useEffect(() => {
