@@ -173,7 +173,7 @@ export default function DevicesPage() {
     const handler = () => updateSummary();
     window.addEventListener('reachability.updated', handler);
     return () => { window.removeEventListener('reachability.updated', handler); };
-  }, [data, customVersion, ovVersion]);
+  }, [data, customDevices, customVersion, ovVersion]);
 
   function manualRefresh() {
     triggerReachabilityRefresh();

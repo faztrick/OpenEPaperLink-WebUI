@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { connectWifi, disconnectWifi, getWifiMode, setWifiMode, useDeviceWifiScan, useDeviceWifiStatus } from '../hooks/useDeviceWifi';
 import { showToast } from '../hooks/useToast';
 import { getSelectedDevice } from '../lib/deviceSelection';
+import { transport } from '../lib/transport';
 
 // Simple translator for encryption field (enc) -> human readable. Firmware specifics:
 // Common enc values (heuristic): 0=open, 1=WEP, 2/3=WPA, 4=WPA2, 5=WPAX (mixed). Fallback to Unknown.
@@ -32,6 +33,12 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
   const [connecting, setConnecting] = useState(false);
   const [modeChanging, setModeChanging] = useState(false);
   const sel = getSelectedDevice();
+  const [transportState, setTransportState] = useState(() => transport().getStatus());
+  useEffect(() => {
+    const t = transport();
+    const unsub = t.subscribe(s => setTransportState(s));
+    return () => { try { unsub(); } catch { /* ignore */ } };
+  }, []);
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { // clear form when selection changes
@@ -46,7 +53,9 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
 
   return (
     <div className="sec mt-10" id="wifi-panel">
-      <h3 className="heading-mid">Wi-Fi</h3>
+      <h3 className="heading-mid">Wi-Fi {transportState && (
+        <span className="ml-2 xsmall mono" title={`Preferred: ${transportState.preferred} | Effective: ${transportState.effective}${transportState.serialPending ? ' (serial pending)' : ''}`}>[{transportState.effective}{transportState.serialPending ? '*' : ''}]</span>
+      )}</h3>
       {!sel && <div className="xsmall muted mt-1">Select a device above to manage Wi-Fi.</div>}
       {sel && (
         <>
