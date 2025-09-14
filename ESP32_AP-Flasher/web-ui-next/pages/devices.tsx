@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout';
 import { ReachabilityBadge } from '../components/ReachabilityBadge';
 import { Seo } from '../components/Seo';
 import { SysinfoPreviewModal } from '../components/SysinfoPreviewModal';
+import { WifiConnectPanel } from '../components/WifiConnectPanel';
 import { computeReachabilitySummary, triggerReachabilityRefresh } from '../hooks/useDeviceReachability';
 import { showToast } from '../hooks/useToast';
 import type { DeviceSummary as SharedDeviceSummary } from '../lib/api-types';
@@ -280,6 +281,8 @@ export default function DevicesPage() {
           </table>
         </>
       )}
+      {/* Wi-Fi Panel (only meaningful when a device is selected) */}
+      <WifiConnectPanel selectedDeviceId={selectedId} />
       {editingId && editingMeta && (
         <DeviceEditPanel
           id={editingId}
