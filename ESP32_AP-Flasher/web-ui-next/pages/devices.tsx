@@ -8,10 +8,11 @@ import { Seo } from '../components/Seo';
 import { computeReachabilitySummary, triggerReachabilityRefresh } from '../hooks/useDeviceReachability';
 import { showToast } from '../hooks/useToast';
 import type { DeviceSummary as SharedDeviceSummary } from '../lib/api-types';
-import { CustomDevice, exportCustomDevices, getAllCustomDevices, importCustomDevices, subscribeCustomDevices } from '../lib/customDevices';
+import { CustomDevice, exportCustomDevices, getAllCustomDevices, importCustomDevices, subscribeCustomDevices, upsertCustomDevice } from '../lib/customDevices';
 import { getDeviceOverride, subscribeDeviceOverrides } from '../lib/deviceOverrides';
 import { getSelectedDevice, setSelectedDevice } from '../lib/deviceSelection';
 import { fetcher } from '../lib/fetcher';
+import { deriveDeviceIdentity, fetchHttpSysinfo, fetchSerialSysinfo } from '../lib/serialSysinfo';
 
 export default function DevicesPage() {
   const { data, error, isLoading } = useSWR<SharedDeviceSummary[]>('/api/devices', fetcher);
@@ -47,6 +48,7 @@ export default function DevicesPage() {
   const [customPanelMode, setCustomPanelMode] = useState<'add' | 'edit' | null>(null);
   const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
   const [customVersion, setCustomVersion] = useState(0);
+  const [autoAdding, setAutoAdding] = useState(false); // loading state for auto-add from serial
   // Serial backend/port selection moved into device detail page.
 
   function openEdit(d: SharedDeviceSummary) {
@@ -135,6 +137,42 @@ export default function DevicesPage() {
         <>
           <div className="mb-3 flex-row gap-2">
             <button className="btn-slim" onClick={openAddCustom}>Add Custom Device</button>
+            <button className="btn-slim" disabled={autoAdding} onClick={async () => {
+              if (autoAdding) return; // guard against double clicks
+              setAutoAdding(true);
+              try {
+                showToast('Probing serial for sysinfo...', 'info');
+                let res = await fetchSerialSysinfo();
+                if (!res.success) {
+                  showToast('Serial sysinfo failed: ' + (res.error || 'unknown') + ' (trying HTTP via selected device HTTP)', 'info');
+                  // Attempt HTTP sysinfo using currently selected device baseUrl if any
+                  const sel = getSelectedDevice();
+                  if (sel?.baseUrl) {
+                    res = await fetchHttpSysinfo(sel.baseUrl);
+                  }
+                }
+                if (!res.success) {
+                  showToast('Auto-add failed: ' + (res.error || 'no sysinfo'), 'error');
+                  return;
+                }
+                const sel = getSelectedDevice();
+                const identity = deriveDeviceIdentity(res.sysinfo, sel?.baseUrl);
+                if (!identity) {
+                  showToast('Could not derive device identity from sysinfo', 'error');
+                  return;
+                }
+                const exists = customDevices.some(cd => cd.id === identity.id);
+                upsertCustomDevice(identity);
+                showToast(`${exists ? 'Updated' : 'Added'} device ${identity.id} from ${res.source}`, 'success');
+                setCustomVersion(v => v + 1);
+                // Immediately trigger reachability refresh so new/updated device status populates quickly.
+                triggerReachabilityRefresh();
+              } catch (e: any) {
+                showToast('Auto-add error: ' + (e.message || e), 'error');
+              } finally {
+                setAutoAdding(false);
+              }
+            }}>{autoAdding ? <span className="inline-flex-center"><span className="spinner-mini" aria-hidden /> Adding…</span> : 'Add From Serial (Auto)'}</button>
             <button className="btn-slim" onClick={() => {
               try {
                 const blob = new Blob([JSON.stringify(exportCustomDevices(), null, 2)], { type: 'application/json' });
@@ -244,4 +282,5 @@ export default function DevicesPage() {
 }
 <style jsx>{`
   .hidden-input { display:none; }
+  .inline-flex-center { display:inline-flex; align-items:center; gap:4px; }
 `}</style>
