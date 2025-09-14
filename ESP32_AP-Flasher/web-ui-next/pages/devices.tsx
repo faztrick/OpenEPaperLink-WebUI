@@ -5,6 +5,7 @@ import { DeviceEditPanel } from '../components/DeviceEditPanel';
 import { Layout } from '../components/Layout';
 import { ReachabilityBadge } from '../components/ReachabilityBadge';
 import { Seo } from '../components/Seo';
+import { computeReachabilitySummary, triggerReachabilityRefresh } from '../hooks/useDeviceReachability';
 import { showToast } from '../hooks/useToast';
 import type { DeviceSummary as SharedDeviceSummary } from '../lib/api-types';
 import { CustomDevice, exportCustomDevices, getAllCustomDevices, importCustomDevices, subscribeCustomDevices } from '../lib/customDevices';
@@ -91,6 +92,35 @@ export default function DevicesPage() {
     setOvVersion(v => v + 1);
   }
 
+  // Aggregate reachability summary (computed from cache + current list). Refresh when relevant lists change or on events.
+  const [summary, setSummary] = useState<{ up: number; down: number; unknown: number; total: number } | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    function updateSummary() {
+      const discovered = (data && data.length ? data : [{ id: 'example-1', ip: '192.168.4.1' } as any]).map(d => (getDeviceOverride(d.id)?.baseUrl || ((d as any).ip ? `http://${(d as any).ip}` : (d as any).baseUrl || ''))).filter(Boolean);
+      const custom = customDevices.filter(cd => !(data || []).some(d => d.id === cd.id)).map(cd => cd.baseUrl);
+      const all = [...discovered, ...custom];
+      setSummary(computeReachabilitySummary(all));
+    }
+    updateSummary();
+    const handler = () => updateSummary();
+    window.addEventListener('reachability.updated', handler);
+    return () => { window.removeEventListener('reachability.updated', handler); };
+  }, [data, customVersion, ovVersion]);
+
+  function manualRefresh() {
+    triggerReachabilityRefresh();
+    // optimistic immediate summary refresh (will refine as probes complete)
+    setTimeout(() => {
+      try {
+        const discovered = (data && data.length ? data : [{ id: 'example-1', ip: '192.168.4.1' } as any]).map(d => (getDeviceOverride(d.id)?.baseUrl || ((d as any).ip ? `http://${(d as any).ip}` : (d as any).baseUrl || ''))).filter(Boolean);
+        const custom = customDevices.filter(cd => !(data || []).some(d => d.id === cd.id)).map(cd => cd.baseUrl);
+        const all = [...discovered, ...custom];
+        setSummary(computeReachabilitySummary(all));
+      } catch { /* ignore */ }
+    }, 50);
+  }
+
   return (
     <Layout title="Devices">
       <Seo title="Devices" description="List of devices (placeholder)" />
@@ -119,6 +149,10 @@ export default function DevicesPage() {
               } catch (e: any) { showToast('Export failed: ' + (e?.message || e), 'error'); }
             }}>Export</button>
             <button className="btn-slim" onClick={() => { document.getElementById('importCustomDevicesInput')?.click(); }}>Import</button>
+            <button className="btn-slim" onClick={manualRefresh}>Refresh Status</button>
+            {summary && (
+              <span className="xsmall muted ml-2">Reachability: <span className="mono">{summary.up}</span> up / <span className="mono">{summary.down}</span> down / <span className="mono">{summary.unknown}</span> unknown</span>
+            )}
             <input id="importCustomDevicesInput" type="file" accept="application/json" className="hidden-input" onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;

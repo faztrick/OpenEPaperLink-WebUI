@@ -9,6 +9,7 @@ export interface ReachabilityBadgeProps {
   showLatency?: boolean; // append latency (e.g. Up 42ms)
   className?: string;
   unreachableTitle?: string; // fallback tooltip when unreachable and no lastMessage
+  // future: globalKey? currently baseUrl identifies uniqueness
 }
 
 // Lightweight, reusable badge that shows live reachability using useDeviceReachability.

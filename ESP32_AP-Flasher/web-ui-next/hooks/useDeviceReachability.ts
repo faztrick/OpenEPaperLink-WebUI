@@ -34,6 +34,42 @@ interface Options {
 // Simple module-level memory cache to avoid repeated localStorage parsing within a session.
 const memCache: Record<string, ReachabilityState & { cachedAt: number }> = {};
 
+// Event helpers:
+//  reachability.refresh (detail: { baseUrl?: string }) -> forces an immediate probe for matching devices
+//  reachability.updated (detail: { baseUrl: string, state: ReachabilityState }) -> fired after each probe completes
+export function triggerReachabilityRefresh(baseUrl?: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('reachability.refresh', { detail: { baseUrl } }));
+}
+
+export function computeReachabilitySummary(baseUrls: string[], cacheTtlMs = 60000) {
+  const now = Date.now();
+  let up = 0, down = 0, unknown = 0;
+  const seen = new Set<string>();
+  // Helper to read entry (mem first then LS)
+  let lsMap: Record<string, any> | null = null;
+  function getEntry(url: string) {
+    const mem = memCache[url];
+    if (mem && (now - mem.cachedAt) < cacheTtlMs) return mem;
+    if (!lsMap) {
+      try {
+        const raw = localStorage.getItem('reachability.cache');
+        if (raw) lsMap = JSON.parse(raw); else lsMap = {};
+      } catch { lsMap = {}; }
+    }
+    const ls = lsMap[url];
+    if (ls && (now - ls.cachedAt) < cacheTtlMs) return ls;
+    return null;
+  }
+  for (const url of baseUrls) {
+    if (!url || seen.has(url)) { if (!seen.has(url)) unknown++; continue; }
+    seen.add(url);
+    const entry = getEntry(url);
+    if (!entry || entry.reachable === null) unknown++; else if (entry.reachable) up++; else down++;
+  }
+  return { total: baseUrls.length, up, down, unknown };
+}
+
 export function useDeviceReachability(baseUrl: string | null | undefined, opts?: Options): ReachabilityState {
   const { intervalMs = 15000, timeoutMs = 5000, immediate = true, enabled = true, startDelayMs = 0, enableCache = true, cacheTtlMs = 60000 } = opts || {};
 
@@ -67,8 +103,11 @@ export function useDeviceReachability(baseUrl: string | null | undefined, opts?:
     let cancelled = false;
     let intervalTimer: any;
     let startTimer: any;
+    let running = false; // prevent overlapping probes
 
-    async function run() {
+    async function run(force?: boolean) {
+      if (running) return; // skip if already in-flight
+      running = true;
       setState(s => ({ ...s, loading: true }));
       try {
         const res = await testDeviceConnection(baseUrl, { timeoutMs });
@@ -91,6 +130,7 @@ export function useDeviceReachability(baseUrl: string | null | undefined, opts?:
             localStorage.setItem('reachability.cache', JSON.stringify(parsed));
           } catch { /* ignore */ }
         }
+        try { window.dispatchEvent(new CustomEvent('reachability.updated', { detail: { baseUrl, state: nextState } })); } catch { /* ignore */ }
       } catch (e: any) {
         if (cancelled) return;
         const nextState: ReachabilityState = {
@@ -110,6 +150,9 @@ export function useDeviceReachability(baseUrl: string | null | undefined, opts?:
             localStorage.setItem('reachability.cache', JSON.stringify(parsed));
           } catch { /* ignore */ }
         }
+        try { window.dispatchEvent(new CustomEvent('reachability.updated', { detail: { baseUrl, state: nextState } })); } catch { /* ignore */ }
+      } finally {
+        running = false;
       }
     }
 
@@ -119,10 +162,20 @@ export function useDeviceReachability(baseUrl: string | null | undefined, opts?:
       intervalTimer = setInterval(run, intervalMs);
     }, startDelayMs);
 
+    // Listen for manual refresh events.
+    const refreshHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      if (!detail.baseUrl || detail.baseUrl === baseUrl) {
+        run(true); // force immediate probe
+      }
+    };
+    window.addEventListener('reachability.refresh', refreshHandler as any);
+
     return () => {
       cancelled = true;
       clearTimeout(startTimer);
       clearInterval(intervalTimer);
+      window.removeEventListener('reachability.refresh', refreshHandler as any);
     };
   }, [baseUrl, intervalMs, timeoutMs, immediate, enabled, startDelayMs, enableCache, cacheTtlMs]);
 
