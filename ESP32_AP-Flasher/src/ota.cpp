@@ -35,7 +35,8 @@
 #define STR(x) STR_IMPL(x)
 #define LOG(format, ...) Serial.printf(format, ##__VA_ARGS__)
 
-void handleSysinfoRequest(AsyncWebServerRequest* request) {
+void handleSysinfoRequest(AsyncWebServerRequest *request)
+{
     JsonDocument doc;
     doc["alias"] = config.alias;
     doc["env"] = STR(BUILD_ENV_NAME);
@@ -65,20 +66,23 @@ void handleSysinfoRequest(AsyncWebServerRequest* request) {
     doc["hasFlasher"] = 0;
 #endif
     const size_t bufferSize = measureJson(doc) + 1;
-    AsyncResponseStream* response = request->beginResponseStream("application/json", bufferSize);
+    AsyncResponseStream *response = request->beginResponseStream("application/json", bufferSize);
     serializeJson(doc, *response);
     request->send(response);
 };
 
-void handleCheckFile(AsyncWebServerRequest* request) {
-    if (!request->hasParam("path")) {
+void handleCheckFile(AsyncWebServerRequest *request)
+{
+    if (!request->hasParam("path"))
+    {
         request->send(400);
         return;
     }
 
     const String filePath = request->getParam("path")->value();
     File file = contentFS->open(filePath, "r");
-    if (!file) {
+    if (!file)
+    {
         JsonDocument doc;
         doc["filesize"] = 0;
         doc["md5"] = "";
@@ -108,48 +112,62 @@ void handleCheckFile(AsyncWebServerRequest* request) {
 
 #define UPLOAD_BUFFER_SIZE 32768
 
-struct UploadInfo {
+struct UploadInfo
+{
     String filename;
     uint8_t buffer[UPLOAD_BUFFER_SIZE];
     size_t bufferSize;
 };
 
-void handleLittleFSUpload(AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
+void handleLittleFSUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+{
     String uploadfilename;
     bool error = false;
-    if (!index) {
+    if (!index)
+    {
         String path;
-        if (!request->hasParam("path", true)) {
+        if (!request->hasParam("path", true))
+        {
             final = true;
             error = true;
-        } else {
+        }
+        else
+        {
             uploadfilename = request->getParam("path", true)->value();
             Serial.println("update " + uploadfilename);
             File file = contentFS->open(uploadfilename, "w");
             file.close();
-            UploadInfo* uploadInfo = new UploadInfo{uploadfilename, {}, 0};
-            request->_tempObject = (void*)uploadInfo;
+            UploadInfo *uploadInfo = new UploadInfo{uploadfilename, {}, 0};
+            request->_tempObject = (void *)uploadInfo;
         }
     }
 
-    UploadInfo* uploadInfo = static_cast<UploadInfo*>(request->_tempObject);
+    UploadInfo *uploadInfo = static_cast<UploadInfo *>(request->_tempObject);
 
-    if (uploadInfo != nullptr) {
+    if (uploadInfo != nullptr)
+    {
         uploadfilename = uploadInfo->filename;
 
-        if (len) {
-            if (uploadInfo->bufferSize + len <= UPLOAD_BUFFER_SIZE) {
+        if (len)
+        {
+            if (uploadInfo->bufferSize + len <= UPLOAD_BUFFER_SIZE)
+            {
                 memcpy(&uploadInfo->buffer[uploadInfo->bufferSize], data, len);
                 uploadInfo->bufferSize += len;
-            } else {
+            }
+            else
+            {
                 xSemaphoreTake(fsMutex, portMAX_DELAY);
                 File file = contentFS->open(uploadfilename, "a");
-                if (file) {
+                if (file)
+                {
                     file.write(uploadInfo->buffer, uploadInfo->bufferSize);
                     file.close();
                     uploadInfo->bufferSize = 0;
                     xSemaphoreGive(fsMutex);
-                } else {
+                }
+                else
+                {
                     xSemaphoreGive(fsMutex);
                     logLine("Failed to open file for appending: " + uploadfilename);
                     final = true;
@@ -160,15 +178,20 @@ void handleLittleFSUpload(AsyncWebServerRequest* request, String filename, size_
                 uploadInfo->bufferSize = len;
             }
         }
-        if (final) {
-            if (uploadInfo->bufferSize > 0) {
+        if (final)
+        {
+            if (uploadInfo->bufferSize > 0)
+            {
                 xSemaphoreTake(fsMutex, portMAX_DELAY);
                 File file = contentFS->open(uploadfilename, "a");
-                if (file) {
+                if (file)
+                {
                     file.write(uploadInfo->buffer, uploadInfo->bufferSize);
                     file.close();
                     xSemaphoreGive(fsMutex);
-                } else {
+                }
+                else
+                {
                     xSemaphoreGive(fsMutex);
                     logLine("Failed to open file for appending: " + uploadfilename);
                     error = true;
@@ -177,44 +200,56 @@ void handleLittleFSUpload(AsyncWebServerRequest* request, String filename, size_
                 delete uploadInfo;
             }
 
-            if (error) {
+            if (error)
+            {
                 request->send(507, "text/plain", "Error. Disk full?");
-            } else {
+            }
+            else
+            {
                 request->send(200, "text/plain", "Ok, file written");
             }
         }
     }
 }
 
-struct FirmwareUpdateParams {
+struct FirmwareUpdateParams
+{
     String url;
     String md5;
     size_t size;
 };
 
-void handleUpdateOTA(AsyncWebServerRequest* request) {
-    if (request->hasParam("url", true) && request->hasParam("md5", true) && request->hasParam("size", true)) {
-        FirmwareUpdateParams* params = new FirmwareUpdateParams;
+void handleUpdateOTA(AsyncWebServerRequest *request)
+{
+    if (request->hasParam("url", true) && request->hasParam("md5", true) && request->hasParam("size", true))
+    {
+        FirmwareUpdateParams *params = new FirmwareUpdateParams;
         params->url = request->getParam("url", true)->value();
         params->md5 = request->getParam("md5", true)->value();
         params->size = request->getParam("size", true)->value().toInt();
         xTaskCreate(firmwareUpdateTask, "OTAUpdateTask", 6144, params, 10, NULL);
 
         request->send(200, "text/plain", "In progress");
-    } else {
+    }
+    else
+    {
         request->send(400, "Bad request");
     }
 }
 
-void firmwareUpdateTask(void* parameter) {
-    FirmwareUpdateParams* params = reinterpret_cast<FirmwareUpdateParams*>(parameter);
+void firmwareUpdateTask(void *parameter)
+{
+    FirmwareUpdateParams *params = reinterpret_cast<FirmwareUpdateParams *>(parameter);
 
-    if (ESP.getMaxAllocHeap() < 22000) {
+    if (ESP.getMaxAllocHeap() < 22000)
+    {
         wsSerial("Error: Not enough memory left. Restart the esp32 and try updating again.");
         wsSerial("[reboot]");
-    } else {
-        const char* url = params->url.c_str();
-        const char* md5 = params->md5.c_str();
+    }
+    else
+    {
+        const char *url = params->url.c_str();
+        const char *md5 = params->md5.c_str();
         const size_t size = params->size;
         updateFirmware(url, md5, size);
     }
@@ -223,7 +258,8 @@ void firmwareUpdateTask(void* parameter) {
     vTaskDelete(NULL);
 }
 
-void updateFirmware(const char* url, const char* expectedMd5, const size_t size) {
+void updateFirmware(const char *url, const char *expectedMd5, const size_t size)
+{
     util::printHeap();
 
     config.runStatus = RUNSTATUS_STOP;
@@ -242,41 +278,54 @@ void updateFirmware(const char* url, const char* expectedMd5, const size_t size)
     const int httpCode = httpClient.GET();
     util::printHeap();
 
-    if (httpCode == HTTP_CODE_OK) {
-        if (Update.begin(size)) {
+    if (httpCode == HTTP_CODE_OK)
+    {
+        if (Update.begin(size))
+        {
             Update.setMD5(expectedMd5);
 
             unsigned long progressTimer = millis();
-            Update.onProgress([&progressTimer](size_t progress, size_t total) {
+            Update.onProgress([&progressTimer](size_t progress, size_t total)
+                              {
                 if (millis() - progressTimer > 500 || progress == total) {
                     char buffer[50];
-                    sprintf(buffer, "Progress: %u%% %d %d", progress * 100 / total, progress, total);
+                    // Use snprintf to avoid potential overflow if format changes.
+                    snprintf(buffer, sizeof(buffer), "Progress: %u%% %u %u", (unsigned)(progress * 100 / total), (unsigned)progress, (unsigned)total);
                     wsSerial(String(buffer));
                     progressTimer = millis();
                     vTaskDelay(1 / portTICK_PERIOD_MS);
-                }
-            });
+                } });
 
             const size_t written = Update.writeStream(httpClient.getStream());
-            if (written == httpClient.getSize()) {
-                if (Update.end(true)) {
+            if (written == httpClient.getSize())
+            {
+                if (Update.end(true))
+                {
                     wsSerial("Firmware update successful");
                     wsSerial("Reboot system now");
                     wsSerial("[reboot]");
                     vTaskDelay(1000 / portTICK_PERIOD_MS);
-                } else {
+                }
+                else
+                {
                     wsSerial("Error updating firmware:");
                     wsSerial(Update.errorString());
                 }
-            } else {
+            }
+            else
+            {
                 wsSerial("Error writing firmware data:");
                 wsSerial(Update.errorString());
             }
-        } else {
+        }
+        else
+        {
             wsSerial("Failed to begin firmware update");
             wsSerial(Update.errorString());
         }
-    } else {
+    }
+    else
+    {
         wsSerial("Failed to download firmware file (HTTP code " + String(httpCode) + ")");
         wsSerial(httpClient.errorToString(httpCode));
     }
@@ -285,28 +334,36 @@ void updateFirmware(const char* url, const char* expectedMd5, const size_t size)
     config.runStatus = RUNSTATUS_RUN;
 }
 
-void handleRollback(AsyncWebServerRequest* request) {
-    if (Update.canRollBack()) {
+void handleRollback(AsyncWebServerRequest *request)
+{
+    if (Update.canRollBack())
+    {
         const bool rollbackSuccess = Update.rollBack();
-        if (rollbackSuccess) {
+        if (rollbackSuccess)
+        {
             request->send(200, "Rollback successful");
             wsSerial("Rollback successful");
             wsSerial("Reboot system now");
             wsSerial("[reboot]");
             vTaskDelay(1000 / portTICK_PERIOD_MS);
-        } else {
+        }
+        else
+        {
             wsSerial("Rollback failed");
             request->send(400, "Rollback failed");
         }
-    } else {
+    }
+    else
+    {
         wsSerial("Rollback not allowed");
         request->send(400, "Rollback not allowed");
     }
 }
 
 #ifdef C6_OTA_FLASHING
-void C6firmwareUpdateTask(void* parameter) {
-    char* urlPtr = reinterpret_cast<char*>(parameter);
+void C6firmwareUpdateTask(void *parameter)
+{
+    char *urlPtr = reinterpret_cast<char *>(parameter);
 
     LOG("C6firmwareUpdateTask: url '%s'\n", urlPtr);
     wsSerial("Stopping AP service");
@@ -328,7 +385,8 @@ void C6firmwareUpdateTask(void* parameter) {
 
     wsSerial(SHORT_CHIP_NAME " flash end");
 
-    if (result) {
+    if (result)
+    {
         setAPstate(false, AP_STATE_OFFLINE);
 
         wsSerial("Finishing config...");
@@ -345,27 +403,34 @@ void C6firmwareUpdateTask(void* parameter) {
         apInfo.version = 0;
         wsSerial("bringing AP online");
         // if (bringAPOnline(AP_STATE_REQUIRED_POWER_CYCLE)) config.runStatus = RUNSTATUS_STOP;
-        if (bringAPOnline(AP_STATE_ONLINE)) {
+        if (bringAPOnline(AP_STATE_ONLINE))
+        {
             config.runStatus = RUNSTATUS_RUN;
             setAPstate(true, AP_STATE_ONLINE);
         }
 
         // Wait for version info to arrive
         vTaskDelay(500 / portTICK_PERIOD_MS);
-        if (apInfo.version == 0) {
+        if (apInfo.version == 0)
+        {
             result = false;
         }
     }
 
-    if (result) {
+    if (result)
+    {
         wsSerial("Finished!");
         char buffer[50];
         snprintf(buffer, sizeof(buffer),
                  "ESP32-" SHORT_CHIP_NAME " version is now %04x", apInfo.version);
         wsSerial(String(buffer));
-    } else if (apInfo.version == 0) {
+    }
+    else if (apInfo.version == 0)
+    {
         wsSerial("AP failed to come online. :-(");
-    } else {
+    }
+    else
+    {
         wsSerial("Flashing failed. :-(");
     }
     // wsSerial("Reboot system now");
@@ -375,8 +440,10 @@ void C6firmwareUpdateTask(void* parameter) {
     vTaskDelete(NULL);
 }
 
-void C6OTAFlashTask(void* parameter) {
-    struct FlashParams {
+void C6OTAFlashTask(void *parameter)
+{
+    struct FlashParams
+    {
         String firmwareFile;
         String comPort;
         bool eraseFlash;
@@ -385,7 +452,7 @@ void C6OTAFlashTask(void* parameter) {
         int baudRate;
     };
 
-    FlashParams* params = reinterpret_cast<FlashParams*>(parameter);
+    FlashParams *params = reinterpret_cast<FlashParams *>(parameter);
 
     wsSerial("C6 OTA Flash Task starting");
     wsSerial("Firmware: " + params->firmwareFile);
@@ -395,7 +462,8 @@ void C6OTAFlashTask(void* parameter) {
     bool flashResult = false;
 
     // Validate firmware file exists and is accessible
-    if (!contentFS->exists(params->firmwareFile)) {
+    if (!contentFS->exists(params->firmwareFile))
+    {
         wsSerial("Error: Firmware file not found: " + params->firmwareFile);
         delete params;
         vTaskDelete(NULL);
@@ -403,7 +471,8 @@ void C6OTAFlashTask(void* parameter) {
     }
 
     File firmwareFileHandle = contentFS->open(params->firmwareFile, "r");
-    if (!firmwareFileHandle) {
+    if (!firmwareFileHandle)
+    {
         wsSerial("Error: Cannot open firmware file for reading");
         delete params;
         vTaskDelete(NULL);
@@ -413,7 +482,8 @@ void C6OTAFlashTask(void* parameter) {
     size_t firmwareSize = firmwareFileHandle.size();
     firmwareFileHandle.close();
 
-    if (firmwareSize == 0) {
+    if (firmwareSize == 0)
+    {
         wsSerial("Error: Firmware file is empty");
         delete params;
         vTaskDelete(NULL);
@@ -449,74 +519,95 @@ void C6OTAFlashTask(void* parameter) {
     // Implementation using ESP serial flasher library for ESP32-C6
     const loader_esp32_config_t loaderConfig = {
         .baud_rate = static_cast<uint32_t>(params->baudRate),
-        .uart_port = 2,  // Using UART2 for C6 communication
+        .uart_port = 2, // Using UART2 for C6 communication
         .uart_rx_pin = FLASHER_DEBUG_RXD,
         .uart_tx_pin = FLASHER_DEBUG_TXD,
-        .reset_trigger_pin = FLASHER_DEBUG_PROG,  // Reset pin for C6
-        .gpio0_trigger_pin = FLASHER_DEBUG_PROG,  // Boot pin for C6
-        .rx_buffer_size = 0,                      // Use default
-        .tx_buffer_size = 0,                      // Use default
-        .queue_size = 0,                          // Use default
-        .uart_queue = NULL                        // Not needed
+        .reset_trigger_pin = FLASHER_DEBUG_PROG, // Reset pin for C6
+        .gpio0_trigger_pin = FLASHER_DEBUG_PROG, // Boot pin for C6
+        .rx_buffer_size = 0,                     // Use default
+        .tx_buffer_size = 0,                     // Use default
+        .queue_size = 0,                         // Use default
+        .uart_queue = NULL                       // Not needed
     };
 
     wsSerial("Initializing ESP32-C6 serial connection...");
 
-    if (loader_port_esp32_init(&loaderConfig) != ESP_LOADER_SUCCESS) {
+    if (loader_port_esp32_init(&loaderConfig) != ESP_LOADER_SUCCESS)
+    {
         wsSerial("Error: Failed to initialize serial connection to ESP32-C6");
         flashResult = false;
-    } else {
+    }
+    else
+    {
         wsSerial("Serial connection initialized successfully");
 
         // Connect to ESP32-C6
         esp_loader_connect_args_t connect_config = ESP_LOADER_CONNECT_DEFAULT();
         esp_loader_error_t err = esp_loader_connect(&connect_config);
 
-        if (err != ESP_LOADER_SUCCESS) {
+        if (err != ESP_LOADER_SUCCESS)
+        {
             wsSerial("Error: Cannot connect to ESP32-C6. Error code: " + String(err));
             flashResult = false;
-        } else {
+        }
+        else
+        {
             wsSerial("Connected to ESP32-C6 successfully");
 
             // Verify chip type
-            if (esp_loader_get_target() != ESP32C6_CHIP) {
+            if (esp_loader_get_target() != ESP32C6_CHIP)
+            {
                 wsSerial("Error: Connected device is not ESP32-C6");
                 flashResult = false;
-            } else {
+            }
+            else
+            {
                 wsSerial("ESP32-C6 chip detected");
 
                 // Optionally erase flash if requested
-                if (params->eraseFlash) {
+                if (params->eraseFlash)
+                {
                     wsSerial("Erasing ESP32-C6 flash...");
                     err = esp_loader_flash_start(0x0, firmwareSize, 1024);
-                    if (err != ESP_LOADER_SUCCESS) {
+                    if (err != ESP_LOADER_SUCCESS)
+                    {
                         wsSerial("Error: Flash erase failed. Error code: " + String(err));
                         flashResult = false;
-                    } else {
+                    }
+                    else
+                    {
                         wsSerial("Flash erased successfully");
                     }
                 }
 
-                if (err == ESP_LOADER_SUCCESS) {
+                if (err == ESP_LOADER_SUCCESS)
+                {
                     // Flash the firmware
                     wsSerial("Starting firmware flash...");
                     String firmwareFileStr = params->firmwareFile;
                     err = flash_binary(firmwareFileStr, 0x0);
 
-                    if (err == ESP_LOADER_SUCCESS) {
+                    if (err == ESP_LOADER_SUCCESS)
+                    {
                         wsSerial("Firmware flashed successfully");
 
-                        if (params->verifyFlash) {
+                        if (params->verifyFlash)
+                        {
                             wsSerial("Verifying flash...");
 #if MD5_ENABLED
                             err = esp_loader_flash_verify();
-                            if (err == ESP_LOADER_ERROR_UNSUPPORTED_FUNC) {
+                            if (err == ESP_LOADER_ERROR_UNSUPPORTED_FUNC)
+                            {
                                 wsSerial("Warning: Flash verification not supported by target");
-                                flashResult = true;  // Continue as success
-                            } else if (err != ESP_LOADER_SUCCESS) {
+                                flashResult = true; // Continue as success
+                            }
+                            else if (err != ESP_LOADER_SUCCESS)
+                            {
                                 wsSerial("Error: Flash verification failed");
                                 flashResult = false;
-                            } else {
+                            }
+                            else
+                            {
                                 wsSerial("Flash verification successful");
                                 flashResult = true;
                             }
@@ -524,15 +615,20 @@ void C6OTAFlashTask(void* parameter) {
                             wsSerial("Flash verification skipped (MD5 not enabled)");
                             flashResult = true;
 #endif
-                        } else {
+                        }
+                        else
+                        {
                             flashResult = true;
                         }
 
-                        if (flashResult && params->resetAfterFlash) {
+                        if (flashResult && params->resetAfterFlash)
+                        {
                             wsSerial("Resetting ESP32-C6...");
                             // The reset will happen automatically when we disconnect
                         }
-                    } else {
+                    }
+                    else
+                    {
                         wsSerial("Error: Firmware flash failed. Error code: " + String(err));
                         flashResult = false;
                     }
@@ -547,7 +643,8 @@ void C6OTAFlashTask(void* parameter) {
     // Close C6 serial connection
     C6Serial.end();
 
-    if (flashResult) {
+    if (flashResult)
+    {
         wsSerial("✅ C6 OTA flash completed successfully!");
 
         // Wait for C6 to boot up
@@ -565,15 +662,20 @@ void C6OTAFlashTask(void* parameter) {
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-        if (bringAPOnline(AP_STATE_ONLINE)) {
+        if (bringAPOnline(AP_STATE_ONLINE))
+        {
             ::config.runStatus = RUNSTATUS_RUN;
             setAPstate(true, AP_STATE_ONLINE);
             wsSerial("AP back online after C6 flash");
-        } else {
+        }
+        else
+        {
             wsSerial("Warning: AP failed to come back online");
             ::config.runStatus = RUNSTATUS_RUN;
         }
-    } else {
+    }
+    else
+    {
         wsSerial("❌ C6 OTA flash failed!");
 
         // Try to restore normal operation
@@ -597,14 +699,18 @@ void C6OTAFlashTask(void* parameter) {
 }
 #endif
 
-void handleUpdateC6(AsyncWebServerRequest* request) {
+void handleUpdateC6(AsyncWebServerRequest *request)
+{
 #if defined C6_OTA_FLASHING
-    if (request->hasParam("url", true)) {
-        const char* urlStr = request->getParam("url", true)->value().c_str();
-        char* urlCopy = strdup(urlStr);
+    if (request->hasParam("url", true))
+    {
+        const char *urlStr = request->getParam("url", true)->value().c_str();
+        char *urlCopy = strdup(urlStr);
         xTaskCreate(C6firmwareUpdateTask, "OTAUpdateTask", 6400, urlCopy, 10, NULL);
         request->send(200, "Ok");
-    } else {
+    }
+    else
+    {
         LOG("Sending bad request");
         request->send(400, "Bad request");
     }
@@ -615,10 +721,12 @@ void handleUpdateC6(AsyncWebServerRequest* request) {
 #endif
 }
 
-void handleUpdateActions(AsyncWebServerRequest* request) {
+void handleUpdateActions(AsyncWebServerRequest *request)
+{
     wsSerial("Performing cleanup");
     File file = contentFS->open("/update_actions.json", "r");
-    if (!file) {
+    if (!file)
+    {
         wsSerial("No update_actions.json present");
         request->send(200, "No update actions needed");
         return;
@@ -626,8 +734,10 @@ void handleUpdateActions(AsyncWebServerRequest* request) {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, file);
     const JsonArray deleteFiles = doc["deletefile"].as<JsonArray>();
-    for (const auto& filePath : deleteFiles) {
-        if (contentFS->remove(filePath.as<const char*>())) {
+    for (const auto &filePath : deleteFiles)
+    {
+        if (contentFS->remove(filePath.as<const char *>()))
+        {
             wsSerial("deleted file: " + filePath.as<String>());
         }
     }

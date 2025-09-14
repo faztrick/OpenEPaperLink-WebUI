@@ -1,4 +1,10 @@
 {
   "idf.currentSetup": "C:\\Users\\faztrick\\esp\\v5.3.1\\esp-idf",
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "files.exclude": {
+    "**/*.rpyc": true,
+    "**/*.rpa": true,
+    "**/*.rpymc": true,
+    "**/cache/": true
+  }
 }

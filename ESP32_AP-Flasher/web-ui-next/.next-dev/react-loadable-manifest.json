@@ -1,0 +1,38 @@
+{
+  "components\\Layout.tsx -> ./Modals": {
+    "id": "components\\Layout.tsx -> ./Modals",
+    "files": [
+      "static/chunks/_pages-dir-browser_components_Modals_tsx.js"
+    ]
+  },
+  "components\\Layout.tsx -> ./Sidebar": {
+    "id": "components\\Layout.tsx -> ./Sidebar",
+    "files": [
+      "static/chunks/_pages-dir-browser_components_Sidebar_tsx.js"
+    ]
+  },
+  "components\\Modals.tsx -> ../features/ai/AIChat": {
+    "id": "components\\Modals.tsx -> ../features/ai/AIChat",
+    "files": [
+      "static/chunks/_pages-dir-browser_features_ai_AIChat_tsx.js"
+    ]
+  },
+  "node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {
+    "id": "node_modules\\next\\dist\\client\\index.js -> ../pages/_app",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_next_dist_pages__app_js.js"
+    ]
+  },
+  "node_modules\\next\\dist\\client\\index.js -> ../pages/_error": {
+    "id": "node_modules\\next\\dist\\client\\index.js -> ../pages/_error",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_next_dist_pages__error_js.js"
+    ]
+  },
+  "pages\\wifi.tsx -> ../components/SerialWifiScannerPanel": {
+    "id": "pages\\wifi.tsx -> ../components/SerialWifiScannerPanel",
+    "files": [
+      "static/chunks/_pages-dir-browser_components_SerialWifiScannerPanel_tsx.js"
+    ]
+  }
+}

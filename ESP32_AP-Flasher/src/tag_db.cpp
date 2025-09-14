@@ -57,8 +57,10 @@ bool deleteRecord(const uint8_t mac[8], bool allVersions)
 
 void mac2hex(const uint8_t *mac, char *hexBuffer)
 {
-    sprintf(hexBuffer, "%02X%02X%02X%02X%02X%02X%02X%02X",
-            mac[7], mac[6], mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+    // hexBuffer must have space for 16 hex chars + NUL (caller provides 17).
+    // Use snprintf for safety.
+    snprintf(hexBuffer, 17, "%02X%02X%02X%02X%02X%02X%02X%02X",
+             mac[7], mac[6], mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
 }
 
 bool hex2mac(const String &hexString, uint8_t *mac)
@@ -119,7 +121,7 @@ void fillNode(JsonObject &tag, const tagRecord *taginfo)
     char hex[33];
     for (uint8_t i = 0; i < 16; i++)
     {
-        sprintf(hex + (i * 2), "%02x", taginfo->md5[i]);
+        snprintf(hex + (i * 2), 3, "%02x", taginfo->md5[i]);
     }
     tag["hash"] = (String)hex;
     tag["lastseen"] = taginfo->lastseen;
@@ -509,6 +511,7 @@ void initAPconfig()
     config.ble = APconfig["ble"].is<uint8_t>() ? APconfig["ble"] : 0;
     config.discovery = APconfig["discovery"].is<uint8_t>() ? APconfig["discovery"] : 0;
     config.showtimestamp = APconfig["showtimestamp"].is<uint8_t>() ? APconfig["showtimestamp"] : 0;
+    config.wifiMode = APconfig["wifimode"].is<uint8_t>() ? APconfig["wifimode"] : 0; // default Auto
 #ifdef BLE_ONLY
     config.ble = true;
 #endif
@@ -566,6 +569,7 @@ void saveAPconfig()
     APconfig["env"] = config.env;
     APconfig["discovery"] = config.discovery;
     APconfig["showtimestamp"] = config.showtimestamp;
+    APconfig["wifimode"] = config.wifiMode;
     serializeJsonPretty(APconfig, configFile);
     configFile.close();
     xSemaphoreGive(fsMutex);
@@ -581,6 +585,7 @@ HwType getHwType(const uint8_t id)
     else
     {
         char filename[20];
+        // filename buffer sized for "/tagtypes/" + 2 hex + ".json" + NUL = 10+2+5+1=18 (20 available)
         snprintf(filename, sizeof(filename), "/tagtypes/%02X.json", id);
         Serial.printf("read %s\r\n", filename);
         File jsonFile = contentFS->open(filename, "r");

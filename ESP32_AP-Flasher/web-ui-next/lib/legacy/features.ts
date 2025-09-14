@@ -11,11 +11,12 @@ export interface FeaturesResult {
 }
 
 import { requestJson } from '../request';
+import { buildApiUrl } from '../apiBase';
 
-export async function fetchDeviceFeatures(deviceId: string): Promise<FeaturesResult> {
+export async function fetchDeviceFeatures(_deviceId: string): Promise<FeaturesResult> {
   try {
-    // Expect API: /api/device/[id]/features returning object or {features:object} or list
-    const raw = await requestJson(`/api/device/${encodeURIComponent(deviceId)}/features`);
+    // Query firmware directly: /api/features returns map or list
+    const raw = await requestJson(buildApiUrl('/api/features'));
     let obj: DeviceFeaturesMap;
     if (Array.isArray(raw)) {
       obj = raw.reduce((acc: DeviceFeaturesMap, k: string) => { acc[k] = 1; return acc; }, {});

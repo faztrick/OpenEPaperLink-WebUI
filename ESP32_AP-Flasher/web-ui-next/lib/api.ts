@@ -1,9 +1,12 @@
-// API helpers for firmware endpoints (initial minimalist version)
-// Device-related placeholders retained; focus added for tag operations.
+// API helpers for firmware endpoints (Next.js client side)
+// Uses centralized base URL resolution so the app can run on localhost
+// while targeting the ESP32 AP (or same-origin when hosted on device).
+import { tGet, tPost } from './transportApi';
 export interface DeviceSummary { id: string; name: string; status?: string }
 
 export async function fetchDevices(): Promise<DeviceSummary[]> {
-  return []; // TODO: real implementation later
+  // Placeholder: keep returning empty until a discovery/proxy is implemented.
+  return [];
 }
 
 // Tag data structures derived from tag_db.cpp JSON fields
@@ -47,9 +50,7 @@ interface TagDBResponse {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(path, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json() as Promise<T>;
+  return tGet<T>(path, { cache: 'no-store' });
 }
 
 function normalizeTag(raw: RawTagRecord): TagRecord {
@@ -95,10 +96,6 @@ export function formatMac(mac: string): string {
 }
 
 export async function updateTagAlias(mac: string, alias: string): Promise<{ success: boolean; mac: string; alias: string }> {
-  const fd = new FormData();
-  fd.append('mac', mac);
-  fd.append('alias', alias);
-  const res = await fetch('/tag_alias', { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`alias update failed: ${res.status}`);
-  return res.json();
+  // Serial path expects JSON; HTTP firmware endpoint accepts form but also handle JSON alias helper
+  return tPost('/tag_alias', { mac, alias });
 }

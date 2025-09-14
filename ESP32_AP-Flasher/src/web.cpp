@@ -22,6 +22,190 @@
 // Initialize web server endpoints and handlers
 void init_web()
 {
+    // --- Serial Port API (diagnostic) ---
+    // Provides lightweight diagnostic access to primary hardware Serial via HTTP.
+    // Core:
+    //   GET  /api/serial/status  -> { success, baud, available, availableForWrite }
+    //   GET  /api/serial/read?[max=N][&mode=text|hex]
+    //   POST /api/serial/write (data, mode=text|hex, appendNewline=0|1)
+    // Extended:
+    //   GET  /api/serial/config -> { baud }
+    //   POST /api/serial/config (baud=<rate>) allowed list validated
+    //   POST /api/serial/flush (dir=rx|tx|both)
+    //   POST /api/serial/command (command=..., timeout=ms<=4000, expect=prefix)
+    // Limits / Safety:
+    //   * Max write payload after decode: 512 bytes
+    //   * Max single read: 512 bytes
+    //   * Command capture limit: 512 bytes line buffer
+    //   * Timeout capped at 4000 ms
+    // Concurrency: critical section around writes; command loop yields with small delay.
+    // Not for sustained streaming; prefer websocket serial mirror when available.
+
+    static portMUX_TYPE serialWriteMux = portMUX_INITIALIZER_UNLOCKED;
+
+    auto hexNibble = [](char c) -> int
+    {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return 10 + (c - 'a');
+        if (c >= 'A' && c <= 'F')
+            return 10 + (c - 'A');
+        return -1;
+    };
+    auto decodeHex = [&](const String &in, std::vector<uint8_t> &out) -> bool
+    {
+        if (in.length() % 2)
+            return false;
+        out.reserve(in.length() / 2);
+        for (size_t i = 0; i < in.length(); i += 2)
+        {
+            int hi = hexNibble(in[i]);
+            int lo = hexNibble(in[i + 1]);
+            if (hi < 0 || lo < 0)
+                return false;
+            out.push_back((uint8_t)((hi << 4) | lo));
+        }
+        return true;
+    };
+
+    server.on("/api/serial/status", HTTP_GET, [=](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["baud"] = (int)Serial.baudRate();
+        doc["available"] = (int)Serial.available();
+        doc["availableForWrite"] = (int)Serial.availableForWrite();
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    server.on("/api/serial/read", HTTP_GET, [=](AsyncWebServerRequest *request)
+              {
+        int maxBytes = 128; // default
+        if (request->hasParam("max")) {
+            int v = request->getParam("max")->value().toInt();
+            if (v > 0) maxBytes = v;
+        }
+        if (maxBytes > 512) maxBytes = 512;
+        String mode = request->hasParam("mode") ? request->getParam("mode")->value() : String("text");
+        bool asHex = (mode == "hex");
+        std::vector<uint8_t> buf;
+        buf.reserve(maxBytes);
+        while ((int)buf.size() < maxBytes && Serial.available()) {
+            buf.push_back((uint8_t)Serial.read());
+        }
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["mode"] = asHex ? "hex" : "text";
+        doc["len"] = (int)buf.size();
+        if (asHex) {
+            String hx; hx.reserve(buf.size() * 2);
+            const char *hexchars = "0123456789abcdef";
+            for (uint8_t b : buf) { hx += hexchars[b >> 4]; hx += hexchars[b & 0xF]; }
+            doc["data"] = hx;
+        } else {
+            String out; out.reserve(buf.size() * 4); // allow for escapes
+            for (uint8_t b : buf) {
+                if (b >= 32 && b <= 126 && b != '\\') {
+                    out += (char)b;
+                } else if (b == '\\') {
+                    out += "\\\\"; // escape backslash
+                } else {
+                    char tmp[5];
+                    snprintf(tmp, sizeof(tmp), "\\x%02X", b);
+                    out += tmp;
+                }
+            }
+            doc["data"] = out;
+        }
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    server.on("/api/serial/write", HTTP_POST, [=](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("data", true)) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing data parameter\"}");
+            return;
+        }
+        String data = request->getParam("data", true)->value();
+        String mode = request->hasParam("mode", true) ? request->getParam("mode", true)->value() : String("text");
+        bool appendNL = request->hasParam("appendNewline", true) ? (request->getParam("appendNewline", true)->value() == "1" || request->getParam("appendNewline", true)->value() == "true") : false;
+        std::vector<uint8_t> bytes;
+        bool ok = true;
+        if (mode == "hex") {
+            ok = decodeHex(data, bytes);
+        } else { // text
+            bytes.reserve(data.length() + (appendNL ? 1 : 0));
+            for (size_t i = 0; i < data.length(); ++i) bytes.push_back((uint8_t)data[i]);
+            if (appendNL) bytes.push_back('\n');
+        }
+        if (!ok) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid hex data\"}");
+            return;
+        }
+        if (bytes.size() > 512) {
+            request->send(413, "application/json", "{\"success\":false,\"error\":\"Payload too large (max 512 bytes)\"}");
+            return;
+        }
+        taskENTER_CRITICAL(&serialWriteMux);
+        size_t written = Serial.write(bytes.data(), bytes.size());
+        taskEXIT_CRITICAL(&serialWriteMux);
+        JsonDocument doc;
+        doc["success"] = (written == bytes.size());
+        doc["written"] = (int)written;
+        doc["mode"] = (mode == "hex") ? "hex" : "text";
+        String body; serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    // GET /api/serial/config
+    server.on("/api/serial/config", HTTP_GET, [=](AsyncWebServerRequest *request)
+              {
+        JsonDocument doc; doc["success"] = true; doc["baud"] = (int)Serial.baudRate(); String body; serializeJson(doc, body); request->send(200, "application/json", body); });
+
+    // POST /api/serial/config baud=<rate>
+    server.on("/api/serial/config", HTTP_POST, [=](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("baud", true)) { request->send(400, "application/json", "{\"success\":false,\"error\":\"baud required\"}"); return; }
+        long rate = request->getParam("baud", true)->value().toInt();
+        const long allowed[] = {9600,19200,38400,57600,74880,115200,230400,460800,921600};
+        bool ok=false; for (long r: allowed) if (r==rate) { ok=true; break; }
+        if (!ok) { request->send(400, "application/json", "{\"success\":false,\"error\":\"unsupported baud\"}"); return; }
+        Serial.updateBaudRate(rate);
+        JsonDocument doc; doc["success"] = true; doc["baud"] = (int)Serial.baudRate(); String body; serializeJson(doc, body); request->send(200, "application/json", body); });
+
+    // POST /api/serial/flush dir=rx|tx|both
+    server.on("/api/serial/flush", HTTP_POST, [=](AsyncWebServerRequest *request)
+              {
+        String dir = request->hasParam("dir", true) ? request->getParam("dir", true)->value() : String("both");
+        if (dir == "rx" || dir == "both") { while (Serial.available()) (void)Serial.read(); }
+        if (dir == "tx" || dir == "both") { Serial.flush(); }
+        JsonDocument doc; doc["success"] = true; doc["dir"] = dir; String body; serializeJson(doc, body); request->send(200, "application/json", body); });
+
+    // POST /api/serial/command command=... [&timeout=ms][&expect=prefix]
+    server.on("/api/serial/command", HTTP_POST, [=](AsyncWebServerRequest *request)
+              {
+        if (!request->hasParam("command", true)) { request->send(400, "application/json", "{\"success\":false,\"error\":\"command required\"}"); return; }
+        String cmd = request->getParam("command", true)->value();
+        uint32_t timeout = request->hasParam("timeout", true) ? (uint32_t)request->getParam("timeout", true)->value().toInt() : 1500; if (timeout > 4000) timeout = 4000;
+        String expect = request->hasParam("expect", true) ? request->getParam("expect", true)->value() : String();
+        taskENTER_CRITICAL(&serialWriteMux); Serial.write((const uint8_t*)cmd.c_str(), cmd.length()); Serial.write('\n'); taskEXIT_CRITICAL(&serialWriteMux);
+        uint32_t start = millis(); String line; line.reserve(128); bool gotLine=false; bool truncated=false;
+        while (millis() - start < timeout) {
+            while (Serial.available()) { int c = Serial.read(); if (c<0) break; if (c=='\r') continue; if (c=='\n') { gotLine=true; goto done_primary; } if ((int)line.length()<512) line += (char)c; else truncated=true; }
+            if (gotLine) break; vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        done_primary:;
+        if (!expect.isEmpty() && (!line.startsWith(expect))) {
+            // scan subsequent lines until timeout
+            while (millis() - start < timeout) {
+                String cand; cand.reserve(128); truncated=false; bool have=false;
+                while (Serial.available()) { int c=Serial.read(); if (c<0) break; if (c=='\r') continue; if (c=='\n') { have=true; break; } if ((int)cand.length()<512) cand += (char)c; else truncated=true; }
+                if (have) { if (cand.startsWith(expect)) { line=cand; gotLine=true; break; } }
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+        }
+        JsonDocument doc; doc["success"] = gotLine; doc["elapsedMs"] = (uint32_t)(millis()-start); doc["bytesRead"] = (int)line.length(); doc["line"] = line; if (truncated) doc["truncated"] = true; String body; serializeJson(doc, body); request->send(200, "application/json", body); });
+
     // Register /get_ssid_list handler (ensure request/response/doc are in scope)
     server.on("/get_ssid_list", HTTP_GET, [](AsyncWebServerRequest *request)
               {
@@ -276,6 +460,47 @@ void init_web()
 
         String body;
         serializeJson(doc, body);
+        request->send(200, "application/json", body); });
+
+    // Aggregated health endpoint (versioned)
+    server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        // Use a modest dynamic document; expand if more modules added
+        DynamicJsonDocument doc(1024);
+        doc["success"] = true;
+        doc["uptime"] = (uint32_t)millis();
+        doc["freeHeap"] = (uint32_t)ESP.getFreeHeap();
+        // WiFi status subset
+        wl_status_t st = WiFi.status();
+        bool wifiConnected = (st == WL_CONNECTED);
+        JsonObject wifi = doc.createNestedObject("wifi");
+        wifi["connected"] = wifiConnected;
+        if (wifiConnected) {
+            wifi["ssid"] = WiFi.SSID();
+            wifi["ip"] = WiFi.localIP().toString();
+            wifi["rssi"] = WiFi.RSSI();
+        }
+        wifi["mode"] = (int)WiFi.getMode();
+        // LED module status (if present)
+        ModuleInterface *led = moduleManager.getModuleInstance("LEDModule");
+        if (led) {
+            // LED status is already JSON; parse minimally
+            String ledStatusStr = led->getStatus();
+            DynamicJsonDocument ledDoc(256);
+            DeserializationError err = deserializeJson(ledDoc, ledStatusStr);
+            if (!err) {
+                doc["led"] = ledDoc.as<JsonVariant>();
+            }
+        }
+        // Module manager summary
+        ModuleManager &mgr = ModuleManager::getInstance();
+        JsonObject mods = doc.createNestedObject("modules");
+        mods["total"] = mgr.getModuleCount();
+        mods["active"] = mgr.getActiveModuleCount();
+        mods["healthy"] = mgr.isSystemHealthy();
+        // Legacy / transitional note
+        doc["apiVersion"] = 1;
+        String body; serializeJson(doc, body);
         request->send(200, "application/json", body); });
 
     // Simple TFT print endpoint to show debug text on onboard display

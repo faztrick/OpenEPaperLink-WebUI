@@ -108,13 +108,13 @@ Write-ColorOutput "========================================" "Info"
 # Helper: Run an upload command with live progress but enforce total timeout and stall timeout.
 function Invoke-LiveUploadWithWatchdog {
     param(
-        [Parameter(Mandatory=$true)][string[]]$CommandParts, # first item executable, rest args
+        [Parameter(Mandatory = $true)][string[]]$CommandParts, # first item executable, rest args
         [int]$TotalTimeoutSec = 300,
         [int]$StallTimeoutSec = 30
     )
     Write-ColorOutput "🏁 Live upload (timeout=${TotalTimeoutSec}s stall=${StallTimeoutSec}s)" "Info"
     $exe = $CommandParts[0]
-    $args = if ($CommandParts.Length -gt 1) { $CommandParts[1..($CommandParts.Length-1)] } else { @() }
+    $args = if ($CommandParts.Length -gt 1) { $CommandParts[1..($CommandParts.Length - 1)] } else { @() }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $exe
@@ -173,7 +173,8 @@ function Invoke-LiveUploadWithWatchdog {
         while (-not $errReader.EndOfStream) {
             $l3 = $errReader.ReadLine(); if ($l3 -ne $null) { Write-Host $l3 -ForegroundColor Yellow; $stderrSb.AppendLine($l3) | Out-Null }
         }
-    } catch {}
+    }
+    catch {}
 
     return [PSCustomObject]@{
         ExitCode = $proc.ExitCode
@@ -307,7 +308,8 @@ function Invoke-EsptoolWithRetry {
         [string]$ComPort = 'COM10',
         [int]$TimeoutSec = 30,
         [switch]$IsOpi,
-        [switch]$AutoInstall
+        [switch]$AutoInstall,
+        [switch]$AllowNoStub  # When disabled, omit --no-stub fallback attempts (useful for erase-flash which needs stub for full chip erase)
     )
     # Helper to clone args and change -b and --before/--after quickly
     function With-Args {
@@ -338,19 +340,24 @@ function Invoke-EsptoolWithRetry {
     }
 
     $attempts = @()
-    # Attempt 1: as-is
+    # Attempt 1: as-is (fast baud)
     $attempts += [PSCustomObject]@{ Args = $BaseArgs; Label = "primary"; Baud = $InitialBaud }
-    # Attempt 2: lower baud 460800, keep resets
+    # Attempt 2: lower baud 460800, default reset
     $attempts += [PSCustomObject]@{ Args = (With-Args -src $BaseArgs -baud 460800 -before $null -after $null); Label = "fallback-460800"; Baud = 460800 }
-    # Attempt 3: lower baud 115200, change before to no-reset
+    # Attempt 3: 115200 default-reset (many boards need manual BOOT + EN timing here)
+    $attempts += [PSCustomObject]@{ Args = (With-Args -src $BaseArgs -baud 115200 -before 'default-reset' -after $null); Label = "fallback-115200"; Baud = 115200 }
+    # Attempt 4: 115200 no-reset (keep current state)
     $attempts += [PSCustomObject]@{ Args = (With-Args -src $BaseArgs -baud 115200 -before 'no-reset' -after $null); Label = "fallback-115200-nr"; Baud = 115200 }
-    # Attempt 4: 115200, default-reset, --no-stub (helps when stub upload fails)
-    $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'default-reset' -after $null)); Label = "fallback-115200-nostub"; Baud = 115200 }
-    # Attempt 5: 115200, no-reset both sides, --no-stub
-    $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'no-reset' -after 'no-reset')); Label = "fallback-115200-nr-nostub"; Baud = 115200 }
+
+    if ($AllowNoStub) {
+        # Attempt 5: 115200 default-reset with --no-stub (stub load failing)
+        $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'default-reset' -after $null)); Label = "fallback-115200-nostub"; Baud = 115200 }
+        # Attempt 6: 115200 no-reset both sides with --no-stub
+        $attempts += [PSCustomObject]@{ Args = (Add-NoStub (With-Args -src $BaseArgs -baud 115200 -before 'no-reset' -after 'no-reset')); Label = "fallback-115200-nr-nostub"; Baud = 115200 }
+    }
 
     foreach ($att in $attempts) {
-        Write-ColorOutput "  ├─ esptool attempt [$($att.Label)] @ $($att.Baud) on $ComPort..." "Progress"
+        Write-ColorOutput "  - esptool attempt [$($att.Label)] @ $($att.Baud) on $ComPort..." "Progress"
         $res = Invoke-Esptool -Args $att.Args -TimeoutSec $TimeoutSec -AutoInstall:$AutoInstall
         if ($res.TimedOut) {
             Write-ColorOutput "  ├─ esptool timed out after ${TimeoutSec}s ([$($att.Label)])" "Warning"
@@ -360,7 +367,7 @@ function Invoke-EsptoolWithRetry {
         if ($res.Output) {
             $lines = $res.Output -split "\r?\n"
             $tail = ($lines | Select-Object -Last 12) -join [Environment]::NewLine
-            Write-ColorOutput ("  ├─ esptool output (last lines) [${($att.Label)}]:`n" + $tail) "Warning"
+            Write-ColorOutput ("  - esptool output (last lines) [${($att.Label)}]:`n" + $tail) "Warning"
         }
 
         # For OPI we sometimes need a short pause between retries
@@ -508,7 +515,7 @@ if (-not $SkipBuild) {
     }
 
     if ($webFilesNeedUpdate -or $Clean) {
-        Write-ColorOutput "  ├─ Compressing web files..." "Progress"
+        Write-ColorOutput "  - Compressing web files..." "Progress"
         try {
             python gzip_wwwfiles.py
             $timer.Stop()
@@ -555,7 +562,7 @@ if (-not $SkipBuild) {
 
         try {
             # Build filesystem only with optimizations
-            Write-ColorOutput "  ├─ Building filesystem..." "Progress"
+            Write-ColorOutput "  - Building filesystem..." "Progress"
             & $pioPath run --target buildfs --environment $Environment --jobs 8
             if ($LASTEXITCODE -ne 0) { throw "Filesystem build failed" }
 
@@ -581,14 +588,14 @@ if (-not $SkipBuild) {
 
         try {
             # Build main firmware with parallel compilation
-            Write-ColorOutput "  ├─ Compiling firmware (${jobCount} parallel jobs)..." "Progress"
+            Write-ColorOutput "  - Compiling firmware - $jobCount parallel jobs..." "Progress"
 
             # Build with optimized parallel compilation
             $buildArgs = @("run", "--environment", $Environment, "--jobs", $jobCount)
 
             # If dotnet build requested, run it first (Release) to prebuild any dotnet-based tools
             if ($DotnetBuild) {
-                Write-ColorOutput "  ├─ Running dotnet build (Release) to prebuild native tools..." "Progress"
+                Write-ColorOutput "  - Running dotnet build (Release) to prebuild native tools..." "Progress"
                 try {
                     dotnet build -c Release | Out-Null
                 }
@@ -601,7 +608,7 @@ if (-not $SkipBuild) {
             if ($LASTEXITCODE -ne 0) { throw "Firmware build failed" }
 
             # Build filesystem in parallel if possible
-            Write-ColorOutput "  ├─ Building filesystem (background)..." "Progress"
+            Write-ColorOutput "  - Building filesystem (background)..." "Progress"
             $filesystemJob = Start-Job -ScriptBlock {
                 param($pioPath, $Environment)
                 $fsArgs = @("run", "--target", "buildfs", "--environment", $Environment, "--jobs", "4")
@@ -675,16 +682,16 @@ $files = @{
 }
 
 # Copy files with verification using fast synchronous copy (fewer tasks overhead)
-Write-ColorOutput "  ├─ Copying binaries to output directory (fast-mode)" "Progress"
+Write-ColorOutput "  - Copying binaries to output directory (fast-mode)" "Progress"
 foreach ($file in $files.GetEnumerator()) {
     if (Test-Path $file.Value) {
         $dest = Join-Path $outputDir $file.Key
         Copy-Item $file.Value $dest -Force
         $sizeKb = [math]::Round((Get-Item $dest).Length / 1KB, 1)
-        Write-ColorOutput "  ├─ $($file.Key): ${sizeKb}KB" "Info"
+        Write-ColorOutput "  - $($file.Key): ${sizeKb}KB" "Info"
     }
     else {
-        Write-ColorOutput "  ├─ ⚠️  Missing: $($file.Key)" "Warning"
+        Write-ColorOutput "  - ⚠️  Missing: $($file.Key)" "Warning"
     }
 }
 
@@ -798,6 +805,8 @@ if (-not $SkipUpload) {
     if ($EraseAll) {
         try {
             Write-ColorOutput "🧽 Erasing entire flash on $ComPort..." "Progress"
+            Write-ColorOutput "🔧 Tip: Hold the BOOT button (GPIO0) then tap EN/RST, keep holding BOOT until 'Connecting' progresses." "Info"
+            Write-ColorOutput "     If connection stalls, release BOOT and tap EN again during 115200 attempts." "Info"
             $eraseAllArgs = @(
                 "-p", $ComPort,
                 "-b", $BaudRate,
@@ -806,11 +815,14 @@ if (-not $SkipUpload) {
                 "--chip", $flashConfig.chip,
                 "erase-flash"
             )
-            $res = Invoke-EsptoolWithRetry -BaseArgs $eraseAllArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 30 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
+            # Full chip erase requires stub for reliability; disable no-stub fallbacks so we don't hit ROM limitation
+            $res = Invoke-EsptoolWithRetry -BaseArgs $eraseAllArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 45 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool -AllowNoStub:$false
             if ($res.ExitCode -ne 0) { throw "Chip erase failed (code $($res.ExitCode))" }
         }
         catch {
             Write-ColorOutput "❌ Full erase failed: $_" "Warning"
+            Write-ColorOutput "💡 You can retry manually: esptool.py --chip $($flashConfig.chip) -p $ComPort -b 115200 erase_flash" "Info"
+            Write-ColorOutput "   (Hold BOOT before running; release after 'Erasing' begins.)" "Info"
         }
     }
 
@@ -834,8 +846,8 @@ if (-not $SkipUpload) {
             # Use absolute path for esptool
             try { $littlefsPath = (Resolve-Path -Path $littlefsPath).Path } catch {}
 
-            Write-ColorOutput "  ├─ Connecting to device..." "Progress"
-            Write-ColorOutput "  ├─ Erasing filesystem partition..." "Progress"
+            Write-ColorOutput "  - Connecting to device..." "Progress"
+            Write-ColorOutput "  - Erasing filesystem partition..." "Progress"
 
             # Erase filesystem partition first
             $eraseArgs = @(
@@ -851,7 +863,7 @@ if (-not $SkipUpload) {
             $resErase = Invoke-EsptoolWithRetry -BaseArgs $eraseArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 40 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
             if ($resErase.ExitCode -ne 0) { throw "Filesystem erase failed (code $($resErase.ExitCode))" }
 
-            Write-ColorOutput "  ├─ Uploading filesystem..." "Progress"
+            Write-ColorOutput "  - Uploading filesystem..." "Progress"
 
             # Upload filesystem
             $uploadArgs = @(
@@ -927,16 +939,17 @@ if (-not $SkipUpload) {
                     # Stream esptool output live for progress visibility
                     $esptoolInvoker = Resolve-EsptoolInvoker -InstallIfMissing:$AutoInstallEsptool
                     if (-not $esptoolInvoker) { throw "esptool not found for live progress." }
-                        $cmdParts = @()
-                        if ($esptoolInvoker[0] -eq 'esptool.py') {
-                            $cmdParts += 'esptool.py'
-                        } else {
-                            $cmdParts += $esptoolInvoker[0]
-                            $cmdParts += $esptoolInvoker[1..($esptoolInvoker.Length - 1)]
-                        }
-                        $cmdParts += $uploadArgs
-                        $liveResult = Invoke-LiveUploadWithWatchdog -CommandParts $cmdParts -TotalTimeoutSec $UploadTimeoutSec -StallTimeoutSec $UploadStallTimeoutSec
-                        if ($liveResult.ExitCode -ne 0) { throw "Upload failed (live mode watchdog)" }
+                    $cmdParts = @()
+                    if ($esptoolInvoker[0] -eq 'esptool.py') {
+                        $cmdParts += 'esptool.py'
+                    }
+                    else {
+                        $cmdParts += $esptoolInvoker[0]
+                        $cmdParts += $esptoolInvoker[1..($esptoolInvoker.Length - 1)]
+                    }
+                    $cmdParts += $uploadArgs
+                    $liveResult = Invoke-LiveUploadWithWatchdog -CommandParts $cmdParts -TotalTimeoutSec $UploadTimeoutSec -StallTimeoutSec $UploadStallTimeoutSec
+                    if ($liveResult.ExitCode -ne 0) { throw "Upload failed (live mode watchdog)" }
                     $uploadTimer.Stop()
                     Write-ColorOutput "✅ Upload completed in $([math]::Round($uploadTimer.ElapsedMilliseconds/1000, 1))s" "Success"
                     # Skip retry wrapper when using live progress
@@ -960,6 +973,10 @@ if (-not $SkipUpload) {
                 foreach ($addr in $flashConfig.addresses.GetEnumerator()) {
                     $filePath = Join-Path $outputDir $addr.Value
                     if (Test-Path $filePath) {
+                        if ($SkipFilesystem -and ($addr.Value -like 'littlefs.bin' -or $addr.Value -like 'spiffs.bin')) {
+                            Write-ColorOutput "  - Skipping filesystem image ($($addr.Value)) due to -SkipFilesystem" "Info"
+                            continue
+                        }
                         try { $filePath = (Resolve-Path -Path $filePath).Path } catch {}
                         $uploadArgs += $addr.Key, $filePath
                     }
@@ -972,7 +989,8 @@ if (-not $SkipUpload) {
                     $cmdParts = @()
                     if ($esptoolInvoker[0] -eq 'esptool.py') {
                         $cmdParts += 'esptool.py'
-                    } else {
+                    }
+                    else {
                         $cmdParts += $esptoolInvoker[0]
                         $cmdParts += $esptoolInvoker[1..($esptoolInvoker.Length - 1)]
                     }
@@ -987,7 +1005,7 @@ if (-not $SkipUpload) {
             }
 
             if (-not $LiveProgress) {
-                Write-ColorOutput "  ├─ Connecting to device..." "Progress"
+                Write-ColorOutput "  - Connecting to device..." "Progress"
                 $resFw = Invoke-EsptoolWithRetry -BaseArgs $uploadArgs -InitialBaud $BaudRate -ComPort $ComPort -TimeoutSec 240 -IsOpi:($FlashMode -eq 'opi') -AutoInstall:$AutoInstallEsptool
             }
             if ($resFw.ExitCode -ne 0) { throw "Upload failed (code $($resFw.ExitCode))" }

@@ -1,14 +1,12 @@
 /** @type {import('next').NextConfig} */
-import path from 'path';
 
 const nextConfig = {
   reactStrictMode: true,
-  // swcMinify removed in Next 15 (always on)
+  // Use default .next directory; prior custom distDir caused locked trace file issues on Windows
   images: {
-    unoptimized: true // adjust if using Next Image later
-  },
-  // Silence workspace root inference warning by explicitly setting tracing root to project root
-  outputFileTracingRoot: path.join(process.cwd(), '.')
+    unoptimized: true
+  }
+  // Removed unsupported experimental.outputFileTracing flag (produced warning in Next 15.5)
 };
 
 export default nextConfig;

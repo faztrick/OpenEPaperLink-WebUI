@@ -12,15 +12,15 @@ export default function DevicesPage() {
       <Seo title="Devices" description="List of devices (placeholder)" />
       <h2>Devices</h2>
       {isLoading && <p>Loading devices...</p>}
-      {error && <p style={{color:'tomato'}}>Failed to load devices: {(error as Error).message}</p>}
+      {error && <p className="text-error">Failed to load devices: {(error as Error).message}</p>}
       {!isLoading && !error && (
-        <table style={{width:'100%', borderCollapse:'collapse'}}>
+        <table className="table-mini">
           <thead>
-            <tr><th style={{textAlign:'left'}}>ID</th><th style={{textAlign:'left'}}>Name</th><th style={{textAlign:'left'}}>Status</th></tr>
+            <tr className="text-left"><th>ID</th><th>Name</th><th>Status</th></tr>
           </thead>
           <tbody>
-            {(data && data.length ? data : [{id:'example-1', name:'Example Device', status:'offline'}]).map(d=> (
-              <tr key={d.id} style={{borderTop:'1px solid #30363d'}}>
+            {(data && data.length ? data : [{ id: 'example-1', name: 'Example Device', status: 'offline' }]).map(d => (
+              <tr key={d.id} className="row-border-top">
                 <td><a href={`/device/${d.id}`}>{d.id}</a></td>
                 <td>{d.name}</td>
                 <td>{d.status ?? '-'}</td>

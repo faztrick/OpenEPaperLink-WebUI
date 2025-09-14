@@ -1,0 +1,284 @@
+.card {
+  border: 1px solid #444;
+  padding: 12px;
+  border-radius: 6px;
+  background: #111;
+  color: #eee;
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badgeSidecar {
+  background: #2d5;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.badgeDirect {
+  background: #555;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.select {
+  background: #222;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.countdown {
+  font-size: 11px;
+  opacity: .7;
+  min-width: 32px;
+  text-align: center;
+}
+
+.button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.buttonSecondary {
+  background: #333;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.buttonTiny {
+  background: #333;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.filters {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.filterLabel {
+  display: block;
+  font-size: 10px;
+  opacity: .7;
+  margin-bottom: 2px;
+}
+
+.input {
+  background: #1a1a1a;
+  border: 1px solid #444;
+  color: #eee;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  width: 90px;
+}
+
+.filterButtons {
+  display: flex;
+  align-items: flex-end;
+}
+
+.error {
+  margin-top: 6px;
+  color: #f66;
+  font-size: 12px;
+}
+
+.empty {
+  margin: 8px 0;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.tableWrap {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 4px;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table thead tr {
+  background: #1d1d1d;
+}
+
+.table th,
+.table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #222;
+}
+
+.table tbody tr:hover {
+  background: #1e293b;
+}
+
+.ssid {
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.bssid {
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.signalCell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rssi {
+  font-size: 11px;
+  opacity: .8;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.bar {
+  width: 3px;
+  background: #333;
+  display: inline-block;
+  border-radius: 1px;
+}
+
+.bar:nth-child(1) {
+  height: 4px;
+}
+
+.bar:nth-child(2) {
+  height: 7px;
+}
+
+.bar:nth-child(3) {
+  height: 10px;
+}
+
+.bar:nth-child(4) {
+  height: 12px;
+}
+
+.on {
+  background: #4ade80 !important;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.chip,
+.chipWarn {
+  background: #222;
+  color: #ddd;
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.chipWarn {
+  background: #92400e;
+  color: #fff;
+}
+
+.progressOuter {
+  position: relative;
+  height: 6px;
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 4px;
+  margin: 6px 2px 4px;
+  overflow: hidden;
+}
+
+.progressBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  animation: scanBar 1.2s linear infinite;
+}
+
+@keyframes scanBar {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  50% {
+    transform: translateX(40%);
+  }
+
+  100% {
+    transform: translateX(200%);
+  }
+}

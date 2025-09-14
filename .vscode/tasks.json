@@ -286,6 +286,54 @@
 				"Get-Date -Format o; npm run start"
 			],
 			"problemMatcher": []
+		},
+		{
+			"label": "Serial: Interactive (choose port)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; if (-not (Test-Path .venv)) { Write-Host 'INFO: venv not detected'; }; python scripts/serial_cli.py -p ${input:monitorPort} -b 115200 -i"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Serial: Interactive + Reset (choose port)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; python scripts/serial_cli.py -p ${input:monitorPort} -b 115200 --reset-esp -i"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Serial: One-shot Command (prompt)",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}/ESP32_AP-Flasher"
+			},
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Date -Format o; $cmd=Read-Host 'Command'; python scripts/serial_cli.py -p ${input:monitorPort} -b 115200 -c \"$cmd\" -t 2.0"
+			],
+			"problemMatcher": []
 		}
 	],
 	"inputs": [

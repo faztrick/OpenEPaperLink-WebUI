@@ -38,6 +38,16 @@ Scope: Quick reference to build, flash, run web UI, and extend modules WITHOUT m
    - Device serial speed: 115200 (default)
    - WebSocket endpoint: /ws (device) for live log lines
    - Node server logs:    web-ui/logs/*.log
+   - Local COM helper:    python ESP32_AP-Flasher/scripts/serial_cli.py --list
+       * Interactive terminal: python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 -b 115200 -i
+       * One-shot command:     python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 -c "AT+GMR" -t 2.0
+   * Hex send:             python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 --hex "41 42 43 0D"
+   * Reset then interact:  python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 -b 115200 --reset-esp -i
+       * Reconnect 60s:        python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 -i --retry 60
+   * Log session:          python ESP32_AP-Flasher/scripts/serial_cli.py -p COM10 -i --log session.log --ts
+   * Interactive hex cmd:  (inside interactive) /hex 41 42 43 0D
+       Line endings: --ending lf|cr|crlf|none  (default lf)
+       Exit interactive: /quit or Ctrl+C
 
 6. WiFi Behavior (Current)
    - Starts STA attempt; if fails, AP fallback (SSID may be ESP32-AP-Flasher or config)
@@ -67,6 +77,7 @@ Scope: Quick reference to build, flash, run web UI, and extend modules WITHOUT m
    - Implement AP+STA policy toggles
    - Peer link (UART or ESP-NOW) for external display
    - Add sensor modules (RFID, battery, IR) using ModuleInterface pattern
+   - Optional: Integrate serial_cli as VS Code task (launch.json / tasks.json) for quick access
 
 12. Timestamp Logging Pattern (PowerShell)
    Get-Date -Format o; pio run -e OutdoorAP

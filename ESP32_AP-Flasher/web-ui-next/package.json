@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:serial": "cross-env ENABLE_SERIAL_API=1 next dev",
+    "serial:service": "node serial-sidecar/serial-service.js",
+    "dev:with-sidecar": "cross-env ENABLE_SERIAL_API=0 SERIAL_SIDECAR_URL=http://localhost:4001 next dev",
     "dev:inspect": "node --inspect=0.0.0.0:9230 node_modules/next/dist/bin/next dev",
     "build": "next build",
     "start": "next start",
@@ -28,10 +31,11 @@
   "devDependencies": {
     "@types/node": "22.8.1",
     "@types/react": "19.1.11",
+    "cross-env": "^7.0.3",
     "eslint": "9.34.0",
     "eslint-config-next": "15.5.0",
-    "typescript": "5.9.2",
     "pm2": "5.4.2",
+    "typescript": "5.9.2",
     "vitest": "1.6.0"
   }
 }

@@ -376,13 +376,16 @@ void setup()
     // This was missing previously which prevented WiFi from starting.
     Serial.println("[BOOT] Registering core modules (WiFiModule)...");
     registerWiFiModule();
+    // Register LED module (hardware LED control) - autoStart by default for toolkit visibility
+    extern void registerLEDModule();
+    registerLEDModule();
 
     // Load persisted module autoStart configuration (modules_config.json) if present
     if (!moduleManager.loadConfig())
     {
         Serial.println("[BOOT] No persisted module config found; applying defaults (WiFiModule autoStart=true)");
         // Provide a minimal default system config enabling WiFiModule
-        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true}]}");
+        moduleManager.setSystemConfig("{\"modules\":[{\"name\":\"WiFiModule\",\"autoStart\":true},{\"name\":\"LEDModule\",\"autoStart\":true}]}");
     }
 
     // Initialize all registered modules

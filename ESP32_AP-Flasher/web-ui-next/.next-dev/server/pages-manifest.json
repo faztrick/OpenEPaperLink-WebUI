@@ -1,0 +1,11 @@
+{
+  "/_app": "pages/_app.js",
+  "/_error": "pages/_error.js",
+  "/_document": "pages/_document.js",
+  "/api/health": "pages/api/health.js",
+  "/api/serial/ports": "pages/api/serial/ports.js",
+  "/wifi": "pages/wifi.js",
+  "/ap-list": "pages/ap-list.js",
+  "/api/devices": "pages/api/devices.js",
+  "/tags": "pages/tags.js"
+}

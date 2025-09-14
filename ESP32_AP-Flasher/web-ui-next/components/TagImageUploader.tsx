@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { fetchAllTags, TagRecord } from '../lib/api';
+import { buildApiUrl } from '../lib/apiBase';
 
 interface Props {
   onUploaded?: (mac: string) => void;
@@ -49,7 +50,7 @@ export const TagImageUploader: React.FC<Props> = ({ onUploaded, compact }) => {
       if (ttl.trim()) fd.append('ttl', ttl.trim());
       if (preload) fd.append('preload', '1');
       // Content mode set inside backend to 24 for custom image; alias saved via modecfgjson
-      const res = await fetch('/imgupload', { method: 'POST', body: fd });
+      const res = await fetch(buildApiUrl('/imgupload'), { method: 'POST', body: fd });
       if (!res.ok) throw new Error(await res.text() || res.statusText);
       setMessage('Image queued. Press / wake the tag to fetch the new content.');
       onUploaded?.(mac);

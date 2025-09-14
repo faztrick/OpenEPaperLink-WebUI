@@ -3,6 +3,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { DeviceProvider } from '../context/DeviceContext';
 import { UIProvider } from '../context/UIContext';
 import '../styles/globals.css';
+import '../styles/utilities.css';
 
 export default function App({ Component, pageProps }: AppProps) {
   return (

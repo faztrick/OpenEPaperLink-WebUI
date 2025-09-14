@@ -12,9 +12,10 @@
 #define RUNSTATUS_RUN 2
 #define RUNSTATUS_INIT 3
 
-#define NO_SUBGHZ_CHANNEL  255
-class tagRecord {
-   public:
+#define NO_SUBGHZ_CHANNEL 255
+class tagRecord
+{
+public:
     tagRecord() : mac{0}, version(0), alias(""), lastseen(0), nextupdate(0), contentMode(0), pendingCount(0), md5{0}, expectedNextCheckin(0), modeConfigJson(""), LQI(0), RSSI(0), temperature(0), batteryMv(0), hwType(0), wakeupReason(0), capabilities(0), lastfullupdate(0), isExternal(false), apIp(IPAddress(0, 0, 0, 0)), pendingIdle(0), rotate(0), lut(0), tagSoftwareVersion(0), currentChannel(0), dataType(0), filename(""), data(nullptr), len(0), invert(0), updateCount(0), updateLast(0) {}
 
     uint8_t mac[8];
@@ -48,13 +49,14 @@ class tagRecord {
 
     uint8_t dataType;
     String filename;
-    uint8_t* data;
+    uint8_t *data;
     uint32_t len;
 
-    static tagRecord* findByMAC(const uint8_t mac[8]);
+    static tagRecord *findByMAC(const uint8_t mac[8]);
 };
 
-struct Config {
+struct Config
+{
     uint8_t channel;
     uint8_t subghzchannel;
     char alias[32];
@@ -76,16 +78,24 @@ struct Config {
     String repo;
     String env;
     uint8_t showtimestamp;
+    // WiFi operating mode policy:
+    // 0 = Auto (existing behavior: try STA, fallback AP)
+    // 1 = AP only
+    // 2 = STA only (no fallback AP even on failure)
+    // 3 = AP + STA forced (start both regardless of credential presence)
+    uint8_t wifiMode = 0;
 };
 
-struct Color {
+struct Color
+{
     uint8_t r, g, b;
     Color() : r(0), g(0), b(0) {}
     Color(uint16_t value_) : r((value_ >> 8) & 0xF8 | (value_ >> 13) & 0x07), g((value_ >> 3) & 0xFC | (value_ >> 9) & 0x03), b((value_ << 3) & 0xF8 | (value_ >> 2) & 0x07) {}
     Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
 };
 
-struct HwType {
+struct HwType
+{
     uint8_t id;
     uint16_t width;
     uint16_t height;
@@ -98,26 +108,27 @@ struct HwType {
     std::vector<Color> colortable;
 };
 
-struct varStruct {
+struct varStruct
+{
     String value;
     bool changed;
 };
 
 extern Config config;
-extern std::vector<tagRecord*> tagDB;
+extern std::vector<tagRecord *> tagDB;
 extern std::unordered_map<int, HwType> hwtype;
 extern std::unordered_map<std::string, varStruct> varDB;
 extern String tagDBtoJson(const uint8_t mac[8] = nullptr, uint8_t startPos = 0);
 extern bool deleteRecord(const uint8_t mac[8], bool allVersions = true);
-extern void fillNode(JsonObject& tag, const tagRecord* taginfo);
-extern void saveDB(const String& filename);
-extern bool loadDB(const String& filename);
+extern void fillNode(JsonObject &tag, const tagRecord *taginfo);
+extern void saveDB(const String &filename);
+extern bool loadDB(const String &filename);
 extern void destroyDB();
 extern uint32_t getTagCount();
-extern uint32_t getTagCount(uint32_t& timeoutcount, uint32_t& lowbattcount);
-extern void mac2hex(const uint8_t* mac, char* hexBuffer);
-extern bool hex2mac(const String& hexString, uint8_t* mac);
-extern void clearPending(tagRecord* taginfo);
+extern uint32_t getTagCount(uint32_t &timeoutcount, uint32_t &lowbattcount);
+extern void mac2hex(const uint8_t *mac, char *hexBuffer);
+extern bool hex2mac(const String &hexString, uint8_t *mac);
+extern void clearPending(tagRecord *taginfo);
 extern void initAPconfig();
 extern void saveAPconfig();
 extern HwType getHwType(const uint8_t id);
@@ -129,10 +140,10 @@ extern HwType getHwType(const uint8_t id);
 /// @param notify Should the change be notified (true, default) or not (false)
 /// @return true If variable was created/updated
 /// @return false If not
-extern bool setVarDB(const std::string& key, const String& value, const bool notify = true);
+extern bool setVarDB(const std::string &key, const String &value, const bool notify = true);
 
 extern void cleanupCurrent();
-extern void pushTagInfo(tagRecord* taginfo);
+extern void pushTagInfo(tagRecord *taginfo);
 extern void popTagInfo(const uint8_t mac[8] = nullptr);
 
 #pragma pack(pop)

@@ -1,7 +1,9 @@
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import { ReactNode } from 'react';
+import { ConnectionSwitcher } from './ConnectionSwitcher';
 import { Header } from './Header';
+import { Toaster } from './Toaster';
 import { TopNav } from './TopNav';
 
 const Sidebar = dynamic(() => import('./Sidebar').then((m) => m.Sidebar), { ssr: false });
@@ -29,24 +31,24 @@ export function Layout({
       </Head>
       <a
         href="#main"
-        style={{ position: 'absolute', left: -1000, top: -1000 }}
-        className="skip-link"
+        className="skip-link offscreen"
       >
         Skip to content
       </a>
       <div
-        className="app-shell"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}
+        className="app-shell flex-col full-min-h"
       >
         <Header />
+        <div className="pad-conn"><ConnectionSwitcher /></div>
         <TopNav />
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <div className="layout-main-row">
           {sidebar && <Sidebar />}
-          <main id="main" style={{ flex: 1, padding: '1rem' }}>
+          <main id="main" className="main-content">
             {children}
           </main>
         </div>
         <Modals />
+        <Toaster />
       </div>
     </>
   );

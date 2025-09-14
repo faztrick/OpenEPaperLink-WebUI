@@ -34,41 +34,41 @@ export default function TagsPage() {
 
   return (
     <Layout title="Tags" description="Manage ePaper tags">
-      <h2 style={{ marginTop: 0, display: 'flex', gap: 16, alignItems: 'center' }}>Tags <small style={{ fontSize: 12, fontWeight: 400, opacity: .6 }}>{isValidating ? '(refreshing)' : ''}</small></h2>
-      <div style={{ display: 'grid', gap: 24, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <h2 className="mt-0 flex gap-16 items-center">Tags <small className="small center-muted fw-400">{isValidating ? '(refreshing)' : ''}</small></h2>
+      <div className="grid-gap-lg items-start">
+        <div className="flex-col-gap-12">
           <TagImageUploader onUploaded={() => mutate()} />
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input placeholder='Search mac or alias…' value={filter} onChange={e => setFilter(e.target.value)} style={{ flex: '1 1 220px', minWidth: 180 }} />
-            <button onClick={() => mutate()} style={{ padding: '4px 10px' }}>Refresh</button>
+          <div className="flex gap-12 flex-wrap items-center">
+            <input placeholder='Search mac or alias…' value={filter} onChange={e => setFilter(e.target.value)} className="input-grow" />
+            <button onClick={() => mutate()} className="btn-slim">Refresh</button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <div className="overflow-x-auto">
+            <table className="table-tags">
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #30363d' }}>
+                <tr className="row-border-bottom text-left">
                   <th>MAC</th><th>Alias</th><th>Status</th><th>Pending</th><th>Last Seen</th><th>Battery</th><th>RSSI</th><th>HW</th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {isLoading && <tr><td colSpan={9} style={{ padding: 8 }}>Loading tags…</td></tr>}
-                {error && <tr><td colSpan={9} style={{ color: 'tomato', padding: 8 }}>Error loading tags: {(error as Error).message}</td></tr>}
-                {!isLoading && !error && filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 8 }}>No tags match.</td></tr>}
+                {isLoading && <tr><td colSpan={9} className="pad-cell">Loading tags…</td></tr>}
+                {error && <tr><td colSpan={9} className="pad-cell text-error">Error loading tags: {(error as Error).message}</td></tr>}
+                {!isLoading && !error && filtered.length === 0 && <tr><td colSpan={9} className="pad-cell">No tags match.</td></tr>}
                 {filtered.map(t => {
                   const age = t.lastSeenDate ? ((Date.now() - t.lastSeenDate.getTime()) / 60000).toFixed(1) + 'm' : '-';
                   const editing = editingMac === t.mac;
                   return (
-                    <tr key={t.mac} style={{ borderTop: '1px solid #30363d' }}>
-                      <td style={{ fontFamily: 'monospace' }}>{t.mac}</td>
+                    <tr key={t.mac} className="row-border-top">
+                      <td className="mono">{t.mac}</td>
                       <td>{editing ? (
-                        <span style={{ display: 'flex', gap: 4 }}>
-                          <input autoFocus value={aliasDraft} maxLength={63} onChange={e => setAliasDraft(e.target.value)} style={{ width: 140 }} />
-                          <button disabled={aliasBusy} onClick={() => saveAlias(t.mac)} style={{ fontSize: 12 }}>Save</button>
-                          <button disabled={aliasBusy} onClick={() => { setEditingMac(null); setAliasDraft(''); }} style={{ fontSize: 12 }}>Cancel</button>
+                        <span className="alias-edit-wrap">
+                          <input autoFocus value={aliasDraft} maxLength={63} placeholder="Alias" onChange={e => setAliasDraft(e.target.value)} className="w-140" />
+                          <button disabled={aliasBusy} onClick={() => saveAlias(t.mac)} className="btn-slim">Save</button>
+                          <button disabled={aliasBusy} onClick={() => { setEditingMac(null); setAliasDraft(''); }} className="btn-slim">Cancel</button>
                         </span>
                       ) : (
-                        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                          {t.alias || <span style={{ opacity: .4 }}>—</span>}
-                          <button style={{ fontSize: 10, padding: '2px 6px' }} onClick={(e) => { e.preventDefault(); setEditingMac(t.mac); setAliasDraft(t.alias || ''); }}>Edit</button>
+                        <span className="alias-view">
+                          {t.alias || <span className="opacity-40">—</span>}
+                          <button className="btn-xs" onClick={(e) => { e.preventDefault(); setEditingMac(t.mac); setAliasDraft(t.alias || ''); }}>Edit</button>
                         </span>
                       )}</td>
                       <td><StatusBadge status={t.status} /></td>
@@ -77,14 +77,14 @@ export default function TagsPage() {
                       <td><BatteryCell mv={t.batteryMv} /></td>
                       <td>{t.RSSI ?? '-'}</td>
                       <td>{t.hwType}</td>
-                      <td><a style={{ fontSize: 12 }} href={`/tag/${t.mac}`}>Details</a></td>
+                      <td><a className="small" href={`/tag/${t.mac}`}>Details</a></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 12, opacity: .6 }}>Auto-refreshing every 15s. Uploading an image will queue it immediately.</div>
+          <div className="small center-muted">Auto-refreshing every 15s. Uploading an image will queue it immediately.</div>
         </div>
       </div>
     </Layout>
@@ -92,15 +92,15 @@ export default function TagsPage() {
 }
 
 function StatusBadge({ status }: { status: TagRecord['status'] }) {
-  const colors: Record<string, string> = { online: '#3fb950', stale: '#d29922', unknown: '#6e7681' };
-  return <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 12, fontSize: 11, background: colors[status] + '20', color: colors[status] }}>{status}</span>;
+  const cls: Record<string, string> = { online: 'status-online', stale: 'status-stale', unknown: 'status-unknown' };
+  return <span className={`status-pill ${cls[status] || 'status-unknown'}`}>{status}</span>;
 }
 
 function BatteryCell({ mv }: { mv: number | undefined }) {
   if (!mv) return <span>-</span>;
   const v = mv / 1000;
-  let color = '#3fb950';
-  if (v < 2.9) color = '#f85149';
-  else if (v < 3.1) color = '#d29922';
-  return <span style={{ color }}>{v.toFixed(2)}V</span>;
+  let cls = 'bat-good';
+  if (v < 2.9) cls = 'bat-low';
+  else if (v < 3.1) cls = 'bat-warn';
+  return <span className={cls}>{v.toFixed(2)}V</span>;
 }

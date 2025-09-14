@@ -1,0 +1,62 @@
+.card {
+  border: 1px solid #555;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  background: #111;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  background: #2d5;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.modeList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modeItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.modeItem.disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.error {
+  color: tomato;
+  margin-top: 8px;
+}
+
+.notice {
+  color: #fa0;
+  margin-top: 8px;
+}
+
+.current {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.actions {
+  margin-top: 8px;
+}

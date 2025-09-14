@@ -6,12 +6,12 @@ import { Seo } from '../../components/Seo';
 import type { DeviceDetail } from '../../lib/api-types';
 import { fetcher } from '../../lib/fetcher';
 
-export default function DeviceDetails(){
+export default function DeviceDetails() {
   const router = useRouter();
   const { id } = router.query;
   const title = `Device ${id ?? ''}`;
   const enabled = typeof id === 'string';
-  const { data, error, isLoading } = useSWR<DeviceDetail>(enabled? `/api/devices/${id}`: null, fetcher);
+  const { data, error, isLoading } = useSWR<DeviceDetail>(enabled ? `/api/devices/${id}` : null, fetcher);
 
   return (
     <Layout title={title}>
@@ -19,10 +19,10 @@ export default function DeviceDetails(){
       <h2>{title}</h2>
       {!enabled && <p>Waiting for id...</p>}
       {isLoading && <p>Loading device...</p>}
-      {error && <p style={{color:'tomato'}}>Failed to load: {(error as Error).message}</p>}
+      {error && <p className="text-error">Failed to load: {(error as Error).message}</p>}
       {data && (
-        <div style={{display:'flex', gap:24, alignItems:'flex-start', flexWrap:'wrap'}}>
-          <div style={{display:'grid', gap:4, maxWidth:360}}>
+        <div className="flex gap-24 items-start flex-wrap">
+          <div className="device-meta-grid">
             <Field label="Name" value={data.name} />
             <Field label="Status" value={data.status} />
             <Field label="Firmware" value={data.firmware ?? '-'} />
@@ -31,7 +31,7 @@ export default function DeviceDetails(){
             <Field label="Tags" value={String(data.tags ?? 0)} />
             <Field label="Last Seen" value={data.lastSeen ?? '-'} />
           </div>
-          <div style={{minWidth:320, flex:1}}>
+          <div className="device-features">
             <FeatureGrid deviceId={data.id} />
           </div>
         </div>
@@ -40,6 +40,6 @@ export default function DeviceDetails(){
   );
 }
 
-function Field({label, value}:{label:string; value:string}){
-  return <div style={{display:'flex', justifyContent:'space-between'}}><span style={{opacity:.6}}>{label}</span><span>{value}</span></div>;
+function Field({ label, value }: { label: string; value: string }) {
+  return <div className="field-row"><span className="opacity-60">{label}</span><span>{value}</span></div>;
 }

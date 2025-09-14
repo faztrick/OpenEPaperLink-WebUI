@@ -43,6 +43,15 @@ struct flasherCommand
     uint8_t *data = nullptr;
 };
 
+// Upper bound for an incoming flasher command payload.
+// Rationale: protocol normally transfers at most small blocks (<=1024 bytes) per packet.
+// Some commands may legitimately be larger (e.g. infoblock), but anything in the hundreds of KB
+// would cause large heap fragmentation and is almost certainly a malformed / hostile frame.
+// Keep the limit generous but protective.
+#ifndef FLASHER_CMD_MAX_LEN
+#define FLASHER_CMD_MAX_LEN (128 * 1024UL)
+#endif
+
 int8_t powerPins[] = FLASHER_AP_POWER;
 #ifdef HAS_EXT_FLASHER
 int8_t powerPins2[] = FLASHER_EXT_POWER;
@@ -216,6 +225,13 @@ void flasherDataHandler(uint8_t *data, size_t len, uint8_t transportType)
             curLenIndex++;
             if (curLenIndex == sizeof(cmd->len))
             {
+                // Sanity bound: reject absurd length early to avoid huge calloc
+                if (cmd->len > FLASHER_CMD_MAX_LEN)
+                {
+                    wsSerial("flasher: command length exceeds limit, dropping");
+                    flasherSerialState = FLASHER_RESET;
+                    break;
+                }
                 if (cmd->len)
                 {
                     // not 0
@@ -256,6 +272,17 @@ void flasherDataHandler(uint8_t *data, size_t len, uint8_t transportType)
             {
                 flasherSerialState = FLASHER_RESET;
                 wsSerial("failed CRC");
+                // Free any in‑flight command object (covers USB path which previously leaked)
+                if (cmd != nullptr)
+                {
+                    if (cmd->data)
+                    {
+                        free(cmd->data);
+                        cmd->data = nullptr;
+                    }
+                    delete cmd;
+                    cmd = nullptr;
+                }
             }
             else
             {

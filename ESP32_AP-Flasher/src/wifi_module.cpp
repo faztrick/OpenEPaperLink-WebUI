@@ -55,6 +55,12 @@ bool WiFiModule::start()
         return false;
     }
     Serial.println("[WIFI_MODULE] Starting WiFi module...");
+    // Interpret global config.wifiMode policy before proceeding
+    // 0 Auto (existing behavior)
+    // 1 AP-only
+    // 2 STA-only (no fallback AP)
+    // 3 AP+STA forced
+    uint8_t policy = config.wifiMode;
     // Unified STA config loading
     JsonDocument staDoc;
     StaConfig staCfg;
@@ -105,7 +111,54 @@ bool WiFiModule::start()
         suppressAPAutoStop = true;
     }
 
-    if (ssid.isEmpty() && !useWiFiMulti)
+    if (policy == 1) // AP only
+    {
+        WiFi.mode(WIFI_AP);
+        JsonDocument apCfg;
+        loadApConfig(apCfg);
+        String apSsid = apCfg["ssid"].is<String>() ? apCfg["ssid"].as<String>() : String("OpenEPaperLink");
+        int channel = apCfg["channel"].is<int>() ? apCfg["channel"].as<int>() : 1;
+        bool hidden = apCfg["hidden"].is<bool>() ? apCfg["hidden"].as<bool>() : false;
+        int maxClients = apCfg["max_clients"].is<int>() ? apCfg["max_clients"].as<int>() : 4;
+        if (channel < 1 || channel > 13)
+            channel = 1;
+        if (maxClients < 1)
+            maxClients = 1;
+        else if (maxClients > 10)
+            maxClients = 10;
+        WiFi.softAP(apSsid.c_str(), "", channel, hidden, maxClients);
+        apStarted = true;
+        suppressAPAutoStop = true; // never auto stop in AP only
+        isStarted = true;
+        reconnectAttempts = 0;
+        lastError = "";
+        return true;
+    }
+    if (policy == 3)
+    {
+        // Force simultaneous AP + attempt STA if credentials exist
+        JsonDocument apCfg;
+        loadApConfig(apCfg);
+        String apSsid = apCfg["ssid"].is<String>() ? apCfg["ssid"].as<String>() : String("OpenEPaperLink");
+        int channel = apCfg["channel"].is<int>() ? apCfg["channel"].as<int>() : 1;
+        bool hidden = apCfg["hidden"].is<bool>() ? apCfg["hidden"].as<bool>() : false;
+        int maxClients = apCfg["max_clients"].is<int>() ? apCfg["max_clients"].as<int>() : 4;
+        if (channel < 1 || channel > 13)
+            channel = 1;
+        if (maxClients < 1)
+            maxClients = 1;
+        else if (maxClients > 10)
+            maxClients = 10;
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP(apSsid.c_str(), "", channel, hidden, maxClients);
+        apStarted = true;
+        suppressAPAutoStop = true; // keep AP running regardless
+        // proceed with STA attempt below even if no creds (will just stay AP only)
+    }
+
+    bool skipAPFallback = (policy == 2); // STA only
+
+    if (ssid.isEmpty() && !useWiFiMulti && policy == 0)
     {
         Serial.println("[WIFI_MODULE] No WiFi credentials configured, starting in AP mode");
         WiFi.mode(WIFI_AP);
@@ -172,11 +225,17 @@ bool WiFiModule::start()
         }
         else
         {
-            Serial.println("\n[WIFI_MODULE] Failed to connect to WiFi, starting AP mode");
-            WiFi.mode(WIFI_AP_STA);
-            // Open AP (no password)
-            WiFi.softAP("ESP32-AP-Flasher", "");
-            apStarted = true;
+            if (!skipAPFallback)
+            {
+                Serial.println("\n[WIFI_MODULE] Failed to connect to WiFi, starting AP mode (auto fallback)");
+                WiFi.mode(WIFI_AP_STA);
+                WiFi.softAP("ESP32-AP-Flasher", "");
+                apStarted = true;
+            }
+            else
+            {
+                Serial.println("\n[WIFI_MODULE] Failed to connect to WiFi (STA-only mode, no AP fallback)");
+            }
         }
     }
     isStarted = true;
@@ -272,10 +331,11 @@ bool WiFiModule::isHealthy() const
 void WiFiModule::registerWebHandlers(AsyncWebServer &server)
 {
     Serial.println("[WIFI_MODULE] Registering enhanced WiFi web handlers...");
+    // --- Shared handlers for legacy (/api/wifi/*) and versioned (/api/v1/wifi/*) endpoints ---
 
-    // WiFi status endpoint
-    server.on("/api/wifi/status", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
+    // Status
+    auto wifiStatusHandler = [this](AsyncWebServerRequest *request)
+    {
         JsonDocument doc;
         bool staConnected = (WiFi.status() == WL_CONNECTED);
         doc["connected"] = staConnected;
@@ -294,70 +354,90 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         doc["useWiFiMulti"] = useWiFiMulti;
         doc["savedNetworkCount"] = savedNetworkCount;
         doc["lastScan"] = lastScanTime;
-        doc["scanRunning"] = scanInProgress && WiFi.scanComplete() == -1; // -1 means still running
-        // Attempt to derive gateway/dns if static; else leave blank (can be enriched later)
+        doc["scanRunning"] = scanInProgress && WiFi.scanComplete() == -1;
         doc["gw"] = staticGw;
         doc["dns"] = staticDns;
-// TX power (dBm) - ESP32 API gives set/get max; if unavailable returns 0
 #ifdef ESP32
         doc["txPowerDbm"] = (int)WiFi.getTxPower();
 #endif
         doc["healthy"] = isHealthy();
         doc["error"] = lastError;
-        // Last event (if any)
-        if (!eventHistory.empty()) {
+        doc["wifiMode"] = (int)config.wifiMode;
+        if (!eventHistory.empty())
+        {
             const auto &last = eventHistory.back();
             JsonObject le = doc["lastEvent"].to<JsonObject>();
             le["ts"] = last.ts;
             le["name"] = last.name;
-            if (last.data.length()) le["data"] = last.data;
+            if (last.data.length())
+                le["data"] = last.data;
         }
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        // Mark legacy path deprecation if used
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/status");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/status", HTTP_GET, wifiStatusHandler);
+    server.on("/api/v1/wifi/status", HTTP_GET, wifiStatusHandler);
 
-    // WiFi scan endpoint (initiates scan). Results retrieved via /api/wifi/scan/results
-    server.on("/api/wifi/scan", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
-        if (request->hasParam("verbose")) {
+    // Scan start
+    auto wifiScanHandler = [this](AsyncWebServerRequest *request)
+    {
+        if (request->hasParam("verbose"))
+        {
             String v = request->getParam("verbose")->value();
             scanVerbose = (v == "1" || v.equalsIgnoreCase("true"));
         }
-        if (scanInProgress && WiFi.scanComplete() == -1) {
+        if (scanInProgress && WiFi.scanComplete() == -1)
+        {
             request->send(429, "application/json", "{\"error\":\"scan already running\"}");
             return;
         }
         ModuleManager::getInstance().broadcastEvent("wifi_scan_start", scanVerbose ? "sync" : "async");
         scanInProgress = true;
         int16_t n = -1;
-        if (scanVerbose) {
-            n = WiFi.scanNetworks(false, true); // sync scan
+        if (scanVerbose)
+        {
+            n = WiFi.scanNetworks(false, true);
             cacheScanResults(n);
             scanInProgress = false;
             ModuleManager::getInstance().broadcastEvent("wifi_scan_complete", String(n));
-        } else {
+        }
+        else
+        {
             WiFi.scanDelete();
-            WiFi.scanNetworks(true, true); // async
+            WiFi.scanNetworks(true, true);
             lastScanTime = millis();
         }
         JsonDocument doc;
         doc["success"] = true;
         doc["initiated"] = true;
-        if (n >= 0) {
+        if (n >= 0)
+        {
             doc["completed"] = true;
             doc["count"] = n;
-        } else {
+        }
+        else
+        {
             doc["completed"] = false;
         }
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/scan");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/scan", HTTP_GET, wifiScanHandler);
+    server.on("/api/v1/wifi/scan", HTTP_GET, wifiScanHandler);
 
-    // WiFi scan results endpoint
-    server.on("/api/wifi/scan/results", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
+    // Scan results
+    auto wifiScanResultsHandler = [this](AsyncWebServerRequest *request)
+    {
         int scanState = WiFi.scanComplete();
-        if (scanInProgress && scanState >= 0) {
+        if (scanInProgress && scanState >= 0)
+        {
             cacheScanResults(scanState);
             WiFi.scanDelete();
             scanInProgress = false;
@@ -368,7 +448,8 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         doc["count"] = (int)lastScanResults.size();
         doc["running"] = scanInProgress && (WiFi.scanComplete() == -1);
         JsonArray arr = doc["networks"].to<JsonArray>();
-        for (auto &r : lastScanResults) {
+        for (auto &r : lastScanResults)
+        {
             JsonObject o = arr.add<JsonObject>();
             o["ssid"] = r.ssid;
             o["rssi"] = r.rssi;
@@ -377,15 +458,19 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
             o["bssid"] = r.bssid;
         }
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/scan/results");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/scan/results", HTTP_GET, wifiScanResultsHandler);
+    server.on("/api/v1/wifi/scan/results", HTTP_GET, wifiScanResultsHandler);
 
-    // Combined summary endpoint (status + ap) for single-call dashboard usage
-    server.on("/api/wifi/summary", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
+    // Summary
+    auto wifiSummaryHandler = [this](AsyncWebServerRequest *request)
+    {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
-        // Reuse logic by invoking status/ap handlers conceptually (duplication kept minimal)
         JsonObject status = doc["status"].to<JsonObject>();
         bool staConnected = (WiFi.status() == WL_CONNECTED);
         status["connected"] = staConnected;
@@ -412,12 +497,15 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
 #endif
         status["healthy"] = isHealthy();
         status["error"] = lastError;
-        if (!eventHistory.empty()) {
+        status["wifiMode"] = (int)config.wifiMode;
+        if (!eventHistory.empty())
+        {
             const auto &last = eventHistory.back();
             JsonObject le = status["lastEvent"].to<JsonObject>();
             le["ts"] = last.ts;
             le["name"] = last.name;
-            if (last.data.length()) le["data"] = last.data;
+            if (last.data.length())
+                le["data"] = last.data;
         }
         JsonObject ap = doc["ap"].to<JsonObject>();
         ap["apActive"] = (mode == WIFI_AP || mode == WIFI_AP_STA);
@@ -425,24 +513,26 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
         ap["apIP"] = WiFi.softAPIP().toString();
         ap["apStarted"] = apStarted;
         ap["managementAP"] = managementAP;
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/summary");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/summary", HTTP_GET, wifiSummaryHandler);
+    server.on("/api/v1/wifi/summary", HTTP_GET, wifiSummaryHandler);
 
-    // WiFi connection endpoint (supports single or multiple networks)
-    server.on("/api/wifi/connect", HTTP_POST, [this](AsyncWebServerRequest *request)
-              {
-        // If body contains JSON with networks array, prefer that (but Async callbacks here don't give body easily). Fallback to form params.
-        // We support repeated fields as ssid1/password1, ssid2/password2 ... or a single ssid/password.
-    JsonDocument cfg;
-    // Ensure networks is a JSON array
-    JsonArray networksArr = cfg["networks"].to<JsonArray>();
-
-    int count = 0;
-        // Gather up to 5 entries
-        for (int i = 1; i <= 5; ++i) {
+    // Connect
+    auto wifiConnectHandler = [this](AsyncWebServerRequest *request)
+    {
+        JsonDocument cfg;
+        JsonArray networksArr = cfg["networks"].to<JsonArray>();
+        int count = 0;
+        for (int i = 1; i <= 5; ++i)
+        {
             String ks = (i == 1) ? "ssid" : String("ssid") + String(i);
             String kp = (i == 1) ? "password" : String("password") + String(i);
-            if (request->hasParam(ks, true)) {
+            if (request->hasParam(ks, true))
+            {
                 String ssid = request->getParam(ks, true)->value();
                 String pwd = request->hasParam(kp, true) ? request->getParam(kp, true)->value() : "";
                 JsonObject n = networksArr.add<JsonObject>();
@@ -451,145 +541,179 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
                 count++;
             }
         }
-
-        if (count == 0) {
+        if (count == 0)
+        {
             request->send(400, "application/json", "{\"error\":\"Missing SSID\"}");
             return;
         }
-
-        // Persist networks to config
-        if (contentFS) {
+        if (contentFS)
+        {
             xSemaphoreTake(fsMutex, portMAX_DELAY);
             File f = contentFS->open("/current/staconfig.json", "w");
-            if (f) { serializeJson(cfg, f); f.close(); }
+            if (f)
+            {
+                serializeJson(cfg, f);
+                f.close();
+            }
             xSemaphoreGive(fsMutex);
         }
-
-        // Seed WiFiMulti and try first connection quickly
         wifiMulti = WiFiMulti();
         savedNetworkCount = 0;
-        for (JsonObject n : cfg["networks"].as<JsonArray>()) {
-            wifiMulti.addAP(n["ssid"].as<const char*>(), n["password"].as<const char*>());
+        for (JsonObject n : cfg["networks"].as<JsonArray>())
+        {
+            wifiMulti.addAP(n["ssid"].as<const char *>(), n["password"].as<const char *>());
             savedNetworkCount++;
         }
         useWiFiMulti = (savedNetworkCount > 0);
-        if (useWiFiMulti) {
+        if (useWiFiMulti)
+        {
             WiFi.mode(WIFI_STA);
             wifiMulti.run();
         }
-
         JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "WiFi connection initiated";
         doc["savedNetworks"] = savedNetworkCount;
-
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/connect");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/connect", HTTP_POST, wifiConnectHandler);
+    server.on("/api/v1/wifi/connect", HTTP_POST, wifiConnectHandler);
 
-    // WiFi disconnect endpoint
-    server.on("/api/wifi/disconnect", HTTP_POST, [this](AsyncWebServerRequest *request)
-              {
+    // Disconnect
+    auto wifiDisconnectHandler = [this](AsyncWebServerRequest *request)
+    {
         WiFi.disconnect();
-
         JsonDocument doc;
         doc["success"] = true;
         doc["message"] = "WiFi disconnected";
-
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        serializeJson(doc, *response);
-        request->send(response); });
-
-    // Credential wipe endpoint
-    server.on("/api/wifi/clear", HTTP_POST, [this](AsyncWebServerRequest *request)
-              {
-        bool ok = wipeStaCredentials();
-        JsonDocument doc; doc["success"] = ok; doc["message"] = ok ? "Credentials cleared" : "Clear failed";
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/disconnect");
         serializeJson(doc, *response);
         request->send(response);
-        if (ok) {
-            Serial.println("[WIFI_MODULE] Credentials cleared via API; restarting in 500ms");
-            delay(500);
-            ESP.restart();
-        } });
+    };
+    server.on("/api/wifi/disconnect", HTTP_POST, wifiDisconnectHandler);
+    server.on("/api/v1/wifi/disconnect", HTTP_POST, wifiDisconnectHandler);
 
-    // Recent WiFi/system events (captured from broadcast event bus)
-    server.on("/api/wifi/events", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
+    // Clear credentials
+    auto wifiClearHandler = [this](AsyncWebServerRequest *request)
+    {
+        bool ok = wipeStaCredentials(); JsonDocument doc; doc["success"] = ok; doc["message"] = ok ? "Credentials cleared" : "Clear failed"; AsyncResponseStream *response = request->beginResponseStream("application/json"); if (request->url().startsWith("/api/wifi/")) response->addHeader("X-Deprecated", "Use /api/v1/wifi/clear"); serializeJson(doc, *response); request->send(response); if (ok) { Serial.println("[WIFI_MODULE] Credentials cleared via API; restarting in 500ms"); delay(500); ESP.restart(); } };
+    server.on("/api/wifi/clear", HTTP_POST, wifiClearHandler);
+    server.on("/api/v1/wifi/clear", HTTP_POST, wifiClearHandler);
+
+    // Events
+    auto wifiEventsHandler = [this](AsyncWebServerRequest *request)
+    {
         JsonDocument doc;
         JsonArray arr = doc["events"].to<JsonArray>();
-        for (const auto &rec : eventHistory) {
+        for (const auto &rec : eventHistory)
+        {
             JsonObject o = arr.add<JsonObject>();
             o["ts"] = rec.ts;
             o["event"] = rec.name;
-            if (rec.data.length()) o["data"] = rec.data;
+            if (rec.data.length())
+                o["data"] = rec.data;
         }
         doc["count"] = eventHistory.size();
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/events");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/events", HTTP_GET, wifiEventsHandler);
+    server.on("/api/v1/wifi/events", HTTP_GET, wifiEventsHandler);
 
-    // AP configuration/state endpoint
-    server.on("/api/wifi/ap", HTTP_GET, [this](AsyncWebServerRequest *request)
-              {
+    // AP state
+    auto wifiApGetHandler = [this](AsyncWebServerRequest *request)
+    {
         JsonDocument doc;
         wifi_mode_t m = WiFi.getMode();
         doc["mode"] = (int)m;
         doc["apActive"] = (m == WIFI_AP || m == WIFI_AP_STA);
+        doc["wifiMode"] = (int)config.wifiMode;
         doc["apClients"] = WiFi.softAPgetStationNum();
         doc["apIP"] = WiFi.softAPIP().toString();
         doc["apStarted"] = apStarted;
         doc["managementAP"] = managementAP;
-        JsonDocument apCfg; JsonDocument loaded;
+        JsonDocument loaded;
         loadApConfig(loaded);
-        if (!loaded.isNull()) {
-            for (auto kv : loaded.as<JsonObject>()) doc["config"][kv.key().c_str()] = kv.value();
+        if (!loaded.isNull())
+        {
+            for (auto kv : loaded.as<JsonObject>())
+                doc["config"][kv.key().c_str()] = kv.value();
         }
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/ap");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/ap", HTTP_GET, wifiApGetHandler);
+    server.on("/api/v1/wifi/ap", HTTP_GET, wifiApGetHandler);
 
-    server.on("/api/wifi/ap", HTTP_POST, [this](AsyncWebServerRequest *request)
-              {
-        // Control AP: action=start|stop|restart, optional channel, ssid, hidden, max_clients
+    auto wifiApPostHandler = [this](AsyncWebServerRequest *request)
+    {
         String action = request->hasParam("action", true) ? request->getParam("action", true)->value() : "";
-        JsonDocument doc; bool ok = true;
-        if (action == "start") {
+        JsonDocument doc;
+        bool ok = true;
+        if (action == "start")
+        {
             wifi_mode_t m = WiFi.getMode();
-            if (!(m == WIFI_AP || m == WIFI_AP_STA)) {
-                WiFi.mode(WIFI_AP_STA); // keep STA capability
+            if (!(m == WIFI_AP || m == WIFI_AP_STA))
+            {
+                WiFi.mode(WIFI_AP_STA);
             }
-            JsonDocument apCfg; loadApConfig(apCfg);
-            if (request->hasParam("ssid", true)) apCfg["ssid"] = request->getParam("ssid", true)->value();
-            if (request->hasParam("channel", true)) apCfg["channel"] = request->getParam("channel", true)->value().toInt();
-            if (request->hasParam("hidden", true)) apCfg["hidden"] = (request->getParam("hidden", true)->value() == "1");
-            if (request->hasParam("max_clients", true)) apCfg["max_clients"] = request->getParam("max_clients", true)->value().toInt();
-            // Apply start
+            doc["wifiMode"] = (int)config.wifiMode;
+            JsonDocument apCfg;
+            loadApConfig(apCfg);
+            if (request->hasParam("ssid", true))
+                apCfg["ssid"] = request->getParam("ssid", true)->value();
+            if (request->hasParam("channel", true))
+                apCfg["channel"] = request->getParam("channel", true)->value().toInt();
+            if (request->hasParam("hidden", true))
+                apCfg["hidden"] = (request->getParam("hidden", true)->value() == "1");
+            if (request->hasParam("max_clients", true))
+                apCfg["max_clients"] = request->getParam("max_clients", true)->value().toInt();
             String ssid = apCfg["ssid"].is<String>() ? apCfg["ssid"].as<String>() : String("OpenEPaperLink");
             int channel = apCfg["channel"].is<int>() ? apCfg["channel"].as<int>() : 1;
             bool hidden = apCfg["hidden"].is<bool>() ? apCfg["hidden"].as<bool>() : false;
             int maxc = apCfg["max_clients"].is<int>() ? apCfg["max_clients"].as<int>() : 4;
-            if (channel < 1 || channel > 13) channel = 1;
-            if (maxc < 1) maxc = 1; else if (maxc > 10) maxc = 10;
+            if (channel < 1 || channel > 13)
+                channel = 1;
+            if (maxc < 1)
+                maxc = 1;
+            else if (maxc > 10)
+                maxc = 10;
             WiFi.softAP(ssid.c_str(), "", channel, hidden, maxc);
             apStarted = true;
-            suppressAPAutoStop = true; // treat as management until changed
+            suppressAPAutoStop = true;
             ModuleManager::getInstance().broadcastEvent("wifi_ap_started", "manual");
             saveAPconfigFromDoc(apCfg);
             doc["result"] = "AP started";
-        } else if (action == "stop") {
+        }
+        else if (action == "stop")
+        {
             WiFi.softAPdisconnect(true);
-            if (WiFi.getMode() == WIFI_AP_STA) WiFi.mode(WIFI_STA);
+            if (WiFi.getMode() == WIFI_AP_STA)
+                WiFi.mode(WIFI_STA);
             apStarted = false;
             suppressAPAutoStop = false;
             ModuleManager::getInstance().broadcastEvent("wifi_ap_stopped", "manual");
             doc["result"] = "AP stopped";
-        } else if (action == "restart") {
+        }
+        else if (action == "restart")
+        {
             WiFi.softAPdisconnect(true);
             delay(100);
             WiFi.mode(WIFI_AP_STA);
-            JsonDocument apCfg; loadApConfig(apCfg);
+            JsonDocument apCfg;
+            loadApConfig(apCfg);
             String ssid = apCfg["ssid"].is<String>() ? apCfg["ssid"].as<String>() : String("OpenEPaperLink");
             int channel = apCfg["channel"].is<int>() ? apCfg["channel"].as<int>() : 1;
             bool hidden = apCfg["hidden"].is<bool>() ? apCfg["hidden"].as<bool>() : false;
@@ -598,13 +722,52 @@ void WiFiModule::registerWebHandlers(AsyncWebServer &server)
             apStarted = true;
             ModuleManager::getInstance().broadcastEvent("wifi_ap_started", "restart");
             doc["result"] = "AP restarted";
-        } else {
-            ok = false; doc["error"] = "Unknown or missing action";
+        }
+        else
+        {
+            ok = false;
+            doc["error"] = "Unknown or missing action";
         }
         doc["success"] = ok;
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/ap");
         serializeJson(doc, *response);
-        request->send(response); });
+        request->send(response);
+    };
+    server.on("/api/wifi/ap", HTTP_POST, wifiApPostHandler);
+    server.on("/api/v1/wifi/ap", HTTP_POST, wifiApPostHandler);
+
+    // Set mode
+    auto wifiSetModeHandler = [this](AsyncWebServerRequest *request)
+    {
+        if (!request->hasParam("mode", true))
+        {
+            request->send(400, "application/json", "{\"error\":\"missing mode\"}");
+            return;
+        }
+        int m = request->getParam("mode", true)->value().toInt();
+        if (m < 0 || m > 3)
+        {
+            request->send(400, "application/json", "{\"error\":\"mode must be 0-3\"}");
+            return;
+        }
+        config.wifiMode = (uint8_t)m;
+        saveAPconfig();
+        stop();
+        initialize();
+        start();
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["wifiMode"] = (int)config.wifiMode;
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        if (request->url().startsWith("/api/wifi/"))
+            response->addHeader("X-Deprecated", "Use /api/v1/wifi/setmode");
+        serializeJson(doc, *response);
+        request->send(response);
+    };
+    server.on("/api/wifi/setmode", HTTP_POST, wifiSetModeHandler);
+    server.on("/api/v1/wifi/setmode", HTTP_POST, wifiSetModeHandler);
 }
 
 void WiFiModule::handleEvent(const String &event, const String &data)
