@@ -20,17 +20,11 @@ export interface ReachabilityBadgeProps {
  * Internally uses useDeviceReachability (polling) and supports optional stagger via startDelayMs.
  * Memoized to avoid unnecessary re-renders; only props changes will trigger update.
  */
-export const ReachabilityBadge: React.FC<ReachabilityBadgeProps> = React.memo(({
-  baseUrl,
-  intervalMs = 20000,
-  startDelayMs = 0,
-  immediate = true,
-  showLatency = true,
-  className = '',
-  unreachableTitle = 'Unreachable'
-}) => {
+export const ReachabilityBadge: React.FC<ReachabilityBadgeProps> = React.memo((props) => {
+  const { baseUrl, intervalMs = 20000, startDelayMs = 0, immediate = true, showLatency = true, className = '', unreachableTitle = 'Unreachable' } = props;
+  // Always call hook (pass enabled=false when no baseUrl) to satisfy rules-of-hooks.
+  const reach = useDeviceReachability(baseUrl || null, { intervalMs, immediate, startDelayMs, enabled: !!baseUrl });
   if (!baseUrl) return <span className={`badge badge-dim ${className}`.trim()} title="No base URL">?</span>;
-  const reach = useDeviceReachability(baseUrl, { intervalMs, immediate, startDelayMs });
   if (reach.loading && reach.reachable === null) return <span className={`badge badge-dim ${className}`.trim()}>…</span>;
   if (reach.reachable) {
     const latency = showLatency && reach.lastLatencyMs ? ` ${reach.lastLatencyMs}ms` : '';

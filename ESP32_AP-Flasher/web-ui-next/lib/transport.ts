@@ -34,6 +34,7 @@ export interface TransportStatus {
   lastError?: string;                      // last channel (http/serial) error message
   lastErrorAt?: number;                    // epoch ms of last error
   lastHttpTimeout?: boolean;               // true if last http attempt timed out
+  serialPending?: boolean;                 // preferred serial but currently falling back to HTTP
 }
 
 export interface TransportAPI {
@@ -165,6 +166,7 @@ export function createTransport(): TransportAPI {
       lastError: lastErrorMsg,
       lastErrorAt: lastErrorTime || undefined,
       lastHttpTimeout: lastHttpTimedOut,
+      serialPending: preferred === 'serial' && !serial.opened,
     };
   }
 
@@ -272,9 +274,15 @@ export function createTransport(): TransportAPI {
 
   async function get<T = any>(path: string, init?: RequestInit): Promise<T> {
     if (preferred === 'serial') {
-      if (!serial.opened) throw new Error('Serial not open');
-      lastEffective = 'serial'; emit();
-      return serialRequest('GET', path);
+      if (serial.opened) {
+        lastEffective = 'serial'; emit();
+        return serialRequest('GET', path);
+      } else {
+        // Graceful fallback to HTTP while marking pending
+        lastEffective = 'http'; emit();
+        // opportunistically try to adopt previously granted port (non-blocking)
+        adoptGrantedPort().then(adopted => { if (adopted) emit(); }).catch(() => { });
+      }
     }
     lastEffective = 'pending'; emit();
     try {
@@ -303,9 +311,13 @@ export function createTransport(): TransportAPI {
 
   async function post<T = any>(path: string, body: any, init?: RequestInit): Promise<T> {
     if (preferred === 'serial') {
-      if (!serial.opened) throw new Error('Serial not open');
-      lastEffective = 'serial'; emit();
-      return serialRequest('POST', path, body);
+      if (serial.opened) {
+        lastEffective = 'serial'; emit();
+        return serialRequest('POST', path, body);
+      } else {
+        lastEffective = 'http'; emit();
+        adoptGrantedPort().then(adopted => { if (adopted) emit(); }).catch(() => { });
+      }
     }
     lastEffective = 'pending'; emit();
     try {

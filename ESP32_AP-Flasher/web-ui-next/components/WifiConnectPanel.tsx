@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { connectWifi, disconnectWifi, useDeviceWifiScan, useDeviceWifiStatus } from '../hooks/useDeviceWifi';
+// Wi-Fi connect / scan / mode management panel.
+// Mode selector below uses serial-first logic implemented in hooks (setWifiMode/getWifiMode)
+// Error codes surfaced via toasts (unknown_command -> firmware lacks CLI; mode_timeout / upstream_timeout -> busy/stale situations)
+import { connectWifi, disconnectWifi, getWifiMode, setWifiMode, useDeviceWifiScan, useDeviceWifiStatus } from '../hooks/useDeviceWifi';
 import { showToast } from '../hooks/useToast';
 import { getSelectedDevice } from '../lib/deviceSelection';
 
@@ -27,6 +30,7 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const [modeChanging, setModeChanging] = useState(false);
   const sel = getSelectedDevice();
 
   useEffect(() => { setMounted(true); }, []);
@@ -47,27 +51,73 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
       {sel && (
         <>
           <div className="wifi-status-row">
-            <div>
-              <strong>Status:</strong>{' '}
-              {statusLoading && !status && <span>Loading…</span>}
-              {!statusLoading && status && (
-                <>
-                  {status.connected ? (
-                    <span className="badge badge-ok">Connected</span>
-                  ) : (
-                    <span className="badge badge-dim">Not Connected</span>
-                  )}
-                  {statusStale && <span className="badge badge-warn ml-1" title="Using stale data">Stale</span>}
-                  {status.connected && (
-                    <span className="ml-2 xsmall mono">{status.ssid} ({status.ip || 'no ip'}) RSSI:{status.rssi ?? '?'} ch:{status.channel ?? '?'}</span>
-                  )}
-                </>
-              )}
-              {statusError && <span className="text-error ml-2 xsmall">{statusError}</span>}
+            <div className="flex-col gap-1">
+              <div>
+                <strong>Status:</strong>{' '}
+                {statusLoading && !status && <span>Loading…</span>}
+                {!statusLoading && status && (
+                  <>
+                    {status.connected ? (
+                      <span className="badge badge-ok">Connected</span>
+                    ) : (
+                      <span className="badge badge-dim">Not Connected</span>
+                    )}
+                    {statusStale && <span className="badge badge-warn ml-1" title="Using stale data">Stale</span>}
+                    {status.connected && (
+                      <span className="ml-2 xsmall mono">{status.ssid} ({status.ip || 'no ip'}) RSSI:{status.rssi ?? '?'} ch:{status.channel ?? '?'}</span>
+                    )}
+                  </>
+                )}
+                {statusError && <span className="text-error ml-2 xsmall">{statusError}</span>}
+              </div>
+              <div className="xsmall mt-1 flex-row gap-2 items-center">
+                {(() => {
+                  const modeVal = (status?.wifiMode ?? status?.mode);
+                  const modeName = (() => {
+                    switch (modeVal) {
+                      case 0: return 'AUTO';
+                      case 1: return 'AP';
+                      case 2: return 'STA';
+                      case 3: return 'AP+STA';
+                      default: return modeVal !== undefined ? String(modeVal) : '—';
+                    }
+                  })();
+                  return <span>Mode: <span className="mono">{modeName}</span></span>;
+                })()}
+                {modeChanging && <span className="badge badge-dim">Changing…</span>}
+              </div>
             </div>
-            <div className="flex-row gap-2">
-              <button className="btn-slim" onClick={() => reloadStatus()} disabled={statusLoading}>Reload</button>
-              {status?.connected && <button className="btn-slim" disabled={connecting} onClick={async () => {
+            <div className="flex-row gap-2 flex-wrap">
+              <div className="mode-buttons flex-row gap-1">
+                {[{ m: 0, l: 'AUTO' }, { m: 1, l: 'AP' }, { m: 2, l: 'STA' }, { m: 3, l: 'AP+STA' }].map(x => {
+                  const cur = (status?.wifiMode ?? status?.mode);
+                  const active = cur === x.m;
+                  return (
+                    <button
+                      key={x.m}
+                      className={`btn-slim ${active ? 'btn-active' : ''}`}
+                      disabled={modeChanging || statusLoading}
+                      title={`Set Wi-Fi mode to ${x.l}`}
+                      onClick={async () => {
+                        if (active) return;
+                        try {
+                          setModeChanging(true);
+                          await setWifiMode(x.m);
+                          showToast(`Mode change requested: ${x.l}`, 'success');
+                          // Quick refresh via serial if available; fallback to status reload.
+                          try { await getWifiMode(); } catch { /* ignore */ }
+                          setTimeout(() => reloadStatus(), 500);
+                          setTimeout(() => reloadStatus(), 2500);
+                        } catch (e: any) {
+                          showToast('Mode change failed: ' + (e.message || e), 'error');
+                        } finally { setModeChanging(false); }
+                      }}
+                    >{x.l}</button>
+                  );
+                })}
+              </div>
+              <button className="btn-slim" onClick={() => reloadStatus()} disabled={statusLoading || modeChanging}>Reload</button>
+              {status?.connected && <button className="btn-slim" disabled={connecting || modeChanging} onClick={async () => {
                 try {
                   setConnecting(true);
                   await disconnectWifi();
@@ -146,6 +196,7 @@ export function WifiConnectPanel({ selectedDeviceId }: WifiConnectPanelProps) {
         .overflow-x-auto { overflow-x:auto; }
         .row-highlight { background:rgba(0,160,0,0.06); }
         .mono { font-family:var(--font-mono, monospace); }
+        .mode-buttons .btn-slim.btn-active { background: #0a5; color:#fff; }
       `}</style>
     </div>
   );

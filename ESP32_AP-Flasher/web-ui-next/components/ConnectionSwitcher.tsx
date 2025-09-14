@@ -137,7 +137,7 @@ export function ConnectionSwitcher({ deviceId, syncMeta, className = 'conn-switc
       {serialControls}
       {pref !== 'serial' && status.serialOpen && <span className="ml-2 text-xs opacity-70" title="Serial is open; Auto mode will use it when possible">(fallback ready)</span>}
       {!serialSupported && <span className="opacity-60" title="Browser does not support Web Serial or permission denied">Serial unsupported</span>}
-      {warningNeedsOpen && <span className="ml-2 badge warn xsmall" title="Preferred serial but port is not open">Serial not open</span>}
+      {warningNeedsOpen && <span className="ml-2 badge warn xsmall" title="Preferred serial; using HTTP until port opens">Using HTTP (serial pending)</span>}
       {metaDiff && <span className="ml-2 xsmall muted" title="Device meta stored a different preferred transport">Meta pref: {meta.preferredTransport}</span>}
       {openError && <span className="ml-2 badge warn xsmall" title={openError}>{openError}</span>}
     </div>
