@@ -15,14 +15,15 @@ import { upsertDeviceMeta } from '../lib/deviceMeta';
 
 export function ConnectionSwitcher({ deviceId, syncMeta, className = 'conn-switcher-row', compact, revertOnFail, showMetaDiff }: ConnectionSwitcherProps) {
   const t = transport();
-  const [status, setStatus] = useState<TransportStatus>(() => {
-    // On server we cannot reliably know serial support; force a stable placeholder.
-    const base = t.getStatus();
-    return typeof window === 'undefined'
-      ? { ...base, serialSupported: false, serialOpen: false }
-      : base;
-  });
-  const [mounted, setMounted] = useState(false);
+  // Deterministic placeholder for SSR + first client render to avoid hydration mismatch.
+  const [status, setStatus] = useState<TransportStatus>(() => ({
+    preferred: 'auto',
+    effective: 'http',
+    serialSupported: false,
+    serialOpen: false,
+    openingSerial: false,
+  } as TransportStatus));
+  const [hydrated, setHydrated] = useState(false); // true after first real transport status applied
   const [openError, setOpenError] = useState<string | null>(null);
   // auto-dismiss open error after delay
   useEffect(() => {
@@ -31,18 +32,14 @@ export function ConnectionSwitcher({ deviceId, syncMeta, className = 'conn-switc
     return () => clearTimeout(id);
   }, [openError]);
 
-  // subscribe to transport status (only after mount to avoid SSR/client divergence)
+  // Subscribe after first client paint; apply status immediately (placeholder ensures initial match)
   useEffect(() => {
-    setMounted(true);
+    if (typeof window === 'undefined') return; // no-op on server
     const unsub = t.subscribe((s) => {
-      setStatus((prev) => {
-        // Avoid turning serialSupported true before mount hydration completes
-        if (!mounted) return prev;
-        return s;
-      });
+      setStatus(s);
+      setHydrated(true);
     });
     return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t]);
 
   // one-time persisted preference restore
@@ -89,7 +86,7 @@ export function ConnectionSwitcher({ deviceId, syncMeta, className = 'conn-switc
     try { await t.closeSerial(); } catch { }
   }
 
-  const serialSupported = mounted ? status.serialSupported : false; // lock until mounted
+  const serialSupported = hydrated ? status.serialSupported : false; // remain false till real status
   const pref = status.preferred;
   const serialControls = (
     <>
@@ -115,7 +112,7 @@ export function ConnectionSwitcher({ deviceId, syncMeta, className = 'conn-switc
     } catch { return null; }
   })();
   const metaDiff = showMetaDiff && meta?.preferredTransport && meta.preferredTransport !== status.preferred;
-  const warningNeedsOpen = status.preferred === 'serial' && !status.serialOpen;
+  const warningNeedsOpen = hydrated && status.preferred === 'serial' && !status.serialOpen;
   return (
     <div className={className}>
       <strong>{label}</strong>
