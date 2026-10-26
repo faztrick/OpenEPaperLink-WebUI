@@ -1,3 +1,0 @@
-ElegantOTA	KEYWORD1
-begin	KEYWORD2
-setID KEYWORD2
